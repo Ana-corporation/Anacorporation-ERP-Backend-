@@ -1,0 +1,24 @@
+// subscription | company_modules
+
+model CompanyModule {
+  companyModuleId BigInt    @id @default(autoincrement()) @map("company_module_id")
+  companyId       BigInt    @map("company_id")
+  moduleId        BigInt    @map("module_id")
+  isActive        Boolean   @default(true) @map("is_active")
+  activatedDate   DateTime  @default(now()) @map("activated_date") @db.Date
+  expiryDate      DateTime? @map("expiry_date") @db.Date
+  createdBy       BigInt?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedBy       BigInt?   @map("updated_by")
+  updatedAt       DateTime? @map("updated_at")
+  deletedBy       BigInt?   @map("deleted_by")
+  deletedAt       DateTime? @map("deleted_at")
+  rowVersion      Int       @default(1) @map("row_version")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  module  Module  @relation(fields: [moduleId], references: [moduleId])
+
+  @@unique([companyId, moduleId])
+  @@index([companyId])
+  @@map("company_modules")
+}

@@ -1,0 +1,25 @@
+// subscription | subscription_plans
+
+model SubscriptionPlan {
+  planId        BigInt       @id @default(autoincrement()) @map("plan_id")
+  planCode      String       @unique @map("plan_code") @db.VarChar(30)
+  name          String       @db.VarChar(100)
+  description   String?
+  price         Decimal      @default(0) @db.Decimal(12, 2)
+  billingCycle  BillingCycle @default(monthly) @map("billing_cycle")
+  maxUsers      Int?         @map("max_users")
+  maxStorageGb  Int?         @map("max_storage_gb")
+  isActive      Boolean      @default(true) @map("is_active")
+  createdBy     BigInt?      @map("created_by")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedBy     BigInt?      @map("updated_by")
+  updatedAt     DateTime?    @map("updated_at")
+  deletedBy     BigInt?      @map("deleted_by")
+  deletedAt     DateTime?    @map("deleted_at")
+  rowVersion    Int          @default(1) @map("row_version")
+
+  planModules   PlanModule[]
+  subscriptions CompanySubscription[]
+
+  @@map("subscription_plans")
+}

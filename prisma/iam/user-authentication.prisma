@@ -1,0 +1,36 @@
+// iam | user_authentication
+
+model UserAuthentication {
+  authenticationId      BigInt        @id @default(autoincrement()) @map("authentication_id")
+  userId                BigInt        @unique @map("user_id")
+  passwordHash          String        @map("password_hash") @db.VarChar(255)
+  passwordSalt          String?       @map("password_salt") @db.VarChar(255)
+  hashAlgorithm         HashAlgorithm @default(bcrypt) @map("hash_algorithm")
+  passwordVersion       Int?          @default(1) @map("password_version")
+  passwordChangedDate   DateTime?     @map("password_changed_date")
+  passwordExpiresDate   DateTime?     @map("password_expires_date")
+  passwordNeverExpires  Boolean       @default(false) @map("password_never_expires")
+  mustChangePassword    Boolean       @default(false) @map("must_change_password")
+  accountExpirationDate DateTime?     @map("account_expiration_date")
+  failedLoginCount      Int           @default(0) @map("failed_login_count") @db.SmallInt
+  lastFailedLogin       DateTime?     @map("last_failed_login")
+  lastSuccessfulLogin   DateTime?     @map("last_successful_login")
+  lastPasswordReset     DateTime?     @map("last_password_reset")
+  securityStamp         String?       @map("security_stamp") @db.VarChar(100)
+  refreshToken          String?       @map("refresh_token") @db.VarChar(500)
+  refreshTokenExpiry    DateTime?     @map("refresh_token_expiry")
+  accountLockedUntil    DateTime?     @map("account_locked_until")
+  isMfaEnabled          Boolean       @default(false) @map("is_mfa_enabled")
+  mfaType               MfaType?      @map("mfa_type")
+  otpSecret             String?       @map("otp_secret") @db.VarChar(255)
+  recoveryCodes         String?       @map("recovery_codes")
+  isEmailVerified       Boolean       @default(false) @map("is_email_verified")
+  isPhoneVerified       Boolean       @default(false) @map("is_phone_verified")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime?     @map("updated_at")
+  rowVersion            Int           @default(1) @map("row_version")
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@map("user_authentication")
+}

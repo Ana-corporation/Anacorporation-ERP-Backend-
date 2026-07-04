@@ -1,0 +1,17 @@
+// iam | user_notifications
+
+model UserNotification {
+  notificationId  BigInt    @id @default(autoincrement()) @map("notification_id")
+  userId          BigInt    @unique @map("user_id")
+  emailEnabled    Boolean   @default(true) @map("email_enabled")
+  smsEnabled      Boolean   @default(false) @map("sms_enabled")
+  whatsappEnabled Boolean   @default(false) @map("whatsapp_enabled")
+  pushEnabled     Boolean   @default(true) @map("push_enabled")
+  teamsEnabled    Boolean   @default(false) @map("teams_enabled")
+  slackEnabled    Boolean   @default(false) @map("slack_enabled")
+  updatedAt       DateTime? @map("updated_at")
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@map("user_notifications")
+}

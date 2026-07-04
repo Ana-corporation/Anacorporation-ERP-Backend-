@@ -1,0 +1,26 @@
+// subscription | company_subscriptions
+
+model CompanySubscription {
+  companySubscriptionId BigInt             @id @default(autoincrement()) @map("company_subscription_id")
+  companyId             BigInt             @map("company_id")
+  planId                BigInt             @map("plan_id")
+  startDate             DateTime           @map("start_date") @db.Date
+  endDate               DateTime?          @map("end_date") @db.Date
+  billingCycle          BillingCycle       @default(monthly) @map("billing_cycle")
+  amount                Decimal            @default(0) @db.Decimal(12, 2)
+  autoRenew             Boolean            @default(true) @map("auto_renew")
+  status                SubscriptionStatus @default(pending)
+  createdBy             BigInt?            @map("created_by")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedBy             BigInt?            @map("updated_by")
+  updatedAt             DateTime?          @map("updated_at")
+  deletedBy             BigInt?            @map("deleted_by")
+  deletedAt             DateTime?          @map("deleted_at")
+  rowVersion            Int                @default(1) @map("row_version")
+
+  company Company          @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  plan    SubscriptionPlan @relation(fields: [planId], references: [planId])
+
+  @@index([companyId])
+  @@map("company_subscriptions")
+}

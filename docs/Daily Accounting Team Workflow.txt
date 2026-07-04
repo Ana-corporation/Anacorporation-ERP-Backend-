@@ -1,0 +1,59 @@
+
+
+
+
+
+
+Morning
+
+↓
+
+Check Pending Approvals
+
+↓
+
+Review Purchase Invoices
+
+↓
+
+Review Sales Invoices
+
+↓
+
+Verify Tax Calculations
+
+↓
+
+Approve Journal Entries
+
+↓
+
+Post to General Ledger
+
+↓
+
+Reconcile Bank Transactions
+
+↓
+
+Verify Customer Payments
+
+↓
+
+Verify Vendor Payments
+
+↓
+
+Review Cash Position
+
+↓
+
+Generate Daily Reports
+
+↓
+
+Management Review
+
+↓
+
+End of Day Closing

@@ -1,0 +1,31 @@
+// iam | user_sessions
+
+model UserSession {
+  sessionId       BigInt        @id @default(autoincrement()) @map("session_id")
+  userId          BigInt        @map("user_id")
+  companyId       BigInt?       @map("company_id")
+  deviceId        BigInt?       @map("device_id")
+  loginTime       DateTime      @default(now()) @map("login_time")
+  logoutTime      DateTime?     @map("logout_time")
+  jwtToken        String?       @map("jwt_token") @db.VarChar(1000)
+  refreshToken    String?       @map("refresh_token") @db.VarChar(500)
+  browser         String?       @db.VarChar(80)
+  browserVersion  String?       @map("browser_version") @db.VarChar(40)
+  operatingSystem String?       @map("operating_system") @db.VarChar(80)
+  deviceType      String?       @map("device_type") @db.VarChar(30)
+  deviceName      String?       @map("device_name") @db.VarChar(150)
+  ipAddress       String?       @map("ip_address")
+  country         String?       @db.VarChar(100)
+  city            String?       @db.VarChar(100)
+  latitude        Decimal?      @db.Decimal(9, 6)
+  longitude       Decimal?      @db.Decimal(9, 6)
+  sessionStatus   SessionStatus @default(active) @map("session_status")
+
+  user    User        @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company Company?    @relation(fields: [companyId], references: [companyId])
+  device  UserDevice? @relation(fields: [deviceId], references: [deviceId])
+
+  @@index([userId])
+  @@index([sessionStatus])
+  @@map("user_sessions")
+}

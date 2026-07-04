@@ -1,0 +1,21 @@
+-- Indexes | Run after all tables are created
+CREATE INDEX idx_company_subscriptions_company ON company_subscriptions(company_id);
+CREATE INDEX idx_company_modules_company        ON company_modules(company_id);
+CREATE INDEX idx_branches_company               ON branches(company_id);
+CREATE INDEX idx_departments_company            ON departments(company_id);
+CREATE INDEX idx_designations_company           ON designations(company_id);
+CREATE INDEX idx_warehouses_company             ON warehouses(company_id);
+CREATE INDEX idx_roles_company                  ON roles(company_id);
+CREATE INDEX idx_permissions_module             ON permissions(module_id);
+CREATE INDEX idx_role_permissions_role          ON role_permissions(role_id);
+CREATE INDEX idx_user_companies_user            ON user_companies(user_id);
+CREATE INDEX idx_user_companies_company         ON user_companies(company_id);
+CREATE INDEX idx_user_roles_user_company        ON user_roles(user_id, company_id);
+CREATE INDEX idx_user_module_access_user_company ON user_module_access(user_id, company_id);
+CREATE INDEX idx_user_sessions_user             ON user_sessions(user_id);
+CREATE INDEX idx_user_sessions_status           ON user_sessions(session_status);
+CREATE INDEX idx_user_login_history_user        ON user_login_history(user_id);
+CREATE INDEX idx_user_devices_user              ON user_devices(user_id);
+CREATE INDEX idx_user_api_keys_user             ON user_api_keys(user_id);
+CREATE INDEX idx_user_audit_user                ON user_audit(user_id);
+CREATE INDEX idx_user_audit_entity             ON user_audit(entity_name, entity_id);

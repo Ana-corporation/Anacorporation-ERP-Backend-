@@ -1,0 +1,23 @@
+// iam | user_devices
+
+model UserDevice {
+  deviceId     BigInt    @id @default(autoincrement()) @map("device_id")
+  userId       BigInt    @map("user_id")
+  deviceUuid   String    @map("device_uuid") @db.VarChar(100)
+  deviceName   String?   @map("device_name") @db.VarChar(150)
+  manufacturer String?   @db.VarChar(100)
+  model        String?   @db.VarChar(100)
+  os           String?   @db.VarChar(80)
+  browser      String?   @db.VarChar(80)
+  lastSeen     DateTime? @map("last_seen")
+  isTrusted    Boolean   @default(false) @map("is_trusted")
+  isBlocked    Boolean   @default(false) @map("is_blocked")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user     User          @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  sessions UserSession[]
+
+  @@unique([userId, deviceUuid])
+  @@index([userId])
+  @@map("user_devices")
+}

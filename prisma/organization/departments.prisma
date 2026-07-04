@@ -1,0 +1,26 @@
+// organization | departments
+
+model Department {
+  departmentId       BigInt    @id @default(autoincrement()) @map("department_id")
+  companyId          BigInt    @map("company_id")
+  departmentCode     String    @map("department_code") @db.VarChar(30)
+  name               String    @db.VarChar(150)
+  parentDepartmentId BigInt?   @map("parent_department_id")
+  isActive           Boolean   @default(true) @map("is_active")
+  createdBy          BigInt?   @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedBy          BigInt?   @map("updated_by")
+  updatedAt          DateTime? @map("updated_at")
+  deletedBy          BigInt?   @map("deleted_by")
+  deletedAt          DateTime? @map("deleted_at")
+  rowVersion         Int       @default(1) @map("row_version")
+
+  company        Company      @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  parent         Department?  @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [departmentId])
+  children       Department[] @relation("DepartmentHierarchy")
+  userCompanies  UserCompany[]
+
+  @@unique([companyId, departmentCode])
+  @@index([companyId])
+  @@map("departments")
+}

@@ -1,0 +1,53 @@
+// organization | companies
+
+model Company {
+  companyId         BigInt        @id @default(autoincrement()) @map("company_id")
+  companyCode       String        @unique @map("company_code") @db.VarChar(30)
+  name              String        @db.VarChar(200)
+  legalName         String?       @map("legal_name") @db.VarChar(255)
+  domain            String?       @unique @db.VarChar(255)
+  email             String?       @db.VarChar(255)
+  phone             String?       @db.VarChar(30)
+  taxNumber         String?       @map("tax_number") @db.VarChar(50)
+  addressLine1      String?       @map("address_line1") @db.VarChar(255)
+  addressLine2      String?       @map("address_line2") @db.VarChar(255)
+  city              String?       @db.VarChar(100)
+  state             String?       @db.VarChar(100)
+  country           String?       @db.VarChar(100)
+  postalCode        String?       @map("postal_code") @db.VarChar(20)
+  timezone          String        @default("UTC") @db.VarChar(60)
+  defaultCurrencyId BigInt?       @map("default_currency_id")
+  logoUrl           String?       @map("logo_url") @db.VarChar(500)
+  status            CompanyStatus @default(trial)
+  createdBy         BigInt?       @map("created_by")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedBy         BigInt?       @map("updated_by")
+  updatedAt         DateTime?     @map("updated_at")
+  deletedBy         BigInt?       @map("deleted_by")
+  deletedAt         DateTime?     @map("deleted_at")
+  rowVersion        Int           @default(1) @map("row_version")
+
+  defaultCurrency     Currency?              @relation(fields: [defaultCurrencyId], references: [currencyId])
+  subscriptions       CompanySubscription[]
+  companyModules      CompanyModule[]
+  securityPolicy      CompanySecurityPolicy?
+  branches            Branch[]
+  departments         Department[]
+  designations        Designation[]
+  warehouses          Warehouse[]
+  roles               Role[]
+  userCompanies       UserCompany[]
+  userRoles           UserRole[]
+  userModuleAccess    UserModuleAccess[]
+  userPreferences     UserPreference[]
+  userSessions        UserSession[]
+  userLoginHistory    UserLoginHistory[]
+  userApiKeys         UserApiKey[]
+  userSignatures      UserSignature[]
+  userAttachments     UserAttachment[]
+  userDelegations     UserDelegation[]
+  userConsents        UserConsent[]
+  userAudits          UserAudit[]
+
+  @@map("companies")
+}

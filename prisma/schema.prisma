@@ -1,0 +1,13 @@
+// ERP IAM — multi-file Prisma schema
+// Models: prisma/iam/<table>/schema.prisma
+// Validation: prisma/iam/<table>/validation.sql (run after migrate)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}

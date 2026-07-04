@@ -1,0 +1,21 @@
+// iam | user_attachments
+
+model UserAttachment {
+  attachmentId BigInt       @id @default(autoincrement()) @map("attachment_id")
+  userId       BigInt       @map("user_id")
+  companyId    BigInt?      @map("company_id")
+  documentType DocumentType @map("document_type")
+  fileName     String?      @map("file_name") @db.VarChar(255)
+  filePath     String       @map("file_path") @db.VarChar(500)
+  fileSize     BigInt?      @map("file_size")
+  mimeType     String?      @map("mime_type") @db.VarChar(120)
+  expiryDate   DateTime?    @map("expiry_date") @db.Date
+  isVerified   Boolean      @default(false) @map("is_verified")
+  uploadedBy   BigInt?      @map("uploaded_by")
+  uploadedDate DateTime     @default(now()) @map("uploaded_date")
+
+  user    User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@map("user_attachments")
+}

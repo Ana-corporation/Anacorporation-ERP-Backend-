@@ -1,0 +1,22 @@
+// shared | currencies
+
+model Currency {
+  currencyId    BigInt    @id @default(autoincrement()) @map("currency_id")
+  code          String    @unique @db.VarChar(3)
+  name          String    @db.VarChar(100)
+  symbol        String?   @db.VarChar(8)
+  decimalPlaces Int       @default(2) @map("decimal_places") @db.SmallInt
+  isActive      Boolean   @default(true) @map("is_active")
+  createdBy     BigInt?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedBy     BigInt?   @map("updated_by")
+  updatedAt     DateTime? @map("updated_at")
+  deletedBy     BigInt?   @map("deleted_by")
+  deletedAt     DateTime? @map("deleted_at")
+  rowVersion    Int       @default(1) @map("row_version")
+
+  companies            Company[]
+  userCompaniesDefault UserCompany[] @relation("UserCompanyDefaultCurrency")
+
+  @@map("currencies")
+}

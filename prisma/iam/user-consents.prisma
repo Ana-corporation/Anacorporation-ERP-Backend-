@@ -1,0 +1,18 @@
+// iam | user_consents
+
+model UserConsent {
+  consentId      BigInt      @id @default(autoincrement()) @map("consent_id")
+  userId         BigInt      @map("user_id")
+  companyId      BigInt?     @map("company_id")
+  consentType    ConsentType @map("consent_type")
+  consentVersion String      @map("consent_version") @db.VarChar(20)
+  isAccepted     Boolean     @default(false) @map("is_accepted")
+  acceptedDate   DateTime?   @map("accepted_date")
+  ipAddress      String?     @map("ip_address")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  user    User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@map("user_consents")
+}

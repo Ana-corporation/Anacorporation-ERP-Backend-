@@ -1,0 +1,29 @@
+// subscription | modules
+
+model Module {
+  moduleId       BigInt    @id @default(autoincrement()) @map("module_id")
+  moduleCode     String    @unique @map("module_code") @db.VarChar(40)
+  moduleName     String    @map("module_name") @db.VarChar(120)
+  description    String?
+  icon           String?   @db.VarChar(80)
+  parentModuleId BigInt?   @map("parent_module_id")
+  sortOrder      Int       @default(0) @map("sort_order")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdBy      BigInt?   @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedBy      BigInt?   @map("updated_by")
+  updatedAt      DateTime? @map("updated_at")
+  deletedBy      BigInt?   @map("deleted_by")
+  deletedAt      DateTime? @map("deleted_at")
+  rowVersion     Int       @default(1) @map("row_version")
+
+  parent           Module?            @relation("ModuleHierarchy", fields: [parentModuleId], references: [moduleId])
+  children         Module[]           @relation("ModuleHierarchy")
+  planModules      PlanModule[]
+  companyModules   CompanyModule[]
+  permissions      Permission[]
+  rolePermissions  RolePermission[]
+  userModuleAccess UserModuleAccess[]
+
+  @@map("modules")
+}

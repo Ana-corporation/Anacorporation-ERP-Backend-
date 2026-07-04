@@ -1,0 +1,17 @@
+// iam | permissions
+
+model Permission {
+  permissionId   BigInt           @id @default(autoincrement()) @map("permission_id")
+  moduleId       BigInt           @map("module_id")
+  permissionCode String           @map("permission_code") @db.VarChar(60)
+  permissionName String           @map("permission_name") @db.VarChar(120)
+  action         PermissionAction
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  module          Module           @relation(fields: [moduleId], references: [moduleId], onDelete: Cascade)
+  rolePermissions RolePermission[]
+
+  @@unique([moduleId, permissionCode])
+  @@index([moduleId])
+  @@map("permissions")
+}

@@ -1,0 +1,20 @@
+// iam | user_signatures
+
+model UserSignature {
+  signatureId     BigInt        @id @default(autoincrement()) @map("signature_id")
+  userId          BigInt        @map("user_id")
+  companyId       BigInt?       @map("company_id")
+  signatureType   SignatureType @map("signature_type")
+  imagePath       String?       @map("image_path") @db.VarChar(500)
+  certificateData String?       @map("certificate_data")
+  isDefault       Boolean       @default(false) @map("is_default")
+  validFrom       DateTime?     @map("valid_from") @db.Date
+  validTo         DateTime?     @map("valid_to") @db.Date
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime?     @map("updated_at")
+
+  user    User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@map("user_signatures")
+}

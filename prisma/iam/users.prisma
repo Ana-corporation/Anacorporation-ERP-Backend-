@@ -1,0 +1,57 @@
+// iam | users
+
+model User {
+  userId          BigInt    @id @default(autoincrement()) @map("user_id")
+  userCode        String?   @unique @map("user_code") @db.VarChar(40)
+  username        String    @unique @db.VarChar(100)
+  displayName     String?   @map("display_name") @db.VarChar(200)
+  firstName       String?   @map("first_name") @db.VarChar(100)
+  middleName      String?   @map("middle_name") @db.VarChar(100)
+  lastName        String?   @map("last_name") @db.VarChar(100)
+  preferredName   String?   @map("preferred_name") @db.VarChar(100)
+  gender          Gender?
+  dateOfBirth     DateTime? @map("date_of_birth") @db.Date
+  email           String    @unique @db.VarChar(255)
+  secondaryEmail  String?   @map("secondary_email") @db.VarChar(255)
+  mobile          String?   @db.VarChar(30)
+  alternateMobile String?   @map("alternate_mobile") @db.VarChar(30)
+  countryCode     String?   @map("country_code") @db.VarChar(8)
+  languageCode    String    @default("en") @map("language_code") @db.VarChar(10)
+  timeZone        String    @default("UTC") @map("time_zone") @db.VarChar(60)
+  cultureCode     String?   @map("culture_code") @db.VarChar(15)
+  profilePhoto    String?   @map("profile_photo") @db.VarChar(500)
+  signatureImage  String?   @map("signature_image") @db.VarChar(500)
+  isActive        Boolean   @default(true) @map("is_active")
+  isLocked        Boolean   @default(false) @map("is_locked")
+  lockReason      String?   @map("lock_reason") @db.VarChar(255)
+  remarks         String?
+  createdBy       BigInt?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedBy       BigInt?   @map("updated_by")
+  updatedAt       DateTime? @map("updated_at")
+  deletedBy       BigInt?   @map("deleted_by")
+  deletedAt       DateTime? @map("deleted_at")
+  rowVersion      Int       @default(1) @map("row_version")
+
+  authentication   UserAuthentication?
+  mfaMethods       UserMfa[]
+  companies        UserCompany[]
+  roles            UserRole[]
+  moduleAccess     UserModuleAccess[]
+  preferences      UserPreference[]
+  devices          UserDevice[]
+  sessions         UserSession[]
+  loginHistory     UserLoginHistory[]
+  passwordHistory  UserPasswordHistory[]
+  apiKeys          UserApiKey[]
+  notifications    UserNotification?
+  signatures       UserSignature[]
+  attachments      UserAttachment[]
+  delegations      UserDelegation[]      @relation("Delegator")
+  delegatedTo      UserDelegation[]      @relation("Delegatee")
+  consents         UserConsent[]
+  audits           UserAudit[]
+
+  @@index([deletedAt])
+  @@map("users")
+}

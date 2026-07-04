@@ -1,0 +1,362 @@
+================================================================================
+  NEON CLOUD POSTGRESQL + PRISMA ORM — CONNECTION GUIDE
+  For ERP Backend Project (C:\ERP-Backend)
+================================================================================
+
+This guide explains:
+  1. What Neon is
+  2. How to create a Neon database
+  3. How to connect Prisma ORM to Neon
+  4. How to run migrations on Neon
+  5. How to use Neon with this ERP project
+
+
+================================================================================
+SECTION 1: WHAT IS NEON?
+================================================================================
+
+Neon (https://neon.tech) is a serverless PostgreSQL database hosted in the cloud.
+
+  WHY USE NEON FOR THIS PROJECT?
+  ------------------------------
+  - Free tier available (good for development)
+  - No need to install PostgreSQL on your PC
+  - Works from anywhere (team can share same DB)
+  - Automatic backups and scaling
+  - Fully compatible with Prisma ORM
+  - Same SQL as local PostgreSQL
+
+  WHAT STAYS LOCAL?
+  -----------------
+  Even with Neon, you still run on your PC:
+  - Node.js + NestJS API          (npm run start:dev)
+  - Redis                         (login sessions — still needed locally or Upstash)
+  - npm packages                  (npm install)
+
+  Only the DATABASE moves to Neon cloud.
+
+
+================================================================================
+SECTION 2: CREATE A NEON ACCOUNT & DATABASE
+================================================================================
+
+STEP 1 — Sign up
+  1. Go to: https://neon.tech
+  2. Click "Sign Up" (GitHub or Google login works)
+  3. Free tier is enough for development
+
+STEP 2 — Create a project
+  1. After login, click "New Project"
+  2. Project name  : erp-backend  (or any name)
+  3. Region        : Choose closest to you (e.g. AWS US East, EU)
+  4. PostgreSQL    : Use default version (16 is fine)
+  5. Click "Create Project"
+
+STEP 3 — Get your connection string
+  1. Open your project in Neon dashboard
+  2. Go to "Dashboard" or "Connection Details"
+  3. You will see a connection string like:
+
+     postgresql://username:password@ep-xxxx-xxxx.region.aws.neon.tech/neondb?sslmode=require
+
+  4. Click "Copy" to copy the connection string
+
+  IMPORTANT: Keep this secret. Never commit it to GitHub.
+
+
+================================================================================
+SECTION 3: UNDERSTAND NEON CONNECTION STRINGS
+================================================================================
+
+Neon gives you TWO types of connection strings:
+
+  TYPE 1 — POOLED connection (recommended for the running app)
+  -------------------------------------------------------------
+  Host contains:  -pooler
+  Example:
+    postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
+
+  Use for:
+    - NestJS API when running (DATABASE_URL in .env)
+    - Production deployments
+    - Handles many connections efficiently
+
+  TYPE 2 — DIRECT connection (recommended for migrations)
+  -------------------------------------------------------
+  Host does NOT contain: -pooler
+  Example:
+    postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require
+
+  Use for:
+    - Prisma migrations (prisma migrate dev / migrate deploy)
+    - Prisma db push
+    - Avoids timeout issues during schema changes
+
+  In Neon dashboard:
+    Connection Details → toggle "Pooled connection" ON/OFF to copy each URL.
+
+
+================================================================================
+SECTION 4: CONNECT PRISMA TO NEON (THIS PROJECT)
+================================================================================
+
+STEP 1 — Update your .env file
+  -----------------------------
+  Open: C:\ERP-Backend\.env
+
+  Replace the local DATABASE_URL with your Neon URLs:
+
+  # Pooled — used by NestJS app at runtime
+  DATABASE_URL="postgresql://USER:PASSWORD@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require"
+
+  # Direct — used by Prisma migrations (add this line)
+  DIRECT_DATABASE_URL="postgresql://USER:PASSWORD@ep-xxx.region.aws.neon.tech/neondb?sslmode=require"
+
+  Notes:
+  - Always include ?sslmode=require for Neon
+  - Wrap URL in double quotes if password has special characters
+  - Replace USER, PASSWORD, and host with your actual Neon values
+
+
+STEP 2 — Update prisma/schema.prisma (recommended for Neon)
+  -----------------------------------------------------------
+  Open: C:\ERP-Backend\prisma\schema.prisma
+
+  Change the datasource block from:
+
+    datasource db {
+      provider = "postgresql"
+      url      = env("DATABASE_URL")
+    }
+
+  To:
+
+    datasource db {
+      provider  = "postgresql"
+      url       = env("DATABASE_URL")
+      directUrl = env("DIRECT_DATABASE_URL")
+    }
+
+  Why?
+  - url       = pooled connection (app queries)
+  - directUrl = direct connection (migrations)
+
+
+STEP 3 — Add DIRECT_DATABASE_URL to .env.example (optional, for team)
+  -------------------------------------------------------------------
+  DIRECT_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require
+
+
+STEP 4 — Generate Prisma client
+  ------------------------------
+  Open terminal in project folder:
+
+    cd C:\ERP-Backend
+    npx prisma generate
+
+  This reads schema.prisma and creates the Prisma client in node_modules.
+
+
+STEP 5 — Run migrations on Neon (creates all tables)
+  ---------------------------------------------------
+    npx prisma migrate dev --name init
+
+  What this does:
+  - Connects to Neon using DIRECT_DATABASE_URL
+  - Creates all ERP tables (users, organizations, products, inventory, etc.)
+  - Saves migration files in prisma/migrations/
+
+  If prompted for migration name, use: init
+
+
+STEP 6 — Seed permissions (required for signup/login)
+  -----------------------------------------------------
+    npm run prisma:seed
+
+  This inserts RBAC permissions into the permissions table.
+
+
+STEP 7 — Verify connection
+  --------------------------
+  Option A — Prisma Studio (visual DB browser):
+    npx prisma studio
+    Opens: http://localhost:5555
+
+  Option B — Start the API:
+    npm run start:dev
+    Test: http://localhost:3000/api/v1/health
+
+  Option C — Neon dashboard:
+    Go to Neon → your project → "Tables" tab
+    You should see: users, organizations, products, etc.
+
+
+================================================================================
+SECTION 5: HOW PRISMA WORKS WITH NEON (SIMPLE EXPLANATION)
+================================================================================
+
+  YOUR CODE                    PRISMA                    NEON CLOUD
+  ----------                   ------                    ----------
+
+  auth.service.ts    -->   PrismaService    -->   PostgreSQL (Neon)
+  (NestJS)                 (@prisma/client)        (cloud server)
+
+  Flow:
+  1. You write code:  prisma.user.findFirst({ where: { email } })
+  2. Prisma converts it to SQL
+  3. SQL runs on Neon PostgreSQL over the internet
+  4. Result returns to your NestJS API
+
+  Configuration chain:
+  .env (DATABASE_URL)  -->  schema.prisma  -->  PrismaService  -->  Neon
+
+
+================================================================================
+SECTION 6: FULL .env EXAMPLE (NEON + LOCAL REDIS)
+================================================================================
+
+  # Application
+  NODE_ENV=development
+  PORT=3000
+  API_PREFIX=api/v1
+
+  # Neon PostgreSQL — POOLED (for app)
+  DATABASE_URL="postgresql://neondb_owner:YOUR_PASSWORD@ep-cool-name-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
+
+  # Neon PostgreSQL — DIRECT (for migrations)
+  DIRECT_DATABASE_URL="postgresql://neondb_owner:YOUR_PASSWORD@ep-cool-name-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
+
+  # JWT
+  JWT_SECRET=your-super-secret-jwt-key-change-in-production
+  JWT_ACCESS_EXPIRATION=15m
+  JWT_REFRESH_EXPIRATION=7d
+
+  # Redis — still local or use Upstash cloud Redis
+  REDIS_HOST=localhost
+  REDIS_PORT=6379
+  REDIS_PASSWORD=
+  REDIS_DB=0
+
+  # BullMQ
+  BULLMQ_PREFIX=erp
+
+
+================================================================================
+SECTION 7: LOCAL POSTGRESQL vs NEON — WHEN TO USE WHICH
+================================================================================
+
+  USE LOCAL (Docker PostgreSQL)     USE NEON CLOUD
+  -----------------------------     --------------
+  Offline development               Team sharing same DB
+  No internet needed                Deploy to production easily
+  docker compose up postgres        No Docker PostgreSQL needed
+  Faster for heavy migrations       Free tier for dev/staging
+
+  You can switch anytime — only DATABASE_URL in .env changes.
+  Prisma schema and code stay the same.
+
+
+================================================================================
+SECTION 8: COMMON COMMANDS (NEON + PRISMA)
+================================================================================
+
+  Command                              Purpose
+  -----------------------------------------------------------------------
+  npx prisma generate                  Regenerate client after schema change
+  npx prisma migrate dev --name xyz    Create + apply migration (development)
+  npx prisma migrate deploy            Apply migrations (production/CI)
+  npx prisma db push                   Push schema without migration file
+  npx prisma studio                    Visual database editor
+  npm run prisma:seed                  Seed permissions data
+  npx prisma migrate status            Check migration status on Neon
+
+
+================================================================================
+SECTION 9: TROUBLESHOOTING
+================================================================================
+
+  ERROR: "Can't reach database server"
+  ------------------------------------
+  Fix:
+  - Check internet connection
+  - Verify DATABASE_URL is correct (copy again from Neon dashboard)
+  - Ensure ?sslmode=require is at the end of the URL
+  - Check Neon project is not suspended (free tier sleeps after inactivity)
+
+  ERROR: "Migration failed" or timeout during migrate
+  ---------------------------------------------------
+  Fix:
+  - Use DIRECT_DATABASE_URL (non-pooler URL) for migrations
+  - Add directUrl to schema.prisma (see Section 4, Step 2)
+
+  ERROR: "Authentication failed"
+  ------------------------------
+  Fix:
+  - Reset password in Neon dashboard → Connection Details → Reset password
+  - Update .env with new connection string
+
+  ERROR: "Environment variable not found: DATABASE_URL"
+  ----------------------------------------------------
+  Fix:
+  - Create .env file: copy .env.example .env
+  - Add DATABASE_URL with your Neon connection string
+
+  ERROR: "Permission denied" or empty permissions on signup
+  -----------------------------------------------------------
+  Fix:
+  - Run: npm run prisma:seed
+
+  NEON DATABASE SLEEPING (free tier)
+  ----------------------------------
+  First request after idle may be slow (1-2 seconds).
+  Neon wakes up automatically. This is normal on free tier.
+
+
+================================================================================
+SECTION 10: PRODUCTION CHECKLIST (NEON)
+================================================================================
+
+  [ ] Use pooled DATABASE_URL in production app
+  [ ] Use DIRECT_DATABASE_URL only for migrations in CI/CD
+  [ ] Never commit .env to git
+  [ ] Use strong JWT_SECRET
+  [ ] Run: npx prisma migrate deploy (not migrate dev) in production
+  [ ] Enable Neon backups (paid plans) for production data
+  [ ] Consider Neon "Branching" for staging environments
+
+
+================================================================================
+SECTION 11: QUICK START — NEON ONLY (5 MINUTES)
+================================================================================
+
+  1. Create account at https://neon.tech
+  2. Create project → copy Pooled + Direct connection strings
+  3. cd C:\ERP-Backend
+  4. Edit .env → paste both URLs as DATABASE_URL and DIRECT_DATABASE_URL
+  5. Edit prisma/schema.prisma → add directUrl = env("DIRECT_DATABASE_URL")
+  6. npm install
+  7. npx prisma generate
+  8. npx prisma migrate dev --name init
+  9. npm run prisma:seed
+  10. npm run start:dev
+  11. Open http://localhost:3000/docs → test POST /auth/signup
+
+
+================================================================================
+RELATED FILES IN THIS PROJECT
+================================================================================
+
+  prisma/schema.prisma     Database models (tables)
+  prisma/seed.ts             Permission seed data
+  prisma/migrations/         Migration history (created after migrate dev)
+  src/infrastructure/prisma/prisma.service.ts   Prisma connection in NestJS
+  .env                       Your secrets (Neon URLs go here)
+  .env.example               Template (no real passwords)
+
+
+================================================================================
+END OF GUIDE
+================================================================================
+
+Neon docs    : https://neon.tech/docs
+Prisma + Neon: https://www.prisma.io/docs/guides/database/neon

@@ -1,0 +1,34 @@
+# compiled output
+/dist
+/node_modules
+
+# logs
+logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# tests
+/coverage
+/.nyc_output
+
+# IDE
+/.idea
+/.vscode
+
+# env
+.env
+.env.local
+.env.*.local
+
+# prisma
+/prisma/migrations/**/migration_lock.toml
+
+# gcp credentials
+*.json
+!package.json
+!tsconfig.json
+!nest-cli.json
+!tsconfig.build.json

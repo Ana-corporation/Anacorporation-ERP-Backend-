@@ -1,0 +1,22 @@
+// audit | user_audit
+
+model UserAudit {
+  auditId     BigInt          @id @default(autoincrement()) @map("audit_id")
+  userId      BigInt?         @map("user_id")
+  companyId   BigInt?         @map("company_id")
+  action      UserAuditAction
+  entityName  String          @map("entity_name") @db.VarChar(80)
+  entityId    BigInt?         @map("entity_id")
+  oldValue    Json?           @map("old_value")
+  newValue    Json?           @map("new_value")
+  ipAddress   String?         @map("ip_address")
+  performedBy BigInt?         @map("performed_by")
+  performedAt DateTime        @default(now()) @map("performed_at")
+
+  user    User?    @relation(fields: [userId], references: [userId], onDelete: SetNull)
+  company Company? @relation(fields: [companyId], references: [companyId])
+
+  @@index([userId])
+  @@index([entityName, entityId])
+  @@map("user_audit")
+}

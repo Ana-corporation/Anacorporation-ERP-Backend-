@@ -1,0 +1,85 @@
+
+
+
+
+Month End
+
+↓
+
+All Transactions Completed
+
+↓
+
+Approve Pending Entries
+
+↓
+
+Post Accruals
+
+↓
+
+Calculate Depreciation
+
+↓
+
+Inventory Valuation
+
+↓
+
+Bank Reconciliation
+
+↓
+
+Vendor Reconciliation
+
+↓
+
+Customer Reconciliation
+
+↓
+
+Tax Calculation
+
+↓
+
+Close AP
+
+↓
+
+Close AR
+
+↓
+
+Close Inventory
+
+↓
+
+Close Payroll
+
+↓
+
+General Ledger Closing
+
+↓
+
+Trial Balance
+
+↓
+
+Profit & Loss
+
+↓
+
+Balance Sheet
+
+↓
+
+Cash Flow
+
+↓
+
+Management Approval
+
+↓
+
+Month Closed

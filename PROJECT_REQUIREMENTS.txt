@@ -1,0 +1,266 @@
+================================================================================
+  ERP BACKEND - PROJECT REQUIREMENTS & NPM PACKAGES
+  Multi-tenant Manufacturing ERP (NestJS + PostgreSQL + Redis + GCS)
+================================================================================
+
+Generated for: C:\ERP-Backend
+Install all npm packages with:  npm install
+
+
+================================================================================
+SECTION 1: SOFTWARE TO INSTALL ON YOUR DEVICE (NOT npm)
+================================================================================
+
+These must be installed separately on your Windows PC:
+
+  1. Node.js (LTS)
+     Download : https://nodejs.org
+     Purpose  : Runs the NestJS API server
+     Includes : npm (package manager)
+
+  2. Docker Desktop (RECOMMENDED)
+     Download : https://www.docker.com/products/docker-desktop/
+     Purpose  : Runs PostgreSQL + Redis in containers
+     Command  : docker compose up -d postgres redis
+
+     OR install manually:
+       - PostgreSQL : https://www.postgresql.org/download/windows/
+       - Redis      : https://www.memurai.com/  (Redis for Windows)
+
+  3. Google Cloud Platform (OPTIONAL - for file uploads later)
+     Purpose  : Google Cloud Storage (GCS) for documents/images
+     Needs    : GCP project, bucket, service account JSON key file
+     Config   : Set GCS_PROJECT_ID, GCS_BUCKET, GCS_KEY_FILE_PATH in .env
+
+  4. Git (OPTIONAL but recommended)
+     Download : https://git-scm.com/download/win
+     Purpose  : Version control
+
+
+================================================================================
+SECTION 2: PRODUCTION DEPENDENCIES (npm install --production)
+================================================================================
+
+These are required to RUN the application:
+
+  PACKAGE                      VERSION    PURPOSE
+  --------------------------------------------------------------------------
+  @nestjs/common               ^10.4.15   NestJS core decorators, modules
+  @nestjs/core                 ^10.4.15   NestJS application core
+  @nestjs/platform-express     ^10.4.15   HTTP server (Express adapter)
+  @nestjs/config               ^3.3.0     Environment configuration (.env)
+  @nestjs/jwt                  ^10.2.0    JWT token generation (login/auth)
+  @nestjs/passport             ^10.0.3    Authentication integration
+  @nestjs/swagger              ^8.1.0     API documentation (Swagger UI)
+  @nestjs/terminus             ^10.2.3    Health check endpoints
+  @nestjs/websockets           ^10.4.15   WebSocket support
+  @nestjs/platform-socket.io   ^10.4.15   Socket.io WebSocket adapter
+  @nestjs/bullmq               ^10.2.3    NestJS BullMQ queue integration
+  @prisma/client               ^6.1.0     PostgreSQL ORM client (generated)
+  @google-cloud/storage        ^7.14.0    Google Cloud Storage file uploads
+  bcrypt                       ^5.1.1     Password hashing (signup/login)
+  bullmq                       ^5.34.3    Background job queues
+  class-validator              ^0.14.1    Request DTO validation
+  class-transformer            ^0.5.1     DTO transformation
+  ioredis                      ^5.4.2     Redis client (sessions, cache)
+  passport                     ^0.7.0     Authentication middleware
+  passport-jwt                 ^4.0.1     JWT strategy for Passport
+  reflect-metadata             ^0.2.2     Decorator metadata (required by NestJS)
+  rxjs                         ^7.8.1     Reactive programming (NestJS dependency)
+  socket.io                    ^4.8.1     Real-time WebSocket events
+  uuid                         ^11.0.3    Unique ID generation (sessions, files)
+
+
+================================================================================
+SECTION 3: DEVELOPMENT DEPENDENCIES (npm install - dev only)
+================================================================================
+
+These are needed for BUILD, TEST, and DEVELOPMENT only:
+
+  PACKAGE                      VERSION    PURPOSE
+  --------------------------------------------------------------------------
+  @nestjs/cli                  ^10.4.9    NestJS command line (nest start, build)
+  @nestjs/schematics           ^10.2.3    NestJS code generators
+  @nestjs/testing              ^10.4.15   Unit testing utilities
+  prisma                       ^6.1.0     Database migrations & schema tool
+  typescript                   ^5.7.2     TypeScript compiler
+  ts-node                      ^10.9.2    Run TypeScript directly (seed script)
+  ts-loader                    ^9.5.1     TypeScript loader for builds
+  tsc-alias                    ^1.8.10    Resolve path aliases after build
+  tsconfig-paths               ^4.2.0     Path alias support (@/ imports)
+  ts-jest                      ^29.2.5    Jest TypeScript support
+  jest                         ^29.7.0    Unit testing framework
+  prettier                     ^3.4.2     Code formatting
+  eslint                       ^9.17.0    Code linting
+  eslint-config-prettier       ^9.1.0     ESLint + Prettier integration
+  eslint-plugin-prettier      ^5.2.1     Prettier ESLint rules
+  @typescript-eslint/eslint-plugin ^8.18.1  TypeScript ESLint rules
+  @typescript-eslint/parser    ^8.18.1   TypeScript parser for ESLint
+  source-map-support           ^0.5.21    Stack trace support in production
+  @types/bcrypt                ^5.0.2    TypeScript types for bcrypt
+  @types/express               ^5.0.0    TypeScript types for Express
+  @types/jest                  ^29.5.14  TypeScript types for Jest
+  @types/node                  ^22.10.2  TypeScript types for Node.js
+  @types/passport-jwt          ^4.0.1    TypeScript types for passport-jwt
+  @types/uuid                  ^10.0.0   TypeScript types for uuid
+
+
+================================================================================
+SECTION 4: PACKAGE GROUPS BY FEATURE
+================================================================================
+
+  AUTH (Login / Signup / JWT)
+  ---------------------------
+  @nestjs/jwt, @nestjs/passport, passport, passport-jwt, bcrypt, uuid, ioredis
+
+  DATABASE
+  --------
+  @prisma/client, prisma (dev)
+
+  API & VALIDATION
+  ----------------
+  @nestjs/common, @nestjs/core, @nestjs/platform-express,
+  class-validator, class-transformer, @nestjs/swagger
+
+  MULTI-TENANT / RBAC
+  -------------------
+  (Uses Prisma + custom guards — no extra npm package)
+
+  REDIS & QUEUES
+  --------------
+  ioredis, bullmq, @nestjs/bullmq
+
+  FILE STORAGE (GCS)
+  ------------------
+  @google-cloud/storage
+
+  WEBSOCKETS (Real-time)
+  ----------------------
+  @nestjs/websockets, @nestjs/platform-socket.io, socket.io
+
+  HEALTH & MONITORING
+  -------------------
+  @nestjs/terminus
+
+  BUILD & DEV TOOLS
+  -----------------
+  @nestjs/cli, typescript, ts-node, tsc-alias, tsconfig-paths, prettier, eslint, jest
+
+
+================================================================================
+SECTION 5: ENVIRONMENT VARIABLES (.env file)
+================================================================================
+
+  Copy .env.example to .env and configure:
+
+  APP
+  ---
+  NODE_ENV=development
+  PORT=3000
+  API_PREFIX=api/v1
+  APP_NAME=ERP Backend
+
+  DATABASE (PostgreSQL)
+  ---------------------
+  DATABASE_URL=postgresql://erp:erp_secret@localhost:5432/erp_db?schema=public
+
+  JWT (Authentication)
+  --------------------
+  JWT_SECRET=your-secret-key-min-32-characters
+  JWT_ACCESS_EXPIRATION=15m
+  JWT_REFRESH_EXPIRATION=7d
+
+  REDIS
+  -----
+  REDIS_HOST=localhost
+  REDIS_PORT=6379
+  REDIS_PASSWORD=
+  REDIS_DB=0
+
+  BULLMQ
+  ------
+  BULLMQ_PREFIX=erp
+
+  GOOGLE CLOUD STORAGE (optional for auth phase)
+  ----------------------------------------------
+  GCS_PROJECT_ID=your-gcp-project-id
+  GCS_BUCKET=your-erp-bucket
+  GCS_KEY_FILE_PATH=./gcp-service-account.json
+  GCS_PUBLIC_BASE_URL=
+
+
+================================================================================
+SECTION 6: NPM SCRIPTS (commands you will use)
+================================================================================
+
+  npm install              Install all packages (run this first)
+  npm run start:dev        Start API in development mode (hot reload)
+  npm run start:prod       Start production build
+  npm run build            Compile TypeScript to dist/
+  npx prisma generate      Generate Prisma client after schema changes
+  npx prisma migrate dev   Create/apply database migrations
+  npm run prisma:seed      Seed permissions into database
+  npx prisma studio        Open visual database browser
+  npm run test             Run unit tests
+  npm run lint             Run ESLint
+
+
+================================================================================
+SECTION 7: INSTALLATION STEPS (ORDER)
+================================================================================
+
+  Step 1 : Install Node.js LTS from https://nodejs.org
+  Step 2 : Install Docker Desktop from https://www.docker.com/products/docker-desktop/
+  Step 3 : Open terminal in project folder:
+           cd C:\ERP-Backend
+  Step 4 : Install npm packages:
+           npm install
+  Step 5 : Copy environment file:
+           copy .env.example .env
+  Step 6 : Start PostgreSQL + Redis:
+           docker compose up -d postgres redis
+  Step 7 : Setup database:
+           npx prisma generate
+           npx prisma migrate dev --name init
+           npm run prisma:seed
+  Step 8 : Start the server:
+           npm run start:dev
+  Step 9 : Open Swagger docs:
+           http://localhost:3000/docs
+
+
+================================================================================
+SECTION 8: WHAT IS NOT AN npm PACKAGE (project files)
+================================================================================
+
+  File / Folder              Purpose
+  --------------------------------------------------------------------------
+  prisma/schema.prisma       Database schema (tables, relations)
+  prisma/seed.ts             Initial permission data
+  src/                       Application source code
+  docker-compose.yml         PostgreSQL + Redis + API containers
+  Dockerfile                 Production API container image
+  .env                       Local secrets (DO NOT commit to git)
+  .env.example               Template for .env
+  scripts/setup.ps1          Automated setup script (Windows)
+
+
+================================================================================
+SECTION 9: MINIMUM vs FULL INSTALL
+================================================================================
+
+  MINIMUM (to test login/signup):
+  - Node.js + npm install
+  - PostgreSQL (Docker or local)
+  - Redis (Docker or local)
+  - npx prisma migrate + seed
+
+  FULL (all features):
+  - Everything above
+  - Google Cloud Storage credentials (file uploads)
+  - Docker (for production-like deployment)
+
+
+================================================================================
+END OF FILE
+================================================================================

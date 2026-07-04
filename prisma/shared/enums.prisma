@@ -1,0 +1,184 @@
+// IAM enums (match SQL CHECK constraints)
+
+enum CompanyStatus {
+  trial
+  active
+  suspended
+  cancelled
+
+  @@map("company_status")
+}
+
+enum SubscriptionStatus {
+  active
+  expired
+  cancelled
+  trial
+  pending
+
+  @@map("subscription_status")
+}
+
+enum BillingCycle {
+  monthly
+  yearly
+  quarterly
+
+  @@map("billing_cycle")
+}
+
+enum LicenseType {
+  named
+  concurrent
+
+  @@map("license_type")
+}
+
+enum MembershipStatus {
+  active
+  suspended
+  left
+  invited
+
+  @@map("membership_status")
+}
+
+enum ModuleAccessType {
+  grant
+  deny
+
+  @@map("module_access_type")
+}
+
+enum PermissionAction {
+  view
+  create
+  edit
+  delete
+  approve
+  export
+  print
+  import
+  manage
+
+  @@map("permission_action")
+}
+
+enum MfaType {
+  totp
+  sms
+  email
+  webauthn
+
+  @@map("mfa_type")
+}
+
+enum HashAlgorithm {
+  bcrypt
+  argon2id
+  argon2i
+  scrypt
+  pbkdf2
+
+  @@map("hash_algorithm")
+}
+
+enum Gender {
+  male
+  female
+  other
+  prefer_not_to_say
+
+  @@map("gender")
+}
+
+enum SessionStatus {
+  active
+  expired
+  revoked
+  logged_out
+
+  @@map("session_status")
+}
+
+enum LoginResult {
+  success
+  failure
+
+  @@map("login_result")
+}
+
+enum ApiKeyStatus {
+  active
+  revoked
+  expired
+
+  @@map("api_key_status")
+}
+
+enum DelegationStatus {
+  active
+  expired
+  cancelled
+
+  @@map("delegation_status")
+}
+
+enum ConsentType {
+  privacy_policy
+  terms
+  nda
+  marketing
+  cookies
+
+  @@map("consent_type")
+}
+
+enum SignatureType {
+  invoice
+  purchase
+  approval
+  digital_certificate
+  rubber_stamp
+
+  @@map("signature_type")
+}
+
+enum DocumentType {
+  passport
+  driving_license
+  contract
+  resume
+  certificate
+  nda
+  other
+
+  @@map("document_type")
+}
+
+enum UserAuditAction {
+  create
+  update
+  delete
+  login
+  logout
+  role_change
+  password_change
+  mfa_enable
+  mfa_disable
+  lock
+  unlock
+  invite
+  suspend
+  restore
+
+  @@map("user_audit_action")
+}
+
+enum Theme {
+  light
+  dark
+  system
+
+  @@map("theme")
+}

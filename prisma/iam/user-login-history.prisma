@@ -1,0 +1,22 @@
+// iam | user_login_history
+
+model UserLoginHistory {
+  loginHistoryId  BigInt      @id @default(autoincrement()) @map("login_history_id")
+  userId          BigInt?     @map("user_id")
+  companyId       BigInt?     @map("company_id")
+  loginDate       DateTime    @default(now()) @map("login_date")
+  loginResult     LoginResult @map("login_result")
+  failureReason   String?     @map("failure_reason") @db.VarChar(150)
+  ipAddress       String?     @map("ip_address")
+  browser         String?     @db.VarChar(80)
+  device          String?     @db.VarChar(120)
+  country         String?     @db.VarChar(100)
+  city            String?     @db.VarChar(100)
+  sessionDuration Int?        @map("session_duration")
+
+  user    User?    @relation(fields: [userId], references: [userId], onDelete: SetNull)
+  company Company? @relation(fields: [companyId], references: [companyId])
+
+  @@index([userId])
+  @@map("user_login_history")
+}

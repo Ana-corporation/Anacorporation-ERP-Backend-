@@ -1,0 +1,337 @@
+================================================================================
+  NEON CONSOLE — WHAT TO GET & HOW TO ADD DEVELOPERS
+  For ERP Backend Project (C:\ERP-Backend)
+  Your org: org-falling-dream-05010314
+================================================================================
+
+You are here:
+  https://console.neon.tech/app/org-falling-dream-05010314/projects
+
+This guide answers:
+  1. What to do on that page RIGHT NOW
+  2. What information to copy and put in your project
+  3. What you can share with another developer (safely)
+  4. How to add a second developer for collaboration
+
+
+================================================================================
+PART 1: WHAT YOU SEE ON THE PROJECTS PAGE
+================================================================================
+
+On the Projects page you will see either:
+
+  A) No project yet        → Click "New Project" first
+  B) One or more projects  → Click your project name (e.g. erp-backend)
+
+Your organization name might show as something like "falling-dream" — that is
+normal. The org is just your team/account container.
+
+
+================================================================================
+PART 2: CREATE A PROJECT (IF YOU DON'T HAVE ONE YET)
+================================================================================
+
+STEP 1 — Click "New Project"
+
+STEP 2 — Fill in:
+  Project name   : erp-backend
+  Postgres version: 16 (default is fine)
+  Region         : Pick closest to you (e.g. US East, Asia, EU)
+
+STEP 3 — Click "Create Project"
+
+STEP 4 — After creation, Neon shows "Connection Details" automatically.
+         THIS is the screen you need — keep it open.
+
+
+================================================================================
+PART 3: WHAT TO GET FROM NEON (COPY THESE)
+================================================================================
+
+Inside your project → click "Dashboard" or "Connect"
+
+You need TWO connection strings:
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  1. POOLED connection (for running the NestJS app)                │
+  │     Toggle: "Pooled connection" = ON                              │
+  │     Label in UI: often shows "-pooler" in the hostname            │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  2. DIRECT connection (for Prisma migrations)                     │
+  │     Toggle: "Pooled connection" = OFF                             │
+  │     Label in UI: hostname WITHOUT "-pooler"                       │
+  └─────────────────────────────────────────────────────────────────────┘
+
+Also copy / note these (safe to note):
+
+  Item                    Where to find it
+  -----------------------------------------------------------------------
+  Project name            Top of project page (e.g. erp-backend)
+  Database name           Usually "neondb" (in connection string)
+  Region                  Project settings / dashboard
+  Postgres version        Project settings (e.g. 16)
+
+Example connection string shape (NOT real — replace with yours):
+
+  postgresql://neondb_owner:ABC123xyz@ep-cool-name-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require
+              ↑ user          ↑ password   ↑ host                                              ↑ database
+
+WHERE TO PUT THEM IN YOUR ERP PROJECT:
+
+  File: C:\ERP-Backend\.env
+
+  DATABASE_URL="paste POOLED string here"
+  DIRECT_DATABASE_URL="paste DIRECT string here"
+
+
+================================================================================
+PART 4: WHAT TO FEED YOUR DEVELOPER / AI ASSISTANT
+================================================================================
+
+SAFE TO SHARE (for help setting up):
+  ✓ Project name
+  ✓ Region
+  ✓ That you use Neon + Prisma
+  ✓ Error messages from terminal (npm, prisma migrate)
+  ✓ Screenshot of Connection Details (HIDE/blur the password)
+
+DO NOT SHARE PUBLICLY OR IN CHAT:
+  ✗ Full connection string with password
+  ✗ Database password alone
+  ✗ API keys
+
+If you need help here in Cursor, you can say:
+  "I created Neon project erp-backend in us-east-2, migrate failed with: [error]"
+  You do NOT need to paste your password.
+
+For your teammate developer — see PART 6 below (invite them instead of
+sending passwords).
+
+
+================================================================================
+PART 5: AFTER COPYING URLs — RUN THESE COMMANDS
+================================================================================
+
+Open terminal in C:\ERP-Backend:
+
+  cd C:\ERP-Backend
+
+  # 1. Install packages (if not done)
+  npm install
+
+  # 2. Paste URLs in .env first, then:
+  npx prisma generate
+  npx prisma migrate dev --name init
+  npm run prisma:seed
+
+  # 3. Start API
+  npm run start:dev
+
+Check:
+  http://localhost:3000/docs
+  http://localhost:3000/api/v1/health
+
+
+================================================================================
+PART 6: ADD ANOTHER DEVELOPER — TWO OPTIONS
+================================================================================
+
+Choose based on how much access they need:
+
+  OPTION A — Full team member (recommended for permanent dev on your team)
+  OPTION B — Project collaborator (good for freelancer / limited access)
+
+
+--------------------------------------------------------------------------------
+OPTION A — ADD ORGANIZATION MEMBER (full team access)
+--------------------------------------------------------------------------------
+
+Best for: Your co-founder, permanent backend developer, full team member.
+
+What they get:
+  - Access to ALL projects in your organization
+  - Can see connection strings in Neon console
+  - Can run migrations, view tables, create branches
+  - Role: Admin or Member
+
+STEPS:
+
+  1. Go to: https://console.neon.tech/app/org-falling-dream-05010314
+
+  2. In left sidebar, click "People" (or Organization → People)
+
+  3. Click "Invite member"
+
+  4. Enter developer's email (must be email they use for Neon signup)
+     Example: dev@yourcompany.com
+
+  5. Choose role:
+       Admin  = can invite others, billing, delete projects
+       Member = can use all projects, cannot change org billing/settings
+
+  6. Click Send invite
+
+  7. Developer receives email → creates Neon account (if new) → accepts invite
+
+  8. They log in → see same projects under your organization
+
+WHAT THE DEVELOPER DOES ON THEIR PC:
+
+  1. Accept invite email
+  2. Log into https://console.neon.tech
+  3. Open project → Connection Details → copy their own connection strings
+  4. Clone ERP repo: git clone ...
+  5. Create .env with DATABASE_URL + DIRECT_DATABASE_URL
+  6. npm install → prisma generate → migrate → start:dev
+
+They do NOT need your password — they get access through Neon invite.
+
+
+--------------------------------------------------------------------------------
+OPTION B — ADD PROJECT COLLABORATOR (single project only)
+--------------------------------------------------------------------------------
+
+Best for: External freelancer, contractor, someone who only needs THIS database.
+
+What they get:
+  - Access to ONE project only (erp-backend)
+  - Cannot delete the project
+  - Project appears under "Shared with me" in their Neon account
+  - Usage is billed to YOUR account
+
+STEPS:
+
+  1. Open your project (e.g. erp-backend)
+
+  2. Click "Settings" (project settings, not org settings)
+
+  3. Click "Collaborators" in the left sidebar
+
+  4. Click "Invite"
+
+  5. Enter developer email(s), comma-separated for multiple
+
+  6. Click "Invite" to confirm
+
+  7. Developer gets email → accepts → sees project as "Shared with me"
+
+WHAT THE DEVELOPER DOES:
+
+  Same as Option A — they copy connection strings from their own Neon console
+  after accepting the invite.
+
+
+--------------------------------------------------------------------------------
+OPTION A vs OPTION B — QUICK CHOICE
+--------------------------------------------------------------------------------
+
+  Situation                              Use
+  -----------------------------------------------------------------------
+  Permanent team developer               Organization Member
+  Co-founder / tech lead                 Organization Admin
+  Freelancer for 2 months                Project Collaborator
+  Only database access, not whole org    Project Collaborator
+
+
+================================================================================
+PART 7: WHAT DEVELOPERS SHARE IN THE TEAM (BEST PRACTICE)
+================================================================================
+
+DO share via team channel / repo:
+  - Git repository access (GitHub/GitLab)
+  - .env.example (template WITHOUT real passwords)
+  - NEON_DATABASE_GUIDE.txt (this project's guide)
+  - Redis setup instructions
+  - API docs URL: http://localhost:3000/docs
+
+DO NOT commit to Git:
+  - .env file (real passwords)
+  - gcp-service-account.json
+
+Each developer creates their OWN .env locally with:
+  - Same Neon project connection strings (if invited to Neon)
+  OR
+  - Their own Neon branch (advanced — optional for later)
+
+Optional — Neon Branching (advanced, for later):
+  Each dev can get a separate database branch from Neon for isolated testing.
+  Not required for starting — one shared dev database is fine for small teams.
+
+
+================================================================================
+PART 8: CHECKLIST — YOU ON NEON CONSOLE RIGHT NOW
+================================================================================
+
+  [ ] Logged into console.neon.tech
+  [ ] On org page: org-falling-dream-05010314 / projects
+  [ ] Created project named: erp-backend (or similar)
+  [ ] Copied POOLED connection string
+  [ ] Copied DIRECT connection string
+  [ ] Pasted both into C:\ERP-Backend\.env
+  [ ] Ran: npx prisma generate
+  [ ] Ran: npx prisma migrate dev --name init
+  [ ] Ran: npm run prisma:seed
+  [ ] Ran: npm run start:dev
+  [ ] Tested signup at http://localhost:3000/docs
+  [ ] Invited second developer (People OR Collaborators)
+
+
+================================================================================
+PART 9: VISUAL PATH IN NEON CONSOLE
+================================================================================
+
+  Console home
+      │
+      └── Your org (falling-dream...)
+              │
+              ├── Projects  ← YOU ARE HERE
+              │       │
+              │       └── [erp-backend]  ← click project
+              │               │
+              │               ├── Dashboard / Connect  ← GET connection strings
+              │               ├── Tables               ← see data after migrate
+              │               └── Settings
+              │                       └── Collaborators  ← invite freelancer
+              │
+              └── People  ← invite full team member
+
+
+================================================================================
+PART 10: IF YOU WANT TO TELL ME YOUR STATUS (SAFE MESSAGE TEMPLATE)
+================================================================================
+
+Copy this, fill in blanks, paste in chat — NO passwords:
+
+  Neon status:
+  - Project created: Yes / No
+  - Project name: ___________
+  - Region: ___________
+  - Connection strings added to .env: Yes / No
+  - prisma migrate result: Success / Error: ___________
+  - Second developer invite type: Member / Collaborator / Not yet
+
+
+================================================================================
+RELATED FILES IN ERP PROJECT
+================================================================================
+
+  NEON_DATABASE_GUIDE.txt     Full Prisma + Neon technical guide
+  PROJECT_REQUIREMENTS.txt      All npm packages and install steps
+  .env.example                  Template for environment variables
+  prisma/schema.prisma          Database models
+
+
+================================================================================
+OFFICIAL NEON DOCS
+================================================================================
+
+  Project collaboration : https://neon.com/docs/guides/project-collaboration-guide
+  Organizations         : https://neon.com/docs/manage/organizations
+  Connect to Neon       : https://neon.com/docs/connect/connect-intro
+
+
+================================================================================
+END OF GUIDE
+================================================================================

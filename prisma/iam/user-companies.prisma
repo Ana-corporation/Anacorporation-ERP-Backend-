@@ -1,0 +1,38 @@
+// iam | user_companies
+
+model UserCompany {
+  userCompanyId     BigInt           @id @default(autoincrement()) @map("user_company_id")
+  userId            BigInt           @map("user_id")
+  companyId         BigInt           @map("company_id")
+  employeeId        String?          @map("employee_id") @db.VarChar(40)
+  departmentId      BigInt?          @map("department_id")
+  designationId     BigInt?          @map("designation_id")
+  branchId          BigInt?          @map("branch_id")
+  warehouseId       BigInt?          @map("warehouse_id")
+  defaultCurrencyId BigInt?          @map("default_currency_id")
+  licenseType       LicenseType      @default(named) @map("license_type")
+  isDefault         Boolean          @default(false) @map("is_default")
+  hireDate          DateTime?        @map("hire_date") @db.Date
+  exitDate          DateTime?        @map("exit_date") @db.Date
+  status            MembershipStatus @default(invited)
+  createdBy         BigInt?          @map("created_by")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedBy         BigInt?          @map("updated_by")
+  updatedAt         DateTime?        @map("updated_at")
+  deletedBy         BigInt?          @map("deleted_by")
+  deletedAt         DateTime?        @map("deleted_at")
+  rowVersion        Int              @default(1) @map("row_version")
+
+  user            User         @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company         Company      @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  department      Department?  @relation(fields: [departmentId], references: [departmentId])
+  designation     Designation? @relation(fields: [designationId], references: [designationId])
+  branch          Branch?      @relation(fields: [branchId], references: [branchId])
+  warehouse       Warehouse?   @relation(fields: [warehouseId], references: [warehouseId])
+  defaultCurrency Currency?    @relation("UserCompanyDefaultCurrency", fields: [defaultCurrencyId], references: [currencyId])
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
+  @@map("user_companies")
+}

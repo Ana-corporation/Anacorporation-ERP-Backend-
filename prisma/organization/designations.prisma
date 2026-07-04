@@ -1,0 +1,24 @@
+// organization | designations
+
+model Designation {
+  designationId   BigInt    @id @default(autoincrement()) @map("designation_id")
+  companyId       BigInt    @map("company_id")
+  designationCode String    @map("designation_code") @db.VarChar(30)
+  name            String    @db.VarChar(150)
+  gradeLevel      Int?      @map("grade_level") @db.SmallInt
+  isActive        Boolean   @default(true) @map("is_active")
+  createdBy       BigInt?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedBy       BigInt?   @map("updated_by")
+  updatedAt       DateTime? @map("updated_at")
+  deletedBy       BigInt?   @map("deleted_by")
+  deletedAt       DateTime? @map("deleted_at")
+  rowVersion      Int       @default(1) @map("row_version")
+
+  company       Company       @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  userCompanies UserCompany[]
+
+  @@unique([companyId, designationCode])
+  @@index([companyId])
+  @@map("designations")
+}

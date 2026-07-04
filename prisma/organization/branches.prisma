@@ -1,0 +1,29 @@
+// organization | branches
+
+model Branch {
+  branchId   BigInt    @id @default(autoincrement()) @map("branch_id")
+  companyId  BigInt    @map("company_id")
+  branchCode String    @map("branch_code") @db.VarChar(30)
+  name       String    @db.VarChar(150)
+  address    String?   @db.VarChar(255)
+  city       String?   @db.VarChar(100)
+  country    String?   @db.VarChar(100)
+  phone      String?   @db.VarChar(30)
+  isActive   Boolean   @default(true) @map("is_active")
+  createdBy  BigInt?   @map("created_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedBy  BigInt?   @map("updated_by")
+  updatedAt  DateTime? @map("updated_at")
+  deletedBy  BigInt?   @map("deleted_by")
+  deletedAt  DateTime? @map("deleted_at")
+  rowVersion Int       @default(1) @map("row_version")
+
+  company         Company          @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  warehouses      Warehouse[]
+  userCompanies   UserCompany[]
+  userPreferences UserPreference[]
+
+  @@unique([companyId, branchCode])
+  @@index([companyId])
+  @@map("branches")
+}

@@ -1,0 +1,22 @@
+// iam | user_roles
+
+model UserRole {
+  userRoleId   BigInt    @id @default(autoincrement()) @map("user_role_id")
+  userId       BigInt    @map("user_id")
+  companyId    BigInt    @map("company_id")
+  roleId       BigInt    @map("role_id")
+  assignedBy   BigInt?   @map("assigned_by")
+  assignedDate DateTime  @default(now()) @map("assigned_date")
+  validUntil   DateTime? @map("valid_until")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  rowVersion   Int       @default(1) @map("row_version")
+
+  user    User    @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [roleId], onDelete: Cascade)
+
+  @@unique([userId, companyId, roleId])
+  @@index([userId, companyId])
+  @@map("user_roles")
+}

@@ -1,0 +1,37 @@
+// iam | user_preferences
+
+model UserPreference {
+  preferenceId          BigInt    @id @default(autoincrement()) @map("preference_id")
+  userId                BigInt    @map("user_id")
+  companyId             BigInt?   @map("company_id")
+  theme                 Theme     @default(light)
+  accentColor           String?   @map("accent_color") @db.VarChar(20)
+  language              String    @default("en") @db.VarChar(10)
+  dashboardLayout       String?   @map("dashboard_layout") @db.VarChar(40)
+  homePage              String?   @map("home_page") @db.VarChar(120)
+  menuStyle             String?   @map("menu_style") @db.VarChar(30)
+  fontSize              String?   @map("font_size") @db.VarChar(20)
+  density               String?   @db.VarChar(20)
+  dateFormat            String    @default("yyyy-MM-dd") @map("date_format") @db.VarChar(30)
+  timeFormat            String    @default("HH:mm") @map("time_format") @db.VarChar(20)
+  numberFormat          String?   @map("number_format") @db.VarChar(30)
+  currencyFormat        String?   @map("currency_format") @db.VarChar(30)
+  defaultPrinter        String?   @map("default_printer") @db.VarChar(120)
+  defaultReportFormat   String?   @map("default_report_format") @db.VarChar(20)
+  defaultWarehouseId    BigInt?   @map("default_warehouse_id")
+  defaultBranchId       BigInt?   @map("default_branch_id")
+  defaultFinancialYear  String?   @map("default_financial_year") @db.VarChar(20)
+  defaultScreen         String?   @map("default_screen") @db.VarChar(120)
+  notificationPreference String?  @map("notification_preference") @db.VarChar(40)
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime? @map("updated_at")
+  rowVersion            Int       @default(1) @map("row_version")
+
+  user              User       @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company           Company?   @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  defaultWarehouse  Warehouse? @relation(fields: [defaultWarehouseId], references: [warehouseId])
+  defaultBranch     Branch?    @relation(fields: [defaultBranchId], references: [branchId])
+
+  @@unique([userId, companyId])
+  @@map("user_preferences")
+}

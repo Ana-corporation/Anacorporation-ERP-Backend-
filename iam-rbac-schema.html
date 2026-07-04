@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ERP — IAM & Multi-Tenant RBAC · Complete Schema (Single File)</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --border:#2b3344;
+    --text:#e6edf3; --muted:#9aa7b8; --accent:#4f8cff; --accent2:#22d3a4;
+    --warn:#f5a524; --pink:#f472b6; --purple:#a78bfa;
+    --shadow:0 8px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:
+    radial-gradient(1200px 600px at 10% -10%, #14305e33, transparent),
+    radial-gradient(900px 500px at 110% 0%, #1b5e4a33, transparent), var(--bg);
+    color:var(--text);line-height:1.55}
+  header{padding:48px 24px 28px;text-align:center;border-bottom:1px solid var(--border)}
+  header h1{margin:0;font-size:30px;letter-spacing:.3px}
+  header p{margin:10px auto 0;max-width:760px;color:var(--muted)}
+  .badges{margin-top:18px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .badge{background:var(--panel);border:1px solid var(--border);color:var(--muted);
+    padding:5px 12px;border-radius:999px;font-size:12px}
+  nav.toc{position:sticky;top:0;z-index:50;background:#0d1117ee;backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);padding:10px 20px;overflow-x:auto}
+  nav.toc a{color:var(--muted);text-decoration:none;font-size:13px;margin-right:16px;white-space:nowrap}
+  nav.toc a:hover{color:var(--accent)}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+  section{margin-top:40px}
+  h2{font-size:21px;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+  h2 .num{color:var(--accent);font-variant-numeric:tabular-nums}
+  h3.layer-title{margin:24px 0 10px;font-size:16px;color:var(--accent2)}
+  .sub{color:var(--muted);margin:0 0 18px;font-size:14px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:18px;box-shadow:var(--shadow);overflow:auto}
+  .mermaid{background:transparent;text-align:center}
+  .layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+  .layer{background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--accent);
+    border-radius:12px;padding:16px}
+  .layer h3{margin:0 0 6px;font-size:15px}
+  .layer small{color:var(--muted)}
+  .layer ul{margin:10px 0 0;padding-left:18px;color:var(--text);font-size:13px}
+  .layer li{margin:2px 0}
+  .l0{border-left-color:#64748b}.l1{border-left-color:var(--accent)}
+  .l2{border-left-color:var(--warn)}.l3{border-left-color:var(--pink)}
+  .l4{border-left-color:var(--accent2)}.l5{border-left-color:var(--purple)}
+  .l6{border-left-color:#94a3b8}
+  .steps{counter-reset:s;display:grid;gap:10px}
+  .step{display:flex;gap:14px;align-items:flex-start;background:var(--panel2);
+    border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .step::before{counter-increment:s;content:counter(s);flex:0 0 28px;height:28px;
+    display:flex;align-items:center;justify-content:center;background:var(--accent);
+    color:#fff;border-radius:50%;font-weight:700;font-size:13px}
+  .step b{display:block}
+  .step code,.formula code{background:#0b0f16;border:1px solid var(--border);border-radius:6px;
+    padding:1px 6px;color:var(--accent2);font-size:12px}
+  .step .muted{color:var(--muted);font-size:13px}
+  .formula{background:var(--panel2);border:1px dashed var(--accent);border-radius:10px;
+    padding:14px 16px;font-size:14px;margin-top:14px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+  tbody tr:hover{background:#1b2230}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--border)}
+  .t-pk{color:#fbbf24;border-color:#fbbf2455;background:#fbbf2410}
+  .t-fk{color:#60a5fa;border-color:#60a5fa55;background:#60a5fa10}
+  .t-uq{color:#34d399;border-color:#34d39955;background:#34d39910}
+  .t-idx{color:#c084fc;border-color:#c084fc55;background:#c084fc10}
+  footer{margin-top:60px;text-align:center;color:var(--muted);font-size:13px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 0;color:var(--muted);font-size:12px}
+  details.col-block{margin:8px 0;border:1px solid var(--border);border-radius:10px;background:var(--panel2)}
+  details.col-block summary{cursor:pointer;padding:12px 16px;font-weight:600;font-size:14px;list-style:none}
+  details.col-block summary::before{content:'▸ ';color:var(--accent)}
+  details.col-block[open] summary::before{content:'▾ '}
+  details.col-block .inner{padding:0 16px 14px}
+  pre.sql{background:#0b0f16;border:1px solid var(--border);border-radius:10px;padding:16px;
+    overflow:auto;font-size:12px;line-height:1.45;color:#cbd5e1;max-height:70vh;margin:0}
+  .sql-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 16px;
+    font-size:13px;cursor:pointer;font-weight:600}
+  .btn:hover{filter:brightness(1.1)}
+  .btn.outline{background:transparent;border:1px solid var(--border);color:var(--muted)}
+  .btn.outline:hover{color:var(--text);border-color:var(--accent)}
+  .map-ok{color:var(--accent2)} .map-partial{color:var(--warn)} .map-no{color:var(--pink)}
+  .note{background:var(--panel2);border-left:3px solid var(--warn);padding:12px 16px;
+    border-radius:0 8px 8px 0;margin:14px 0;font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>ERP — Identity &amp; Access Management + Multi-Tenant RBAC</h1>
+  <p>One global user identity, company-scoped roles &amp; permissions. The same person
+     can be <b>Admin in Company&nbsp;A</b> and <b>Viewer in Company&nbsp;B</b> — fully isolated by <code>company_id</code>.</p>
+  <div class="badges">
+    <span class="badge">Self-contained single file</span>
+    <span class="badge">PostgreSQL 14+</span>
+    <span class="badge">34 tables</span>
+    <span class="badge">6 layers</span>
+    <span class="badge">Soft delete + audit</span>
+    <span class="badge">Runnable DDL included</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#s01">01 ER Diagram</a>
+  <a href="#s02">02 Layers</a>
+  <a href="#s03">03 Workflow</a>
+  <a href="#s04">04 Multi-tenant</a>
+  <a href="#s05">05 Table index</a>
+  <a href="#s06">06 Columns</a>
+  <a href="#s07">07 SQL DDL</a>
+  <a href="#s08">08 vs Current ERP</a>
+</nav>
+
+<div class="wrap">
+
+  <section id="s01">
+    <h2><span class="num">01</span> Entity Relationship — one-line diagram</h2>
+    <p class="sub">Crow's-foot ER of the access core and platform graph. Tenant isolation flows from <b>companies</b>.</p>
+    <div class="card">
+      <pre class="mermaid">
+erDiagram
+    CURRENCIES ||--o{ COMPANIES : "default currency"
+    SUPER_ADMINS ||..o{ COMPANIES : manages
+    COMPANIES ||--o{ COMPANY_SUBSCRIPTIONS : has
+    SUBSCRIPTION_PLANS ||--o{ COMPANY_SUBSCRIPTIONS : "bought as"
+    SUBSCRIPTION_PLANS ||--o{ PLAN_MODULES : bundles
+    MODULES ||--o{ PLAN_MODULES : "in plan"
+    COMPANIES ||--o{ COMPANY_MODULES : activates
+    MODULES ||--o{ COMPANY_MODULES : "active for"
+    COMPANIES ||--|| COMPANY_SECURITY_POLICIES : enforces
+    COMPANIES ||--o{ BRANCHES : has
+    COMPANIES ||--o{ DEPARTMENTS : has
+    COMPANIES ||--o{ DESIGNATIONS : has
+    COMPANIES ||--o{ WAREHOUSES : has
+    COMPANIES ||--o{ ROLES : owns
+    MODULES ||--o{ PERMISSIONS : exposes
+    ROLES ||--o{ ROLE_PERMISSIONS : grants
+    PERMISSIONS ||--o{ ROLE_PERMISSIONS : "in"
+    USERS ||--|| USER_AUTHENTICATION : "1:1 creds"
+    USERS ||--o{ USER_MFA : secures
+    USERS ||--o{ USER_COMPANIES : "member of"
+    COMPANIES ||--o{ USER_COMPANIES : "has members"
+    USERS ||--o{ USER_ROLES : "assigned"
+    COMPANIES ||--o{ USER_ROLES : "scopes"
+    ROLES ||--o{ USER_ROLES : "granted as"
+    USERS ||--o{ USER_MODULE_ACCESS : overrides
+    MODULES ||--o{ USER_MODULE_ACCESS : "grant/deny"
+    USERS ||--o{ USER_SESSIONS : opens
+    USERS ||--o{ USER_DEVICES : registers
+    USERS ||--o{ USER_LOGIN_HISTORY : logs
+    USERS ||--o{ USER_API_KEYS : issues
+    USERS ||--|| USER_PREFERENCES : configures
+    USERS ||--|| USER_NOTIFICATIONS : "channel prefs"
+    USERS ||--o{ USER_DELEGATIONS : delegates
+    USERS ||--o{ USER_AUDIT : "audited by"
+      </pre>
+    </div>
+    <div class="legend"><span>|| = one</span><span>o{ = many</span><span>|| .. o{ = soft / non-FK link</span></div>
+  </section>
+
+  <section id="s02">
+    <h2><span class="num">02</span> Layered architecture (34 tables)</h2>
+    <p class="sub">Every tenant-scoped table carries an indexed <code>company_id</code>.</p>
+    <div class="layers">
+      <div class="layer l0"><h3>0 · Global Master</h3><small>no tenant scope</small><ul><li>currencies</li></ul></div>
+      <div class="layer l1"><h3>1 · Platform</h3><small>owner · tenants · billing</small>
+        <ul><li>super_admins</li><li>companies</li><li>subscription_plans</li><li>modules</li>
+        <li>plan_modules</li><li>company_subscriptions</li><li>company_modules</li><li>company_security_policies</li></ul></div>
+      <div class="layer l2"><h3>2 · Organisation</h3><small>tenant lookups</small>
+        <ul><li>branches</li><li>departments</li><li>designations</li><li>warehouses</li></ul></div>
+      <div class="layer l3"><h3>3 · RBAC</h3><small>what a role can do</small>
+        <ul><li>roles</li><li>permissions</li><li>role_permissions</li></ul></div>
+      <div class="layer l4"><h3>4 · Identity</h3><small>global login</small>
+        <ul><li>users</li><li>user_authentication</li><li>user_mfa</li></ul></div>
+      <div class="layer l5"><h3>5 · Membership</h3><small>user → company access</small>
+        <ul><li>user_companies</li><li>user_roles</li><li>user_module_access</li></ul></div>
+      <div class="layer l6"><h3>6 · Satellites</h3><small>UX · security · audit</small>
+        <ul><li>user_preferences</li><li>user_sessions</li><li>user_devices</li><li>user_login_history</li>
+        <li>user_password_history</li><li>user_api_keys</li><li>user_notifications</li><li>user_signatures</li>
+        <li>user_attachments</li><li>user_delegations</li><li>user_consents</li><li>user_audit</li></ul></div>
+    </div>
+  </section>
+
+  <section id="s03">
+    <h2><span class="num">03</span> Access-check workflow — login → transaction</h2>
+    <p class="sub">How a request is authorised, end to end.</p>
+    <div class="steps">
+      <div class="step"><div><b>Authenticate</b><span class="muted"> verify hash, MFA, not locked/expired — <code>users</code> + <code>user_authentication</code></span></div></div>
+      <div class="step"><div><b>List tenants</b><span class="muted"> <code>user_companies WHERE user_id = ? AND status = 'active'</code></span></div></div>
+      <div class="step"><div><b>Pick / default tenant</b><span class="muted"> <code>user_companies.is_default</code> → set <code>company_id</code> for the session</span></div></div>
+      <div class="step"><div><b>Resolve role</b><span class="muted"> <code>user_roles WHERE user_id = ? AND company_id = ? AND is_active</code></span></div></div>
+      <div class="step"><div><b>Resolve permissions</b><span class="muted"> <code>role_permissions</code> → set of module + action</span></div></div>
+      <div class="step"><div><b>Apply overrides</b><span class="muted"> <code>user_module_access</code> grant/deny for this user + company</span></div></div>
+      <div class="step"><div><b>Gate by subscription</b><span class="muted"> <code>company_modules.is_active</code> AND <code>company_subscriptions</code> valid &amp; not expired</span></div></div>
+      <div class="step"><div><b>Render &amp; authorise</b><span class="muted"> show only permitted module + action</span></div></div>
+      <div class="step"><div><b>Every query is scoped</b><span class="muted"> <code>... WHERE company_id = :current_company_id</code></span></div></div>
+    </div>
+    <div class="formula">
+      <b>Effective permission</b> =
+      <code>role allows action</code> <b>AND</b> <code>module active for company</code>
+      <b>AND</b> <code>subscription valid</b> <b>AND NOT</b> <code>user_module_access = deny</code>
+      — an explicit <code>grant</code> can add a module the role lacks.
+    </div>
+  </section>
+
+  <section id="s04">
+    <h2><span class="num">04</span> The core trick — one identity, many tenants</h2>
+    <p class="sub">A single <code>users</code> row branches into per-company membership + role.</p>
+    <div class="card">
+      <pre class="mermaid">
+flowchart LR
+    U["users<br/>(1 global identity)"]
+    UC1["user_companies<br/>Company A"]
+    UC2["user_companies<br/>Company B"]
+    R1["user_roles → Admin<br/>(company_id = A)"]
+    R2["user_roles → Viewer<br/>(company_id = B)"]
+    P1["role_permissions<br/>full CRUD + Approve"]
+    P2["role_permissions<br/>View only"]
+    U --> UC1 --> R1 --> P1
+    U --> UC2 --> R2 --> P2
+      </pre>
+    </div>
+  </section>
+
+  <section id="s05">
+    <h2><span class="num">05</span> Table reference (index)</h2>
+    <p class="sub">Quick index — expand <a href="#s06">Section 06</a> for every column, <a href="#s07">Section 07</a> for runnable DDL.</p>
+    <div class="card">
+      <table>
+        <thead><tr><th>#</th><th>Table</th><th>Purpose</th><th>Key links</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>currencies</td><td>Global currency master</td><td><span class="tag t-pk">currency_id</span></td></tr>
+          <tr><td>2</td><td>super_admins</td><td>Platform owners</td><td><span class="tag t-pk">super_admin_id</span></td></tr>
+          <tr><td>3</td><td>companies</td><td>Tenant master (root)</td><td><span class="tag t-fk">currency_id</span></td></tr>
+          <tr><td>4</td><td>subscription_plans</td><td>Plan catalogue</td><td><span class="tag t-pk">plan_id</span></td></tr>
+          <tr><td>5</td><td>modules</td><td>ERP module master</td><td><span class="tag t-fk">parent_module_id</span></td></tr>
+          <tr><td>6</td><td>plan_modules</td><td>Modules bundled per plan</td><td><span class="tag t-fk">plan_id</span> <span class="tag t-fk">module_id</span></td></tr>
+          <tr><td>7</td><td>company_subscriptions</td><td>Plan a tenant bought + validity</td><td><span class="tag t-fk">company_id</span> <span class="tag t-fk">plan_id</span></td></tr>
+          <tr><td>8</td><td>company_modules</td><td>Modules active for a tenant</td><td><span class="tag t-fk">company_id</span> <span class="tag t-fk">module_id</span> <span class="tag t-uq">uq</span></td></tr>
+          <tr><td>9</td><td>company_security_policies</td><td>Per-tenant login/password/license policy</td><td><span class="tag t-fk">company_id</span> <span class="tag t-uq">1:1</span></td></tr>
+          <tr><td>10</td><td>branches</td><td>Tenant branches</td><td><span class="tag t-fk">company_id</span></td></tr>
+          <tr><td>11</td><td>departments</td><td>Department tree</td><td><span class="tag t-fk">company_id</span> <span class="tag t-fk">parent_department_id</span></td></tr>
+          <tr><td>12</td><td>designations</td><td>Job titles</td><td><span class="tag t-fk">company_id</span></td></tr>
+          <tr><td>13</td><td>warehouses</td><td>Stock locations</td><td><span class="tag t-fk">company_id</span> <span class="tag t-fk">branch_id</span></td></tr>
+          <tr><td>14</td><td>roles</td><td>Role defs (company-scoped / template)</td><td><span class="tag t-fk">company_id?</span></td></tr>
+          <tr><td>15</td><td>permissions</td><td>Atomic action per module</td><td><span class="tag t-fk">module_id</span></td></tr>
+          <tr><td>16</td><td>role_permissions</td><td>Role → permission mapping</td><td><span class="tag t-fk">role_id</span> <span class="tag t-fk">permission_id</span></td></tr>
+          <tr><td>17</td><td>users</td><td>Global identity (1 login)</td><td><span class="tag t-uq">email</span> <span class="tag t-uq">username</span></td></tr>
+          <tr><td>18</td><td>user_authentication</td><td>Credentials + lockout (1:1)</td><td><span class="tag t-fk">user_id</span> <span class="tag t-uq">1:1</span></td></tr>
+          <tr><td>19</td><td>user_mfa</td><td>MFA methods</td><td><span class="tag t-fk">user_id</span></td></tr>
+          <tr><td>20</td><td>user_companies</td><td>Membership + employment per tenant</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id</span> <span class="tag t-uq">uq</span></td></tr>
+          <tr><td>21</td><td>user_roles</td><td>Role within a company</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id</span> <span class="tag t-fk">role_id</span></td></tr>
+          <tr><td>22</td><td>user_module_access</td><td>Per-user grant/deny override</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id</span> <span class="tag t-fk">module_id</span></td></tr>
+          <tr><td>23</td><td>user_preferences</td><td>UI / formatting prefs</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id?</span></td></tr>
+          <tr><td>24</td><td>user_sessions</td><td>Active/closed sessions</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id</span> <span class="tag t-fk">device_id</span></td></tr>
+          <tr><td>25</td><td>user_devices</td><td>Registered devices</td><td><span class="tag t-fk">user_id</span> <span class="tag t-uq">device_uuid</span></td></tr>
+          <tr><td>26</td><td>user_login_history</td><td>Every login attempt</td><td><span class="tag t-fk">user_id</span></td></tr>
+          <tr><td>27</td><td>user_password_history</td><td>Prevent password reuse</td><td><span class="tag t-fk">user_id</span></td></tr>
+          <tr><td>28</td><td>user_api_keys</td><td>Programmatic tokens</td><td><span class="tag t-fk">user_id</span> <span class="tag t-uq">api_key</span></td></tr>
+          <tr><td>29</td><td>user_notifications</td><td>Per-channel opt-in (1:1)</td><td><span class="tag t-fk">user_id</span> <span class="tag t-uq">1:1</span></td></tr>
+          <tr><td>30</td><td>user_signatures</td><td>Invoice/approval/digital sign</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id</span></td></tr>
+          <tr><td>31</td><td>user_attachments</td><td>KYC / HR documents</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id</span></td></tr>
+          <tr><td>32</td><td>user_delegations</td><td>Delegate authority</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">delegate_user_id</span></td></tr>
+          <tr><td>33</td><td>user_consents</td><td>Privacy / terms / NDA</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id</span></td></tr>
+          <tr><td>34</td><td>user_audit</td><td>Generic change log (JSONB)</td><td><span class="tag t-fk">user_id</span> <span class="tag t-fk">company_id</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 06 COLUMN SPEC ============ -->
+  <section id="s06">
+    <h2><span class="num">06</span> Column-level specification (all 34 tables)</h2>
+    <p class="sub">Conventions: <code>UUID</code> PKs · <code>timestamptz</code> audit columns · <code>deleted_at</code> soft delete on tenant tables · <code>company_id</code> indexed on every tenant row.</p>
+
+    <details class="col-block" open><summary>Layer 0 — currencies</summary><div class="inner"><table>
+      <thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>currency_id</td><td>UUID</td><td>PK</td><td></td></tr>
+        <tr><td>code</td><td>VARCHAR(3)</td><td>UNIQUE NOT NULL</td><td>ISO 4217 e.g. USD, INR</td></tr>
+        <tr><td>name</td><td>VARCHAR(100)</td><td>NOT NULL</td><td></td></tr>
+        <tr><td>symbol</td><td>VARCHAR(8)</td><td></td><td>₹, $, €</td></tr>
+        <tr><td>decimal_places</td><td>SMALLINT</td><td>DEFAULT 2</td><td></td></tr>
+        <tr><td>is_active</td><td>BOOLEAN</td><td>DEFAULT true</td><td></td></tr>
+        <tr><td>created_at / updated_at</td><td>TIMESTAMPTZ</td><td>NOT NULL</td><td></td></tr>
+      </tbody></table></div></details>
+
+    <details class="col-block"><summary>Layer 1 — Platform (8 tables)</summary><div class="inner">
+      <h3 class="layer-title">super_admins</h3><table><thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>super_admin_id</td><td>UUID PK</td><td></td></tr>
+        <tr><td>email</td><td>VARCHAR UNIQUE</td><td>Platform owner login</td></tr>
+        <tr><td>password_hash</td><td>TEXT</td><td>bcrypt/argon2</td></tr>
+        <tr><td>full_name</td><td>VARCHAR</td><td></td></tr>
+        <tr><td>is_active</td><td>BOOLEAN</td><td></td></tr>
+        <tr><td>last_login_at</td><td>TIMESTAMPTZ</td><td></td></tr>
+        <tr><td>created_at / updated_at / deleted_at</td><td>TIMESTAMPTZ</td><td>soft delete</td></tr>
+      </tbody></table>
+      <h3 class="layer-title">companies</h3><table><thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>company_id</td><td>UUID PK</td><td>Tenant root</td></tr>
+        <tr><td>code</td><td>VARCHAR</td><td>UNIQUE slug/code</td></tr>
+        <tr><td>legal_name</td><td>VARCHAR</td><td></td></tr>
+        <tr><td>display_name</td><td>VARCHAR</td><td></td></tr>
+        <tr><td>currency_id</td><td>UUID FK → currencies</td><td>Default currency</td></tr>
+        <tr><td>status</td><td>ENUM</td><td>active | trial | suspended | closed</td></tr>
+        <tr><td>timezone</td><td>VARCHAR</td><td>e.g. Asia/Kolkata</td></tr>
+        <tr><td>settings</td><td>JSONB</td><td>Tenant config blob</td></tr>
+        <tr><td>created_at / updated_at / deleted_at</td><td>TIMESTAMPTZ</td><td>IDX(deleted_at)</td></tr>
+      </tbody></table>
+      <h3 class="layer-title">subscription_plans · modules · plan_modules · company_subscriptions · company_modules · company_security_policies</h3>
+      <table><thead><tr><th>Table</th><th>Key columns</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>subscription_plans</td><td>plan_id PK, code UNIQUE, name, price, billing_cycle, max_users, is_active</td><td>SaaS catalogue</td></tr>
+        <tr><td>modules</td><td>module_id PK, code UNIQUE, name, parent_module_id FK self, sort_order, is_active</td><td>Inventory, Sales, HR…</td></tr>
+        <tr><td>plan_modules</td><td>plan_id + module_id PK composite</td><td>Modules in a plan</td></tr>
+        <tr><td>company_subscriptions</td><td>subscription_id PK, company_id FK, plan_id FK, starts_at, ends_at, status</td><td>Billing validity</td></tr>
+        <tr><td>company_modules</td><td>company_id + module_id UNIQUE, is_active, activated_at</td><td>Runtime module gate</td></tr>
+        <tr><td>company_security_policies</td><td>company_id PK/FK 1:1, min_password_length, mfa_required, session_timeout_min, max_failed_logins, password_expiry_days</td><td>Per-tenant policy</td></tr>
+      </tbody></table>
+    </div></details>
+
+    <details class="col-block"><summary>Layer 2 — Organisation (4 tables)</summary><div class="inner"><table>
+      <thead><tr><th>Table</th><th>Key columns</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>branches</td><td>branch_id PK, company_id FK IDX, code, name, address JSONB, is_active, deleted_at</td><td>Physical sites</td></tr>
+        <tr><td>departments</td><td>department_id PK, company_id FK IDX, parent_department_id FK self, code, name, deleted_at</td><td>Org tree</td></tr>
+        <tr><td>designations</td><td>designation_id PK, company_id FK IDX, code, title, level, deleted_at</td><td>Job titles</td></tr>
+        <tr><td>warehouses</td><td>warehouse_id PK, company_id FK IDX, branch_id FK, code, name, is_default, deleted_at</td><td>Stock locations</td></tr>
+      </tbody></table></div></details>
+
+    <details class="col-block"><summary>Layer 3 — RBAC (3 tables)</summary><div class="inner"><table>
+      <thead><tr><th>Table</th><th>Key columns</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>roles</td><td>role_id PK, company_id FK NULL (NULL = global template), name, description, is_system, deleted_at</td><td>UNIQUE(company_id, name)</td></tr>
+        <tr><td>permissions</td><td>permission_id PK, module_id FK, code UNIQUE, action, name, description</td><td>e.g. inventory:create</td></tr>
+        <tr><td>role_permissions</td><td>role_id + permission_id PK</td><td>Many-to-many</td></tr>
+      </tbody></table></div></details>
+
+    <details class="col-block"><summary>Layer 4 — Identity (3 tables)</summary><div class="inner"><table>
+      <thead><tr><th>Table</th><th>Key columns</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>users</td><td>user_id PK, email UNIQUE, username UNIQUE, first_name, last_name, phone, avatar_url, is_active, last_login_at, deleted_at</td><td>Global identity — no company_id</td></tr>
+        <tr><td>user_authentication</td><td>auth_id PK, user_id FK UNIQUE, password_hash, password_changed_at, failed_attempts, locked_until, must_change_password</td><td>1:1 credentials</td></tr>
+        <tr><td>user_mfa</td><td>mfa_id PK, user_id FK, method (totp|sms|email), secret_encrypted, is_verified, is_primary, deleted_at</td><td>Multiple MFA per user</td></tr>
+      </tbody></table></div></details>
+
+    <details class="col-block"><summary>Layer 5 — Membership (3 tables)</summary><div class="inner"><table>
+      <thead><tr><th>Table</th><th>Key columns</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>user_companies</td><td>membership_id PK, user_id FK, company_id FK, employee_code, department_id FK, designation_id FK, branch_id FK, status (active|invited|suspended), is_default, joined_at, deleted_at</td><td>UNIQUE(user_id, company_id)</td></tr>
+        <tr><td>user_roles</td><td>user_role_id PK, user_id FK, company_id FK, role_id FK, is_active, assigned_at, assigned_by FK users</td><td>Multiple roles per company allowed</td></tr>
+        <tr><td>user_module_access</td><td>access_id PK, user_id FK, company_id FK, module_id FK, access_type (grant|deny), reason, expires_at</td><td>Override role defaults</td></tr>
+      </tbody></table></div></details>
+
+    <details class="col-block"><summary>Layer 6 — Satellites (12 tables)</summary><div class="inner"><table>
+      <thead><tr><th>Table</th><th>Key columns</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>user_preferences</td><td>preference_id PK, user_id FK, company_id FK NULL, locale, date_format, theme, dashboard_layout JSONB</td><td>Global or per-company UI</td></tr>
+        <tr><td>user_sessions</td><td>session_id PK, user_id FK, company_id FK, device_id FK, refresh_token_hash, ip_address, user_agent, expires_at, revoked_at</td><td>Server-side sessions</td></tr>
+        <tr><td>user_devices</td><td>device_id PK, user_id FK, device_uuid UNIQUE, device_name, platform, last_seen_at, is_trusted</td><td></td></tr>
+        <tr><td>user_login_history</td><td>login_id PK, user_id FK, company_id FK NULL, ip_address, success, failure_reason, created_at</td><td>Append-only</td></tr>
+        <tr><td>user_password_history</td><td>history_id PK, user_id FK, password_hash, created_at</td><td>Reuse prevention</td></tr>
+        <tr><td>user_api_keys</td><td>api_key_id PK, user_id FK, company_id FK, key_prefix, api_key_hash UNIQUE, scopes JSONB, expires_at, revoked_at</td><td>Never store raw key</td></tr>
+        <tr><td>user_notifications</td><td>notification_pref_id PK, user_id FK UNIQUE, email_enabled, sms_enabled, push_enabled, digest_frequency</td><td>1:1 channel prefs</td></tr>
+        <tr><td>user_signatures</td><td>signature_id PK, user_id FK, company_id FK, signature_type, file_url, is_default</td><td></td></tr>
+        <tr><td>user_attachments</td><td>attachment_id PK, user_id FK, company_id FK, doc_type, file_url, verified_at</td><td>KYC / HR docs</td></tr>
+        <tr><td>user_delegations</td><td>delegation_id PK, user_id FK, delegate_user_id FK, company_id FK, starts_at, ends_at, permissions JSONB</td><td>Act-on-behalf</td></tr>
+        <tr><td>user_consents</td><td>consent_id PK, user_id FK, company_id FK, consent_type, version, accepted_at, ip_address</td><td>GDPR / terms</td></tr>
+        <tr><td>user_audit</td><td>audit_id PK, user_id FK, company_id FK, action, entity_type, entity_id, old_values JSONB, new_values JSONB, ip_address, created_at</td><td>Generic audit trail</td></tr>
+      </tbody></table></div></details>
+  </section>
+
+  <!-- ============ 07 SQL DDL ============ -->
+  <section id="s07">
+    <h2><span class="num">07</span> Runnable PostgreSQL DDL</h2>
+    <p class="sub">Copy and run against Neon or local PostgreSQL. Requires PostgreSQL 14+ with <code>pgcrypto</code> for UUID generation.</p>
+    <div class="note">⚠ This DDL creates a <b>separate IAM schema</b>. It does not replace your current <code>organizations</code> / Prisma tables — see Section 08 for migration mapping.</div>
+    <div class="sql-toolbar">
+      <button class="btn" onclick="copySql()">Copy SQL to clipboard</button>
+      <button class="btn outline" onclick="downloadSql()">Download .sql file</button>
+      <span class="pill" id="copy-status"></span>
+    </div>
+    <div class="card"><pre class="sql" id="sql-ddl">-- ERP IAM + Multi-Tenant RBAC Schema
+-- PostgreSQL 14+  |  34 tables  |  Generated for iam-rbac-schema.html
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ─── Enums ───────────────────────────────────────────────────────────────────
+CREATE TYPE company_status AS ENUM ('active','trial','suspended','closed');
+CREATE TYPE membership_status AS ENUM ('active','invited','suspended');
+CREATE TYPE mfa_method AS ENUM ('totp','sms','email');
+CREATE TYPE module_access_type AS ENUM ('grant','deny');
+CREATE TYPE subscription_status AS ENUM ('active','expired','cancelled','pending');
+
+-- ─── Layer 0: Global ───────────────────────────────────────────────────────────
+CREATE TABLE currencies (
+  currency_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code            VARCHAR(3) NOT NULL UNIQUE,
+  name            VARCHAR(100) NOT NULL,
+  symbol          VARCHAR(8),
+  decimal_places  SMALLINT NOT NULL DEFAULT 2,
+  is_active       BOOLEAN NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ─── Layer 1: Platform ─────────────────────────────────────────────────────────
+CREATE TABLE super_admins (
+  super_admin_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email           VARCHAR(255) NOT NULL UNIQUE,
+  password_hash   TEXT NOT NULL,
+  full_name       VARCHAR(200),
+  is_active       BOOLEAN NOT NULL DEFAULT true,
+  last_login_at   TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at      TIMESTAMPTZ
+);
+
+CREATE TABLE companies (
+  company_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code            VARCHAR(64) NOT NULL UNIQUE,
+  legal_name      VARCHAR(255) NOT NULL,
+  display_name    VARCHAR(255) NOT NULL,
+  currency_id     UUID REFERENCES currencies(currency_id),
+  status          company_status NOT NULL DEFAULT 'trial',
+  timezone        VARCHAR(64) NOT NULL DEFAULT 'UTC',
+  settings        JSONB NOT NULL DEFAULT '{}',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at      TIMESTAMPTZ
+);
+CREATE INDEX idx_companies_deleted ON companies(deleted_at);
+
+CREATE TABLE subscription_plans (
+  plan_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code            VARCHAR(64) NOT NULL UNIQUE,
+  name            VARCHAR(200) NOT NULL,
+  description     TEXT,
+  price           NUMERIC(12,2) NOT NULL DEFAULT 0,
+  billing_cycle   VARCHAR(20) NOT NULL DEFAULT 'monthly',
+  max_users       INT,
+  is_active       BOOLEAN NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE modules (
+  module_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code              VARCHAR(64) NOT NULL UNIQUE,
+  name              VARCHAR(200) NOT NULL,
+  parent_module_id  UUID REFERENCES modules(module_id),
+  sort_order        INT NOT NULL DEFAULT 0,
+  is_active         BOOLEAN NOT NULL DEFAULT true,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE plan_modules (
+  plan_id    UUID NOT NULL REFERENCES subscription_plans(plan_id) ON DELETE CASCADE,
+  module_id  UUID NOT NULL REFERENCES modules(module_id) ON DELETE CASCADE,
+  PRIMARY KEY (plan_id, module_id)
+);
+
+CREATE TABLE company_subscriptions (
+  subscription_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id      UUID NOT NULL REFERENCES companies(company_id),
+  plan_id         UUID NOT NULL REFERENCES subscription_plans(plan_id),
+  status          subscription_status NOT NULL DEFAULT 'pending',
+  starts_at       TIMESTAMPTZ NOT NULL,
+  ends_at         TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_company_subscriptions_company ON company_subscriptions(company_id);
+
+CREATE TABLE company_modules (
+  company_id    UUID NOT NULL REFERENCES companies(company_id) ON DELETE CASCADE,
+  module_id     UUID NOT NULL REFERENCES modules(module_id) ON DELETE CASCADE,
+  is_active     BOOLEAN NOT NULL DEFAULT true,
+  activated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (company_id, module_id)
+);
+
+CREATE TABLE company_security_policies (
+  company_id              UUID PRIMARY KEY REFERENCES companies(company_id) ON DELETE CASCADE,
+  min_password_length     SMALLINT NOT NULL DEFAULT 8,
+  mfa_required            BOOLEAN NOT NULL DEFAULT false,
+  session_timeout_min     INT NOT NULL DEFAULT 480,
+  max_failed_logins       SMALLINT NOT NULL DEFAULT 5,
+  password_expiry_days    INT,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ─── Layer 2: Organisation ─────────────────────────────────────────────────────
+CREATE TABLE branches (
+  branch_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id  UUID NOT NULL REFERENCES companies(company_id),
+  code        VARCHAR(64) NOT NULL,
+  name        VARCHAR(200) NOT NULL,
+  address     JSONB NOT NULL DEFAULT '{}',
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at  TIMESTAMPTZ,
+  UNIQUE (company_id, code)
+);
+CREATE INDEX idx_branches_company ON branches(company_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE departments (
+  department_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id            UUID NOT NULL REFERENCES companies(company_id),
+  parent_department_id  UUID REFERENCES departments(department_id),
+  code                  VARCHAR(64) NOT NULL,
+  name                  VARCHAR(200) NOT NULL,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at            TIMESTAMPTZ,
+  UNIQUE (company_id, code)
+);
+CREATE INDEX idx_departments_company ON departments(company_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE designations (
+  designation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id     UUID NOT NULL REFERENCES companies(company_id),
+  code           VARCHAR(64) NOT NULL,
+  title          VARCHAR(200) NOT NULL,
+  level          SMALLINT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at     TIMESTAMPTZ,
+  UNIQUE (company_id, code)
+);
+CREATE INDEX idx_designations_company ON designations(company_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE warehouses (
+  warehouse_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id   UUID NOT NULL REFERENCES companies(company_id),
+  branch_id    UUID REFERENCES branches(branch_id),
+  code         VARCHAR(64) NOT NULL,
+  name         VARCHAR(200) NOT NULL,
+  is_default   BOOLEAN NOT NULL DEFAULT false,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at   TIMESTAMPTZ,
+  UNIQUE (company_id, code)
+);
+CREATE INDEX idx_warehouses_company ON warehouses(company_id) WHERE deleted_at IS NULL;
+
+-- ─── Layer 3: RBAC ─────────────────────────────────────────────────────────────
+CREATE TABLE roles (
+  role_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id  UUID REFERENCES companies(company_id),
+  name        VARCHAR(100) NOT NULL,
+  description TEXT,
+  is_system   BOOLEAN NOT NULL DEFAULT false,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at  TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX uq_roles_company_name ON roles(company_id, name) WHERE deleted_at IS NULL;
+
+CREATE TABLE permissions (
+  permission_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  module_id     UUID NOT NULL REFERENCES modules(module_id),
+  code          VARCHAR(128) NOT NULL UNIQUE,
+  action        VARCHAR(64) NOT NULL,
+  name          VARCHAR(200) NOT NULL,
+  description   TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE role_permissions (
+  role_id       UUID NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+  permission_id UUID NOT NULL REFERENCES permissions(permission_id) ON DELETE CASCADE,
+  PRIMARY KEY (role_id, permission_id)
+);
+
+-- ─── Layer 4: Identity ─────────────────────────────────────────────────────────
+CREATE TABLE users (
+  user_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         VARCHAR(255) NOT NULL UNIQUE,
+  username      VARCHAR(100) NOT NULL UNIQUE,
+  first_name    VARCHAR(100) NOT NULL,
+  last_name     VARCHAR(100) NOT NULL,
+  phone         VARCHAR(32),
+  avatar_url    TEXT,
+  is_active     BOOLEAN NOT NULL DEFAULT true,
+  last_login_at TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at    TIMESTAMPTZ
+);
+CREATE INDEX idx_users_deleted ON users(deleted_at);
+
+CREATE TABLE user_authentication (
+  auth_id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id               UUID NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
+  password_hash         TEXT NOT NULL,
+  password_changed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  failed_attempts       SMALLINT NOT NULL DEFAULT 0,
+  locked_until          TIMESTAMPTZ,
+  must_change_password  BOOLEAN NOT NULL DEFAULT false,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_mfa (
+  mfa_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  method            mfa_method NOT NULL,
+  secret_encrypted  TEXT,
+  is_verified       BOOLEAN NOT NULL DEFAULT false,
+  is_primary        BOOLEAN NOT NULL DEFAULT false,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at        TIMESTAMPTZ
+);
+CREATE INDEX idx_user_mfa_user ON user_mfa(user_id) WHERE deleted_at IS NULL;
+
+-- ─── Layer 5: Membership ───────────────────────────────────────────────────────
+CREATE TABLE user_companies (
+  membership_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(user_id),
+  company_id      UUID NOT NULL REFERENCES companies(company_id),
+  employee_code   VARCHAR(64),
+  department_id   UUID REFERENCES departments(department_id),
+  designation_id  UUID REFERENCES designations(designation_id),
+  branch_id       UUID REFERENCES branches(branch_id),
+  status          membership_status NOT NULL DEFAULT 'invited',
+  is_default      BOOLEAN NOT NULL DEFAULT false,
+  joined_at       TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at      TIMESTAMPTZ,
+  UNIQUE (user_id, company_id)
+);
+CREATE INDEX idx_user_companies_company ON user_companies(company_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE user_roles (
+  user_role_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(user_id),
+  company_id    UUID NOT NULL REFERENCES companies(company_id),
+  role_id       UUID NOT NULL REFERENCES roles(role_id),
+  is_active     BOOLEAN NOT NULL DEFAULT true,
+  assigned_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  assigned_by   UUID REFERENCES users(user_id)
+);
+CREATE INDEX idx_user_roles_lookup ON user_roles(user_id, company_id) WHERE is_active = true;
+
+CREATE TABLE user_module_access (
+  access_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES users(user_id),
+  company_id   UUID NOT NULL REFERENCES companies(company_id),
+  module_id    UUID NOT NULL REFERENCES modules(module_id),
+  access_type  module_access_type NOT NULL,
+  reason       TEXT,
+  expires_at   TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, company_id, module_id)
+);
+
+-- ─── Layer 6: Satellites ─────────────────────────────────────────────────────────
+CREATE TABLE user_preferences (
+  preference_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  company_id        UUID REFERENCES companies(company_id),
+  locale            VARCHAR(16) NOT NULL DEFAULT 'en',
+  date_format       VARCHAR(32) NOT NULL DEFAULT 'YYYY-MM-DD',
+  theme             VARCHAR(16) NOT NULL DEFAULT 'system',
+  dashboard_layout  JSONB NOT NULL DEFAULT '{}',
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_devices (
+  device_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  device_uuid   UUID NOT NULL UNIQUE,
+  device_name   VARCHAR(200),
+  platform      VARCHAR(64),
+  last_seen_at  TIMESTAMPTZ,
+  is_trusted    BOOLEAN NOT NULL DEFAULT false,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_sessions (
+  session_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id             UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  company_id          UUID NOT NULL REFERENCES companies(company_id),
+  device_id           UUID REFERENCES user_devices(device_id),
+  refresh_token_hash  TEXT NOT NULL,
+  ip_address          INET,
+  user_agent          TEXT,
+  expires_at          TIMESTAMPTZ NOT NULL,
+  revoked_at          TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_user_sessions_user ON user_sessions(user_id) WHERE revoked_at IS NULL;
+
+CREATE TABLE user_login_history (
+  login_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(user_id),
+  company_id      UUID REFERENCES companies(company_id),
+  ip_address      INET,
+  success         BOOLEAN NOT NULL,
+  failure_reason  VARCHAR(255),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_login_history_user ON user_login_history(user_id, created_at DESC);
+
+CREATE TABLE user_password_history (
+  history_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  password_hash  TEXT NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_password_history_user ON user_password_history(user_id, created_at DESC);
+
+CREATE TABLE user_api_keys (
+  api_key_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(user_id),
+  company_id    UUID NOT NULL REFERENCES companies(company_id),
+  key_prefix    VARCHAR(16) NOT NULL,
+  api_key_hash  TEXT NOT NULL UNIQUE,
+  scopes        JSONB NOT NULL DEFAULT '[]',
+  expires_at    TIMESTAMPTZ,
+  revoked_at    TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_notifications (
+  notification_pref_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
+  email_enabled        BOOLEAN NOT NULL DEFAULT true,
+  sms_enabled          BOOLEAN NOT NULL DEFAULT false,
+  push_enabled         BOOLEAN NOT NULL DEFAULT true,
+  digest_frequency     VARCHAR(20) NOT NULL DEFAULT 'instant',
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_signatures (
+  signature_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        UUID NOT NULL REFERENCES users(user_id),
+  company_id     UUID NOT NULL REFERENCES companies(company_id),
+  signature_type VARCHAR(32) NOT NULL,
+  file_url       TEXT NOT NULL,
+  is_default     BOOLEAN NOT NULL DEFAULT false,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_attachments (
+  attachment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(user_id),
+  company_id    UUID NOT NULL REFERENCES companies(company_id),
+  doc_type      VARCHAR(64) NOT NULL,
+  file_url      TEXT NOT NULL,
+  verified_at   TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_delegations (
+  delegation_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id            UUID NOT NULL REFERENCES users(user_id),
+  delegate_user_id   UUID NOT NULL REFERENCES users(user_id),
+  company_id         UUID NOT NULL REFERENCES companies(company_id),
+  permissions        JSONB NOT NULL DEFAULT '[]',
+  starts_at          TIMESTAMPTZ NOT NULL,
+  ends_at            TIMESTAMPTZ NOT NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE user_consents (
+  consent_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(user_id),
+  company_id    UUID NOT NULL REFERENCES companies(company_id),
+  consent_type  VARCHAR(64) NOT NULL,
+  version       VARCHAR(32) NOT NULL,
+  accepted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ip_address    INET
+);
+
+CREATE TABLE user_audit (
+  audit_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID REFERENCES users(user_id),
+  company_id    UUID REFERENCES companies(company_id),
+  action        VARCHAR(64) NOT NULL,
+  entity_type   VARCHAR(64) NOT NULL,
+  entity_id     UUID,
+  old_values    JSONB,
+  new_values    JSONB,
+  ip_address    INET,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_user_audit_company ON user_audit(company_id, created_at DESC);
+
+-- ─── Seed: default currency + core modules (optional) ──────────────────────────
+INSERT INTO currencies (code, name, symbol) VALUES ('INR', 'Indian Rupee', '₹'), ('USD', 'US Dollar', '$')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO modules (code, name, sort_order) VALUES
+  ('platform', 'Platform', 0),
+  ('inventory', 'Inventory', 10),
+  ('sales', 'Sales', 20),
+  ('purchases', 'Purchases', 30),
+  ('production', 'Production', 40),
+  ('quality', 'Quality', 50),
+  ('hr', 'Human Resources', 60),
+  ('finance', 'Finance', 70)
+ON CONFLICT (code) DO NOTHING;
+</pre></div>
+    <p class="sub" style="margin-top:12px">Run in terminal: <code>psql "$DATABASE_URL" -f iam_rbac_schema.sql</code> (after downloading) or paste into Neon SQL Editor.</p>
+  </section>
+
+  <!-- ============ 08 MAPPING TO CURRENT ERP ============ -->
+  <section id="s08">
+    <h2><span class="num">08</span> Mapping to your current ERP backend (Prisma)</h2>
+    <p class="sub">Your running NestJS app at <code>C:\ERP-Backend</code> uses a simplified subset. This table shows alignment.</p>
+    <div class="card">
+      <table>
+        <thead><tr><th>This schema</th><th>Current Prisma model</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>companies</td><td>organizations</td><td class="map-partial">Same concept, different name</td></tr>
+          <tr><td>company_id</td><td>organization_id</td><td class="map-partial">Same tenant key</td></tr>
+          <tr><td>users</td><td>users</td><td class="map-partial">Password on users (not split yet)</td></tr>
+          <tr><td>user_companies + user_roles</td><td>organization_members</td><td class="map-partial">Combined into one table</td></tr>
+          <tr><td>roles + role_permissions</td><td>roles + role_permissions</td><td class="map-ok">Implemented</td></tr>
+          <tr><td>permissions</td><td>permissions</td><td class="map-ok">14 flat codes seeded</td></tr>
+          <tr><td>warehouses</td><td>warehouses</td><td class="map-ok">In inventory module</td></tr>
+          <tr><td>user_sessions</td><td>Redis / memory</td><td class="map-partial">Not in DB yet</td></tr>
+          <tr><td>user_audit</td><td>audit_logs</td><td class="map-partial">Basic audit only</td></tr>
+          <tr><td>subscription_plans, company_modules</td><td>—</td><td class="map-no">Not implemented</td></tr>
+          <tr><td>super_admins, user_mfa, user_api_keys</td><td>—</td><td class="map-no">Not implemented</td></tr>
+          <tr><td>branches, departments, designations</td><td>—</td><td class="map-no">Not implemented</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">Recommended migration path: Phase 1 (done) → split auth tables → add user_roles → subscriptions/modules → satellites (MFA, API keys, delegations).</div>
+  </section>
+
+  <footer>
+    <b>Single-file source of truth</b> — diagrams · column spec · DDL · ERP mapping<br/>
+    File: <code>iam-rbac-schema.html</code> · Open in any browser · No external files required
+  </footer>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad:true, theme:'dark',
+    er:{ useMaxWidth:true }, flowchart:{ useMaxWidth:true, curve:'basis' },
+    themeVariables:{
+      primaryColor:'#1c2230', primaryBorderColor:'#4f8cff', primaryTextColor:'#e6edf3',
+      lineColor:'#5b6678', fontSize:'13px'
+    }
+  });
+
+  function copySql(){
+    const sql = document.getElementById('sql-ddl').innerText;
+    navigator.clipboard.writeText(sql).then(()=>{
+      document.getElementById('copy-status').textContent = '✓ Copied!';
+      setTimeout(()=> document.getElementById('copy-status').textContent = '', 2500);
+    });
+  }
+
+  function downloadSql(){
+    const sql = document.getElementById('sql-ddl').innerText;
+    const blob = new Blob([sql], {type:'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'iam_rbac_schema.sql';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+</script>
+</body>
+</html>

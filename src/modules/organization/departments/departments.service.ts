@@ -1,0 +1,95 @@
+import { Injectable } from '@nestjs/common';
+import { UserAuditAction } from '@prisma/client';
+import { AuditService } from '@/infrastructure/audit/audit.service';
+import { PaginationQueryDto } from '@/common/dto/pagination.dto';
+import { ConflictException, NotFoundException } from '@/common/exceptions/business.exception';
+import { serialize } from '@/common/utils/bigint.util';
+import { toPaginatedResult } from '@/common/utils/pagination.util';
+import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department.dto';
+import { DepartmentsRepository } from './departments.repository';
+
+@Injectable()
+export class DepartmentsService {
+  constructor(
+    private readonly repository: DepartmentsRepository,
+    private readonly auditService: AuditService,
+  ) {}
+
+  async findAll(companyId: string, query: PaginationQueryDto) {
+    const { items, total, page, limit } = await this.repository.findManyByCompany(companyId, query);
+    return serialize(toPaginatedResult(items, total, page, limit));
+  }
+
+  async findOne(id: string, companyId: string) {
+    const department = await this.repository.findById(id, companyId);
+    if (!department) throw new NotFoundException('Department');
+    return serialize(department);
+  }
+
+  async create(companyId: string, dto: CreateDepartmentDto, actorId: string) {
+    const code = dto.departmentCode.trim().toUpperCase();
+    const existing = await this.repository.findByCode(companyId, code);
+    if (existing) throw new ConflictException('Department code already exists');
+
+    if (dto.parentDepartmentId) {
+      const parent = await this.repository.findById(dto.parentDepartmentId, companyId);
+      if (!parent) throw new NotFoundException('Parent department');
+    }
+
+    const department = await this.repository.create(companyId, { ...dto, departmentCode: code }, actorId);
+
+    await this.auditService.log({
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.create,
+      entityName: 'Department',
+      entityId: department.departmentId.toString(),
+      newValue: { departmentCode: code, name: department.name },
+    });
+
+    return serialize(department);
+  }
+
+  async update(id: string, companyId: string, dto: UpdateDepartmentDto, actorId: string) {
+    const existing = await this.repository.findById(id, companyId);
+    if (!existing) throw new NotFoundException('Department');
+
+    if (dto.parentDepartmentId) {
+      if (dto.parentDepartmentId === id) {
+        throw new ConflictException('Department cannot be its own parent');
+      }
+      const parent = await this.repository.findById(dto.parentDepartmentId, companyId);
+      if (!parent) throw new NotFoundException('Parent department');
+    }
+
+    const department = await this.repository.update(id, dto, actorId);
+
+    await this.auditService.log({
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.update,
+      entityName: 'Department',
+      entityId: id,
+      newValue: dto as Record<string, unknown>,
+    });
+
+    return serialize(department);
+  }
+
+  async remove(id: string, companyId: string, actorId: string) {
+    const existing = await this.repository.findById(id, companyId);
+    if (!existing) throw new NotFoundException('Department');
+
+    await this.repository.softDelete(id, actorId);
+
+    await this.auditService.log({
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.delete,
+      entityName: 'Department',
+      entityId: id,
+    });
+
+    return { message: 'Department deleted' };
+  }
+}

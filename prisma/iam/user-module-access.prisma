@@ -1,0 +1,22 @@
+// iam | user_module_access
+
+model UserModuleAccess {
+  userModuleAccessId BigInt           @id @default(autoincrement()) @map("user_module_access_id")
+  userId             BigInt           @map("user_id")
+  companyId          BigInt           @map("company_id")
+  moduleId           BigInt           @map("module_id")
+  accessType         ModuleAccessType @default(grant) @map("access_type")
+  reason             String?          @db.VarChar(255)
+  expiryDate         DateTime?        @map("expiry_date") @db.Date
+  createdBy          BigInt?          @map("created_by")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  rowVersion         Int              @default(1) @map("row_version")
+
+  user    User    @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  module  Module  @relation(fields: [moduleId], references: [moduleId], onDelete: Cascade)
+
+  @@unique([userId, companyId, moduleId])
+  @@index([userId, companyId])
+  @@map("user_module_access")
+}

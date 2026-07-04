@@ -1,0 +1,19 @@
+// iam | role_permissions
+
+model RolePermission {
+  rolePermissionId BigInt   @id @default(autoincrement()) @map("role_permission_id")
+  roleId           BigInt   @map("role_id")
+  moduleId         BigInt   @map("module_id")
+  permissionId     BigInt   @map("permission_id")
+  isAllowed        Boolean  @default(true) @map("is_allowed")
+  createdBy        BigInt?  @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  role       Role       @relation(fields: [roleId], references: [roleId], onDelete: Cascade)
+  module     Module     @relation(fields: [moduleId], references: [moduleId], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [permissionId], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@map("role_permissions")
+}

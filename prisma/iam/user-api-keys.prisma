@@ -1,0 +1,21 @@
+// iam | user_api_keys
+
+model UserApiKey {
+  apiKeyId    BigInt       @id @default(autoincrement()) @map("api_key_id")
+  userId      BigInt       @map("user_id")
+  companyId   BigInt?      @map("company_id")
+  name        String?      @db.VarChar(120)
+  apiKey      String       @unique @map("api_key") @db.VarChar(120)
+  secretHash  String       @map("secret_hash") @db.VarChar(255)
+  scope       String?      @db.VarChar(255)
+  createdDate DateTime     @default(now()) @map("created_date")
+  expiryDate  DateTime?    @map("expiry_date")
+  lastUsed    DateTime?    @map("last_used")
+  status      ApiKeyStatus @default(active)
+
+  user    User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_api_keys")
+}

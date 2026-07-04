@@ -1,0 +1,12 @@
+// Shared | countries | placeholder for future master data
+
+model Country {
+  countryId   BigInt   @id @default(autoincrement()) @map("country_id")
+  code        String   @unique @db.VarChar(3)
+  name        String   @db.VarChar(100)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime? @map("updated_at")
+
+  @@map("countries")
+}

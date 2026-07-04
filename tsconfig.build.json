@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*spec.ts",
+    "src/modules/crm/**",
+    "src/modules/purchase/**",
+    "src/modules/inventory/**",
+    "src/modules/manufacturing/**",
+    "src/modules/assets/**",
+    "src/modules/sales/**",
+    "src/modules/reports/**",
+    "src/modules/accounting/**",
+    "src/modules/hrms/**",
+    "src/modules/helpdesk/**",
+    "src/modules/projects/**",
+    "src/infrastructure/storage/**",
+    "src/infrastructure/websocket/**"
+  ]
+}

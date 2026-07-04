@@ -1,0 +1,14 @@
+// subscription | plan_modules
+
+model PlanModule {
+  planModuleId BigInt   @id @default(autoincrement()) @map("plan_module_id")
+  planId       BigInt   @map("plan_id")
+  moduleId     BigInt   @map("module_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  plan   SubscriptionPlan @relation(fields: [planId], references: [planId], onDelete: Cascade)
+  module Module           @relation(fields: [moduleId], references: [moduleId], onDelete: Cascade)
+
+  @@unique([planId, moduleId])
+  @@map("plan_modules")
+}

@@ -1,0 +1,20 @@
+// iam | user_delegations
+
+model UserDelegation {
+  delegationId   BigInt           @id @default(autoincrement()) @map("delegation_id")
+  userId         BigInt           @map("user_id")
+  delegateUserId BigInt           @map("delegate_user_id")
+  companyId      BigInt           @map("company_id")
+  startDate      DateTime         @map("start_date") @db.Date
+  endDate        DateTime?        @map("end_date") @db.Date
+  reason         String?          @db.VarChar(255)
+  status         DelegationStatus @default(active)
+  createdBy      BigInt?          @map("created_by")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  user     User    @relation("Delegator", fields: [userId], references: [userId], onDelete: Cascade)
+  delegate User    @relation("Delegatee", fields: [delegateUserId], references: [userId], onDelete: Cascade)
+  company  Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@map("user_delegations")
+}

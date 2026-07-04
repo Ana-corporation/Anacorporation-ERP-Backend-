@@ -1,0 +1,21 @@
+// iam | user_mfa
+
+model UserMfa {
+  userMfaId     BigInt    @id @default(autoincrement()) @map("user_mfa_id")
+  userId        BigInt    @map("user_id")
+  mfaType       MfaType   @map("mfa_type")
+  secret        String?   @db.VarChar(255)
+  phone         String?   @db.VarChar(30)
+  email         String?   @db.VarChar(255)
+  isPrimary     Boolean   @default(false) @map("is_primary")
+  isEnabled     Boolean   @default(true) @map("is_enabled")
+  verifiedAt    DateTime? @map("verified_at")
+  recoveryCodes String?   @map("recovery_codes")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime? @map("updated_at")
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_mfa")
+}

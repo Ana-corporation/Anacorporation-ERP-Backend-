@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ERP Backend — Project File Structure</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --border:#2b3344;
+    --text:#e6edf3; --muted:#9aa7b8; --accent:#4f8cff; --accent2:#22d3a4;
+    --warn:#f5a524; --pink:#f472b6; --purple:#a78bfa; --folder:#fbbf24;
+    --file:#94a3b8; --sql:#34d399; --ts:#60a5fa; --env:#f472b6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #14305e33, transparent),
+      radial-gradient(900px 500px at 110% 0%, #1b5e4a33, transparent),
+      var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  header {
+    padding: 40px 24px 24px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0; font-size: 28px; }
+  header p { margin: 10px auto 0; max-width: 720px; color: var(--muted); }
+  .badges { margin-top: 16px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .badge {
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    padding: 5px 12px; border-radius: 999px; font-size: 12px;
+  }
+  nav.toc {
+    position: sticky; top: 0; z-index: 50;
+    background: #0d1117ee; backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px; overflow-x: auto;
+  }
+  nav.toc a { color: var(--muted); text-decoration: none; font-size: 13px; margin-right: 16px; white-space: nowrap; }
+  nav.toc a:hover { color: var(--accent); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 80px; }
+  section { margin-top: 36px; }
+  h2 { font-size: 20px; margin: 0 0 6px; color: var(--text); }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px; overflow: auto;
+  }
+  .tree { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 13px; line-height: 1.7; }
+  .tree .root { color: var(--accent); font-weight: 700; }
+  .tree .dir { color: var(--folder); }
+  .tree .file { color: var(--file); }
+  .tree .sql { color: var(--sql); }
+  .tree .ts { color: var(--ts); }
+  .tree .env { color: var(--env); }
+  .tree .comment { color: var(--muted); font-style: italic; }
+  .tree .indent { padding-left: 20px; border-left: 1px dashed var(--border); margin-left: 8px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .legend span::before { content: '● '; }
+  .legend .l-folder::before { color: var(--folder); }
+  .legend .l-sql::before { color: var(--sql); }
+  .legend .l-ts::before { color: var(--ts); }
+  .legend .l-env::before { color: var(--env); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .box {
+    background: var(--panel2); border: 1px solid var(--border);
+    border-left: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px;
+  }
+  .box h3 { margin: 0 0 6px; font-size: 15px; }
+  .box p { margin: 0; font-size: 13px; color: var(--muted); }
+  .box.b-sql { border-left-color: var(--sql); }
+  .box.b-ts { border-left-color: var(--ts); }
+  .box.b-prisma { border-left-color: var(--purple); }
+  .box.b-scripts { border-left-color: var(--warn); }
+  details.block { margin: 8px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--panel2); }
+  details.block summary {
+    cursor: pointer; padding: 12px 16px; font-weight: 600; font-size: 14px; list-style: none;
+  }
+  details.block summary::before { content: '▸ '; color: var(--accent); }
+  details.block[open] summary::before { content: '▾ '; }
+  details.block .inner { padding: 0 16px 14px; font-family: monospace; font-size: 12px; color: var(--muted); line-height: 1.8; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  tbody tr:hover { background: #1b2230; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); }
+  .t-outside { color: var(--sql); border-color: #34d39955; background: #34d39910; }
+  .t-inside { color: var(--ts); border-color: #60a5fa55; background: #60a5fa10; }
+  footer { margin-top: 48px; text-align: center; color: var(--muted); font-size: 13px; }
+  code { background: #0b0f16; border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; color: var(--accent2); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ERP Backend — Project File Structure</h1>
+  <p>Where schema SQL, validation, NestJS app code, and scripts live.
+     <b>SQL files are outside <code>src/</code></b> — that is intentional and correct.</p>
+  <div class="badges">
+    <span class="badge">C:\ERP-Backend</span>
+    <span class="badge">70 IAM SQL files</span>
+    <span class="badge">34 tables + validation</span>
+    <span class="badge">NestJS + Prisma</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#overview">Overview</a>
+  <a href="#root">Root tree</a>
+  <a href="#sql">SQL / IAM</a>
+  <a href="#src">src/</a>
+  <a href="#prisma">prisma/</a>
+  <a href="#scripts">scripts/</a>
+  <a href="#rules">Rules</a>
+</nav>
+
+<div class="wrap">
+
+  <section id="overview">
+    <h2>Overview — 4 main areas</h2>
+    <p class="sub">Each folder has a single responsibility.</p>
+    <div class="grid">
+      <div class="box b-ts">
+        <h3>src/</h3>
+        <p>NestJS application — APIs, services, guards, auth logic. TypeScript only. Runs with <code>npm run start:dev</code>.</p>
+      </div>
+      <div class="box b-sql">
+        <h3>sql/migrations/iam/</h3>
+        <p>Database schema + validation — CREATE TABLE and CHECK constraints. Run against Neon separately.</p>
+      </div>
+      <div class="box b-prisma">
+        <h3>prisma/</h3>
+        <p>ORM schema (old design). Will be updated to match new IAM tables after migrations run.</p>
+      </div>
+      <div class="box b-scripts">
+        <h3>scripts/</h3>
+        <p>Helper commands — run migrations, list/drop tables, setup, JWT secret generator.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="root">
+    <h2>Root folder tree</h2>
+    <p class="sub">Open in Explorer: <code>C:\ERP-Backend</code></p>
+    <div class="card">
+      <div class="tree">
+        <div class="root">C:\ERP-Backend\</div>
+        <div class="indent">
+          <div><span class="dir">src/</span> <span class="comment">← NestJS app (TypeScript) — NOT SQL</span></div>
+          <div><span class="dir">sql/</span> <span class="comment">← Database schema + validation SQL</span></div>
+          <div class="indent">
+            <div><span class="dir">migrations/</span></div>
+            <div class="indent">
+              <div><span class="dir">iam/</span> <span class="comment">← 70 SQL files (see below)</span></div>
+            </div>
+          </div>
+          <div><span class="dir">prisma/</span> <span class="comment">← Prisma ORM schema + old migrations</span></div>
+          <div><span class="dir">scripts/</span> <span class="comment">← Run helpers</span></div>
+          <div><span class="dir">docker/</span> <span class="comment">← Docker config</span></div>
+          <div><span class="dir">test/</span> <span class="comment">← E2E tests</span></div>
+          <div><span class="file env">.env</span> <span class="comment">← Secrets (Neon URL, JWT)</span></div>
+          <div><span class="file">.env.example</span></div>
+          <div><span class="file">package.json</span></div>
+          <div><span class="file">docker-compose.yml</span></div>
+          <div><span class="file">iam_rbac_schema.sql</span> <span class="comment">← Original combined SQL (reference)</span></div>
+          <div><span class="file">iam-rbac-schema.html</span> <span class="comment">← IAM diagrams + DDL docs</span></div>
+          <div><span class="file">project-structure.html</span> <span class="comment">← This file</span></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span class="l-folder">Folder</span>
+        <span class="l-sql">SQL / database</span>
+        <span class="l-ts">TypeScript / app</span>
+        <span class="l-env">Secrets</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="sql">
+    <h2>sql/migrations/iam/ — Schema + validation (70 files)</h2>
+    <p class="sub">Each table = <b>2 files</b> (schema + validation). Run in filename order.</p>
+    <div class="card">
+      <div class="tree">
+        <div class="root">sql/migrations/iam/</div>
+        <div class="indent">
+          <div><span class="sql">000_validation_functions.sql</span> <span class="comment">← Shared: email, code, updated_at helpers</span></div>
+          <div style="margin:10px 0;color:var(--muted)">── Per table (×34) ──</div>
+          <div><span class="sql">001_currencies.sql</span> <span class="comment">CREATE TABLE</span></div>
+          <div><span class="sql">001_currencies.validation.sql</span> <span class="comment">CHECK + trigger</span></div>
+          <div><span class="sql">002_super_admins.sql</span></div>
+          <div><span class="sql">002_super_admins.validation.sql</span></div>
+          <div><span class="sql">003_companies.sql</span></div>
+          <div><span class="sql">003_companies.validation.sql</span></div>
+          <div class="comment">… same pattern through …</div>
+          <div><span class="sql">034_user_audit.sql</span></div>
+          <div><span class="sql">034_user_audit.validation.sql</span></div>
+          <div style="margin:10px 0;color:var(--muted)">── Indexes ──</div>
+          <div><span class="sql">035_indexes.sql</span> <span class="comment">← Performance indexes (all tables)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <details class="block" open>
+      <summary>Full list — all 34 tables (schema + validation pairs)</summary>
+      <div class="inner">
+001 currencies &nbsp;·&nbsp; 002 super_admins &nbsp;·&nbsp; 003 companies &nbsp;·&nbsp; 004 subscription_plans<br>
+005 modules &nbsp;·&nbsp; 006 plan_modules &nbsp;·&nbsp; 007 company_subscriptions &nbsp;·&nbsp; 008 company_modules<br>
+009 company_security_policies &nbsp;·&nbsp; 010 branches &nbsp;·&nbsp; 011 departments &nbsp;·&nbsp; 012 designations<br>
+013 warehouses &nbsp;·&nbsp; 014 roles &nbsp;·&nbsp; 015 permissions &nbsp;·&nbsp; 016 role_permissions<br>
+017 users &nbsp;·&nbsp; 018 user_authentication &nbsp;·&nbsp; 019 user_mfa<br>
+020 user_companies &nbsp;·&nbsp; 021 user_roles &nbsp;·&nbsp; 022 user_module_access<br>
+023 user_preferences &nbsp;·&nbsp; 024 user_devices &nbsp;·&nbsp; 025 user_sessions<br>
+026 user_login_history &nbsp;·&nbsp; 027 user_password_history &nbsp;·&nbsp; 028 user_api_keys<br>
+029 user_notifications &nbsp;·&nbsp; 030 user_signatures &nbsp;·&nbsp; 031 user_attachments<br>
+032 user_delegations &nbsp;·&nbsp; 033 user_consents &nbsp;·&nbsp; 034 user_audit
+      </div>
+    </details>
+
+    <p class="sub" style="margin-top:14px">Run all: <code>node scripts/run-iam-migrations.js</code></p>
+  </section>
+
+  <section id="src">
+    <h2>src/ — NestJS application code</h2>
+    <p class="sub">API layer only. No SQL files here.</p>
+    <div class="card">
+      <div class="tree">
+        <div class="root">src/</div>
+        <div class="indent">
+          <div><span class="ts">main.ts</span> <span class="comment">← App entry point</span></div>
+          <div><span class="ts">app.module.ts</span> <span class="comment">← Root module</span></div>
+          <div><span class="dir">config/</span> <span class="comment">← .env validation, configuration</span></div>
+          <div><span class="dir">common/</span> <span class="comment">← Guards, filters, decorators, DTOs</span></div>
+          <div class="indent">
+            <div>guards/ · filters/ · interceptors/ · decorators/ · dto/ · constants/</div>
+          </div>
+          <div><span class="dir">infrastructure/</span> <span class="comment">← Prisma, Redis, queue, storage, audit, websocket</span></div>
+          <div class="indent">
+            <div>prisma/ · redis/ · queue/ · storage/ · audit/ · websocket/</div>
+          </div>
+          <div><span class="dir">modules/</span> <span class="comment">← Business API modules</span></div>
+          <div class="indent">
+            <div>auth/ · organizations/ · users/ · roles/</div>
+            <div>customers/ · vendors/ · products/ · inventory/ · health/</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="prisma">
+    <h2>prisma/ — ORM (to be updated)</h2>
+    <p class="sub">Currently still uses old <code>organizations</code> design. Will align with IAM after SQL runs.</p>
+    <div class="card">
+      <div class="tree">
+        <div class="root">prisma/</div>
+        <div class="indent">
+          <div><span class="file">schema.prisma</span> <span class="comment">← Data models for NestJS</span></div>
+          <div><span class="file">seed.ts</span> <span class="comment">← Seed permissions</span></div>
+          <div><span class="dir">migrations/</span> <span class="comment">← Old Prisma migrations (cleared from DB)</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="scripts">
+    <h2>scripts/ — Run helpers</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>run-iam-migrations.js</code></td><td>Run all 70 SQL files in order on Neon</td></tr>
+          <tr><td><code>run-iam-migrations.bat</code></td><td>Double-click to run migrations (Windows)</td></tr>
+          <tr><td><code>db-list-and-drop.js</code></td><td>List tables or drop all (reset DB)</td></tr>
+          <tr><td><code>setup.ps1</code></td><td>Initial project setup</td></tr>
+          <tr><td><code>generate-jwt-secret.ps1</code></td><td>Generate strong JWT secret</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="rules">
+    <h2>Rules — what goes where</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>What</th><th>Where</th><th>Tag</th></tr></thead>
+        <tbody>
+          <tr><td>CREATE TABLE, CHECK constraints, indexes</td><td><code>sql/migrations/iam/</code></td><td><span class="tag t-outside">Outside src</span></td></tr>
+          <tr><td>API routes, services, guards, DTOs</td><td><code>src/modules/</code></td><td><span class="tag t-inside">Inside src</span></td></tr>
+          <tr><td>Prisma models (TypeScript ORM)</td><td><code>prisma/schema.prisma</code></td><td><span class="tag t-outside">Outside src</span></td></tr>
+          <tr><td>Database URL, JWT secret</td><td><code>.env</code> (root)</td><td><span class="tag t-outside">Never in src</span></td></tr>
+          <tr><td>Run migrations on Neon</td><td><code>node scripts/run-iam-migrations.js</code></td><td><span class="tag t-outside">scripts/</span></td></tr>
+          <tr><td>Start API server</td><td><code>npm run start:dev</code></td><td><span class="tag t-inside">uses src/</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Run order (database setup)</h2>
+    <div class="card">
+      <div class="tree">
+        <div>1. <code>000_validation_functions.sql</code></div>
+        <div>2. <code>001_currencies.sql</code> → <code>001_currencies.validation.sql</code></div>
+        <div>3. <code>002_super_admins.sql</code> → <code>002_super_admins.validation.sql</code></div>
+        <div class="comment">… repeat for every table …</div>
+        <div>34. <code>034_user_audit.sql</code> → <code>034_user_audit.validation.sql</code></div>
+        <div>35. <code>035_indexes.sql</code></div>
+        <div style="margin-top:12px;color:var(--accent2)">Then: update prisma/schema.prisma → rewrite src/modules for new IAM tables</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    ERP Backend file structure · <code>project-structure.html</code><br/>
+    Open in browser: <code>file:///C:/ERP-Backend/project-structure.html</code>
+  </footer>
+</div>
+
+</body>
+</html>
