@@ -6,10 +6,18 @@ import { SuperAdminsModule } from '@/modules/iam/super-admins/super-admins.modul
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { AuthRepository } from './auth.repository';
+import { CompanyAccessContextRepository } from './company-access-context.repository';
+import { CompanyAccessContextService } from './company-access-context.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { AuthSessionModule } from './auth-session.module';
+import { CompanySecurityPolicyService } from './company-security-policy.service';
+import { UserContextCacheService } from './user-context-cache.service';
+import { OAuthController } from './oauth/oauth.controller';
+import { OAuthService } from './oauth/oauth.service';
 
 @Module({
   imports: [
+    AuthSessionModule,
     SuperAdminsModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
@@ -22,8 +30,23 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       }),
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthRepository, AuthService, JwtStrategy],
-  exports: [AuthService, JwtModule],
+  controllers: [AuthController, OAuthController],
+  providers: [
+    AuthRepository,
+    CompanyAccessContextRepository,
+    CompanyAccessContextService,
+    CompanySecurityPolicyService,
+    UserContextCacheService,
+    AuthService,
+    OAuthService,
+    JwtStrategy,
+  ],
+  exports: [
+    AuthService,
+    AuthSessionModule,
+    CompanyAccessContextService,
+    UserContextCacheService,
+    JwtModule,
+  ],
 })
 export class AuthModule {}

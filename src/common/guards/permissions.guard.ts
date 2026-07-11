@@ -4,6 +4,7 @@ import { IS_PUBLIC_KEY, PERMISSIONS_KEY } from '@/common/constants/metadata.cons
 import { PermissionCode } from '@/common/constants/permissions.constant';
 import { ForbiddenException } from '@/common/exceptions/business.exception';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { checkPermissionCode } from '@/common/utils/permission-check.util';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -36,7 +37,7 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const hasPermission = requiredPermissions.every((permission) =>
-      user.permissions.includes(permission),
+      checkPermissionCode(user, permission),
     );
 
     if (!hasPermission) {

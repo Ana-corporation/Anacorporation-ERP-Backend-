@@ -271,8 +271,8 @@ function restructurePrisma() {
 
   const enumsSrc = path.join(LEGACY_IAM, '_enums.prisma');
   if (fs.existsSync(enumsSrc)) {
-    fs.copyFileSync(enumsSrc, path.join(sharedDir, 'enums.prisma'));
-    console.log('  prisma/shared/enums.prisma');
+    fs.copyFileSync(enumsSrc, path.join(prismaDir, 'enums.prisma'));
+    console.log('  prisma/enums.prisma');
   }
 
   const currenciesBody = readModelBody('001-currencies');

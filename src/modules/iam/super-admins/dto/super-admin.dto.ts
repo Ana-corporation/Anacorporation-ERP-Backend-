@@ -23,6 +23,11 @@ export const SuperAdminLoginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const SuperAdminRefreshTokenSchema = z.object({
+  refreshToken: z.string().min(1).optional(),
+});
+
 export class CreateSuperAdminDto extends createZodDto(CreateSuperAdminSchema) {}
 export class UpdateSuperAdminDto extends createZodDto(UpdateSuperAdminSchema) {}
 export class SuperAdminLoginDto extends createZodDto(SuperAdminLoginSchema) {}
+export class SuperAdminRefreshTokenDto extends createZodDto(SuperAdminRefreshTokenSchema) {}

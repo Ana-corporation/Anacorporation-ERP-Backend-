@@ -1,0 +1,26 @@
+meta {
+  name: 01 Health Check
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/health
+  body: none
+  auth: none
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+}
+
+tests {
+  test("health returns 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+}
+
+docs {
+  Run this first. Confirms API server is running.
+}

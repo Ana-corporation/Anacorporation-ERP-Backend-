@@ -1,0 +1,39 @@
+meta {
+  name: 02 Super Admin Login
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/super-admins/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{superAdminEmail}}",
+    "password": "{{superAdminPassword}}"
+  }
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+  auth.saveSuperAdminAuth(res);
+}
+
+tests {
+  test("super admin login returns token", function() {
+    expect(res.getBody().data.accessToken).to.be.a('string');
+    expect(res.getBody().data.role).to.equal('super_admin');
+  });
+}
+
+docs {
+  Auto-saves superAdminAccessToken. Cookie: super_admin_refresh_token
+}

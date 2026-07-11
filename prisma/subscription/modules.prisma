@@ -8,6 +8,7 @@ model Module {
   icon           String?   @db.VarChar(80)
   parentModuleId BigInt?   @map("parent_module_id")
   sortOrder      Int       @default(0) @map("sort_order")
+  moduleType     ModuleType @default(admin) @map("module_type")
   isActive       Boolean   @default(true) @map("is_active")
   createdBy      BigInt?   @map("created_by")
   createdAt      DateTime  @default(now()) @map("created_at")

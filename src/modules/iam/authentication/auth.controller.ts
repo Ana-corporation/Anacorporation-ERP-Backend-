@@ -1,10 +1,37 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Request, Response } from 'express';
 import { Public } from '@/common/decorators/auth.decorators';
 import { CurrentUser, CompanyId } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { AuthService } from './auth.service';
-import { LoginDto, RefreshTokenDto, SignUpDto, SwitchCompanyDto } from './dto/auth.dto';
+import {
+  LoginDto,
+  RefreshTokenDto,
+  ResolveCompanyDto,
+  SignUpDto,
+  SwitchCompanyDto,
+} from './dto/auth.dto';
+import { REFRESH_COOKIE_OPTIONS, REFRESH_TOKEN_COOKIE } from './auth.constants';
+
+function clientMeta(req: Request) {
+  return {
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+  };
+}
+
+function readRefreshToken(req: Request, bodyToken?: string): string | undefined {
+  return (req.cookies?.[REFRESH_TOKEN_COOKIE] as string | undefined) ?? bodyToken;
+}
+
+function setRefreshCookie(res: Response, refreshToken: string) {
+  res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, REFRESH_COOKIE_OPTIONS);
+}
+
+function clearRefreshCookie(res: Response) {
+  res.clearCookie(REFRESH_TOKEN_COOKIE, { path: REFRESH_COOKIE_OPTIONS.path });
+}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -12,24 +39,51 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Get('company')
+  @ApiOperation({ summary: 'Resolve company by code (pre-login)' })
+  resolveCompany(@Query() query: ResolveCompanyDto) {
+    return this.authService.getPublicCompanyByCode(query.companyCode);
+  }
+
+  @Public()
   @Post('signup')
   @ApiOperation({ summary: 'Sign up — create user and company' })
-  signUp(@Body() dto: SignUpDto) {
-    return this.authService.signUp(dto);
+  async signUp(@Body() dto: SignUpDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.signUp(dto, clientMeta(req));
+    if (result.refreshToken) {
+      setRefreshCookie(res, result.refreshToken);
+    }
+    const { refreshToken: _rt, ...body } = result;
+    return body;
   }
 
   @Public()
   @Post('login')
-  @ApiOperation({ summary: 'Login with email and password' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  @ApiOperation({ summary: 'Login with employee code and password' })
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto, clientMeta(req));
+    if (result.refreshToken) {
+      setRefreshCookie(res, result.refreshToken);
+    }
+    const { refreshToken: _rt, ...body } = result;
+    return body;
   }
 
   @Public()
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
-  refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refresh(dto.refreshToken);
+  async refresh(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = readRefreshToken(req, dto.refreshToken);
+    const result = await this.authService.refresh(token ?? '', clientMeta(req));
+    if (result.refreshToken) {
+      setRefreshCookie(res, result.refreshToken);
+    }
+    const { refreshToken: _rt, ...body } = result;
+    return body;
   }
 
   @Get('me')
@@ -49,14 +103,38 @@ export class AuthController {
   @Post('logout')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout and revoke session' })
-  logout(@Body() dto: RefreshTokenDto, @CurrentUser() user: AuthenticatedUser, @CompanyId() companyId: string) {
-    return this.authService.logout(dto.refreshToken, user.sub, companyId);
+  async logout(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: AuthenticatedUser,
+    @CompanyId() companyId: string,
+  ) {
+    const token = readRefreshToken(req, dto.refreshToken);
+    const result = await this.authService.logout(token, user.sub, companyId, user.sessionId);
+    clearRefreshCookie(res);
+    return result;
   }
 
   @Post('switch-company')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Switch active company' })
-  switchCompany(@CurrentUser() user: AuthenticatedUser, @Body() dto: SwitchCompanyDto) {
-    return this.authService.switchCompany(user.sub, dto.companyId);
+  async switchCompany(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SwitchCompanyDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.switchCompany(
+      user.sub,
+      dto.companyId,
+      clientMeta(req),
+      user.sessionId,
+    );
+    if (result.refreshToken) {
+      setRefreshCookie(res, result.refreshToken);
+    }
+    const { refreshToken: _rt, ...body } = result;
+    return body;
   }
 }

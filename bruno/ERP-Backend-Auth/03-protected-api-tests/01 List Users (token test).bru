@@ -1,0 +1,26 @@
+meta {
+  name: 01 List Users (token test)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/users
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  limit: 10
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+}
+
+docs {
+  Verifies company accessToken works on protected IAM route.
+  Run 01-company-auth-flow/01 Login first.
+}

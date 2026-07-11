@@ -10,6 +10,7 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
+import { ModulePermissionGuard } from './common/guards/module-permission.guard';
 import { TenantGuard } from './common/guards/tenant.guard';
 import { SharedModule } from './modules/shared/shared.module';
 import { OrganizationModule } from './modules/organization/organization.module';
@@ -37,6 +38,7 @@ import { HealthModule } from './modules/health/health.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: ModulePermissionGuard },
   ],
 })
 export class AppModule {}

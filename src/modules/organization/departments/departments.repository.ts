@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { PaginationQueryDto, getPaginationParams } from '@/common/dto/pagination.dto';
 import { parseBigIntId } from '@/common/utils/bigint.util';
+import { withCompanyScope } from '@/common/utils/tenant-scope.util';
 import { buildListWhere, resolveOrderBy, ListFilterOptions } from '@/common/utils/prisma-filter.util';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department.dto';
 
@@ -22,7 +23,7 @@ export class DepartmentsRepository {
   findManyByCompany(companyId: string, query: PaginationQueryDto) {
     const { skip, limit, page } = getPaginationParams(query);
     const where = buildListWhere(
-      { companyId: parseBigIntId(companyId), deletedAt: null },
+      withCompanyScope(companyId) as Prisma.DepartmentWhereInput,
       query,
       DEPARTMENTS_LIST_FILTER,
     ) as Prisma.DepartmentWhereInput;
@@ -41,11 +42,9 @@ export class DepartmentsRepository {
 
   findById(id: string, companyId: string) {
     return this.prisma.department.findFirst({
-      where: {
+      where: withCompanyScope(companyId, {
         departmentId: parseBigIntId(id),
-        companyId: parseBigIntId(companyId),
-        deletedAt: null,
-      },
+      }) as Prisma.DepartmentWhereInput,
       include: { parent: true, children: { where: { deletedAt: null } } },
     });
   }

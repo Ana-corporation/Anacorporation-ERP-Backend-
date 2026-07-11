@@ -34,6 +34,7 @@ model User {
   rowVersion      Int       @default(1) @map("row_version")
 
   authentication   UserAuthentication?
+  oauthIdentities  UserOAuthIdentity[]
   mfaMethods       UserMfa[]
   companies        UserCompany[]
   roles            UserRole[]

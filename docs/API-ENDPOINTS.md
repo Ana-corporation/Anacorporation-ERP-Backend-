@@ -19,6 +19,7 @@ Use this file to track **routes → controller → service → repository → DT
 | Global auth guard | `src/common/guards/jwt-auth.guard.ts` |
 | Tenant guard (`companyId`) | `src/common/guards/tenant.guard.ts` |
 | Permissions guard | `src/common/guards/permissions.guard.ts` |
+| Module permission guard | `src/common/guards/module-permission.guard.ts` |
 | Pagination DTO (shared) | `src/common/dto/pagination.dto.ts` |
 | Zod shared schemas | `src/common/zod/common.schemas.ts` |
 | Prisma client | `src/infrastructure/prisma/prisma.service.ts` |
@@ -167,13 +168,48 @@ src/modules/
 
 | Method | Full route | Controller → Service | DTO |
 |--------|------------|----------------------|-----|
+| GET | `/api/v1/auth/company` | `resolveCompany()` → `authService.getPublicCompanyByCode()` | `ResolveCompanyDto` (query: `companyCode`) |
 | POST | `/api/v1/auth/signup` | `signUp()` → `authService.signUp()` | `SignUpDto` |
 | POST | `/api/v1/auth/login` | `login()` → `authService.login()` | `LoginDto` |
-| POST | `/api/v1/auth/refresh` | `refresh()` → `authService.refresh()` | `RefreshTokenDto` |
+| POST | `/api/v1/auth/refresh` | `refresh()` → `authService.refresh()` | `RefreshTokenDto` (cookie or body) |
 | GET | `/api/v1/auth/me` | `getMe()` → `authService.getMe()` | — |
 | GET | `/api/v1/auth/companies` | `getMyCompanies()` → `authService.getMyCompanies()` | — |
-| POST | `/api/v1/auth/logout` | `logout()` → `authService.logout()` | `RefreshTokenDto` |
+| POST | `/api/v1/auth/logout` | `logout()` → `authService.logout()` | `RefreshTokenDto` (cookie or body) |
 | POST | `/api/v1/auth/switch-company` | `switchCompany()` → `authService.switchCompany()` | `SwitchCompanyDto` |
+
+**Pre-login company lookup**
+```
+GET /api/v1/auth/company?companyCode=ACME
+```
+
+**Login body (Phase 1 — employee code)**
+```json
+{
+  "employeeCode": "EMP-00001",
+  "password": "SecurePass1",
+  "companyId": "1"
+}
+```
+`companyCode` may be used instead of `companyId`. Refresh token is set as httpOnly cookie `refresh_token`; access token is returned in JSON.
+
+**Login response shape (snapshot)**
+```json
+{
+  "accessToken": "...",
+  "expiresIn": "15m",
+  "tokenType": "Bearer",
+  "user": { "userId", "username", "displayName", "email" },
+  "companies": [{ "companyId", "companyCode", "name", "isDefault", "status" }],
+  "activeCompany": {
+    "companyId", "companyCode", "name", "status",
+    "role": { "roleId", "roleCode", "roleName" },
+    "subscription": { "status", "planCode", "planName", "endDate", "isCustom" },
+    "modules": [{ "moduleId", "moduleCode", "moduleName", "isActive", "permissions": ["view","create"] }]
+  }
+}
+```
+
+**JWT claims:** `sub`, `cid`, `sid`, `role` (no permissions in token).
 
 **Signup body example**
 ```json
@@ -202,6 +238,9 @@ src/modules/
 |--------|------------|------|------------|-----|
 | POST | `/api/v1/super-admins/bootstrap` | Public (first admin only) | — | `CreateSuperAdminDto` |
 | POST | `/api/v1/super-admins/auth/login` | Public | — | `SuperAdminLoginDto` |
+| POST | `/api/v1/super-admins/auth/refresh` | Public | — | `SuperAdminRefreshTokenDto` (cookie or body) |
+| GET | `/api/v1/super-admins/auth/me` | Super admin JWT | — | — |
+| POST | `/api/v1/super-admins/auth/logout` | Super admin JWT | — | `SuperAdminRefreshTokenDto` |
 | GET | `/api/v1/super-admins` | Super admin JWT | `super_admins:view` | `PaginationQueryDto` |
 | GET | `/api/v1/super-admins/:id` | Super admin JWT | `super_admins:view` | — |
 | POST | `/api/v1/super-admins` | Super admin JWT | `super_admins:create` | `CreateSuperAdminDto` |

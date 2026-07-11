@@ -2,7 +2,9 @@ import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY, TENANT_OPTIONAL_KEY } from '@/common/constants/metadata.constants';
 import { ForbiddenException } from '@/common/exceptions/business.exception';
-import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { AuthenticatedUser, TenantContext } from '@/common/interfaces/auth.interface';
+
+const COMPANY_ID_HEADER = 'x-company-id';
 
 @Injectable()
 export class TenantGuard implements CanActivate {
@@ -27,7 +29,11 @@ export class TenantGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<{ user: AuthenticatedUser }>();
+    const request = context.switchToHttp().getRequest<{
+      user: AuthenticatedUser;
+      tenant?: TenantContext;
+      headers: Record<string, string | string[] | undefined>;
+    }>();
     const user = request.user;
 
     if (!user?.companyId) {
@@ -36,6 +42,20 @@ export class TenantGuard implements CanActivate {
       }
       throw new ForbiddenException('Company context required');
     }
+
+    const headerCompanyId = request.headers[COMPANY_ID_HEADER];
+    if (headerCompanyId) {
+      const requested =
+        typeof headerCompanyId === 'string' ? headerCompanyId : headerCompanyId[0];
+      if (requested && requested !== user.companyId) {
+        throw new ForbiddenException('Company context mismatch');
+      }
+    }
+
+    request.tenant = {
+      companyId: user.companyId,
+      userId: user.sub,
+    };
 
     return true;
   }

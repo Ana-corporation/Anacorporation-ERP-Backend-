@@ -1,0 +1,348 @@
+================================================================================
+  PHASE 1 AUTH — FINAL LOCKED DECISIONS (BACKEND x FRONTEND)
+  Single source of truth before Epic 2 coding.
+  Combines:
+    - docs/PHASE-1-AUTH-CLARIFICATIONS.txt   (questions)
+    - Frontend answers file (2026-07-07)
+    - Backend confirmations (this file)
+  Generated: 2026-07-07
+================================================================================
+
+STATUS KEY:
+  LOCKED   = agreed by both sides, safe to build.
+  BE-TODO  = requires backend work item (goes into Epic list).
+  FE-TODO  = requires frontend work item.
+
+
+================================================================================
+Q1 — LOGIN FIELD                                                        [LOCKED]
+================================================================================
+  Phase 1 = EMPLOYEE CODE only.
+  emp code is stored in user_companies.employee_id (VARCHAR 40).
+
+  BACKEND CONFIRM:
+    - employee_id is UNIQUE PER COMPANY (not global). CONFIRMED by schema:
+      user_companies has @@unique([userId, companyId]); employee_id is a plain
+      per-membership column. So (companyId + employeeCode) identifies a user.
+    - Therefore companyId is REQUIRED at login (see Q3).
+
+  Lookup path (Phase 1):
+    user_companies WHERE company_id = ? AND employee_id = ? AND status = 'active'
+      -> user_id
+      -> users (is_active, is_locked)
+      -> user_authentication (password_hash) -> bcrypt.compare
+
+  API request:
+    POST /api/v1/auth/login
+    { "employeeCode": "EMP-00123", "password": "********", "companyId": "1" }
+
+  SaaS FUTURE (Phase 2+): company-configurable login (emp code / username / email).
+
+
+================================================================================
+Q2 — PASSWORD                                                          [LOCKED]
+================================================================================
+  Standard password string. No MFA/OTP gate in Phase 1.
+  No separate company-code password step (company chosen before creds — Q3).
+  BACKEND CONFIRM: login returns tokens without MFA challenge in Phase 1.
+
+
+================================================================================
+Q3 — COMPANY ID AT LOGIN                                               [LOCKED]
+================================================================================
+  companyId REQUIRED. Company picker shown BEFORE credentials.
+  BACKEND CONFIRM:
+    - Missing companyId -> HTTP 400 (validation error).
+    - emp code validated within that company only.
+    - Because emp-code auth cannot identify user without company, "login then
+      pick company" (B2) is NOT supported in Phase 1.
+
+  NOTE: frontend needs a way to list/choose companies BEFORE login. Options:
+    - User types a Company Code on the login screen (maps to companies.company_code),
+      OR
+    - A public "resolve company" lookup. -> see BE-TODO below.
+  BE-TODO: provide company identification method for pre-login
+           (recommend: login accepts companyCode OR companyId).
+
+
+================================================================================
+Q4 — RESPONSE FIELD NAMES                                              [LOCKED]
+================================================================================
+  Wire format = camelCase (public contract).
+  user    = { userId, username, displayName, email }
+  company = { companyId, companyCode, name, isDefault, status }
+  companyCode INCLUDED.
+  Frontend runs its own adapter to snake_case internally (Q16).
+  BACKEND CONFIRM: emit camelCase; BigInt ids serialized as STRINGS
+                   (userId/companyId are strings) EXCEPT moduleId (see Q18).
+
+
+================================================================================
+Q5 + Q17 — MODULE NAMESPACE (PRODUCT vs ADMIN)              [LOCKED + BE-TODO]
+================================================================================
+  DECISION: activeCompany.modules[] returns PRODUCT modules ONLY.
+    product module codes (Phase 1 target):
+      financials, supply-chain, hcm, manufacturing, crm, projects
+
+  ADMIN areas (iam, organization, subscription, shared) are:
+    - NOT subscription-gated
+    - NOT returned in modules[]
+    - authorized by ROLE (role_permissions) only
+
+  BACKEND REALITY (important):
+    There is ONE physical `modules` table. permissions, plan_modules,
+    company_modules, role_permissions, user_module_access ALL reference it.
+    So "product" vs "admin" is a CLASSIFICATION within the same table.
+
+  HOW WE SEPARATE THEM (no breaking change):
+    - Product modules  => seeded AND linked via plan_modules / company_modules.
+    - Admin modules    => seeded but NEVER added to plan_modules/company_modules.
+    - Snapshot rule: modules[] = modules entitled via plan/company_modules only.
+      => admin modules naturally never appear in the subscription snapshot.
+
+  BE-TODO 1: add a discriminator on modules to make this explicit and safe:
+             module_type ENUM('product','admin')  (or is_billable BOOLEAN).
+             Prevents accidental gating of admin screens.
+  BE-TODO 2: seed the 6 product modules (+ their permissions) so role matrices
+             and entitlement both work.
+
+  ADMIN SCREEN AUTH: keep existing permission codes (users:view, roles:edit,
+  etc.) under admin modules; gate by role_permissions, independent of subscription.
+
+
+================================================================================
+Q6 — PERMISSIONS FORMAT                                                [LOCKED]
+================================================================================
+  modules[].permissions[] = ACTIONS ONLY, exactly these five:
+    ["view","create","edit","delete","approve"]
+  NO export/print/import/manage in Phase 1 (they exist in DB enum but are
+  EXCLUDED from the Phase 1 snapshot).
+  BACKEND CONFIRM: snapshot maps DB actions -> filter to the 5 allowed;
+                   drop others for Phase 1.
+
+
+================================================================================
+Q7 — CUSTOM SUBSCRIPTION / isCustom                        [LOCKED — Option B]
+================================================================================
+  DECISION: Support custom bundles via company_modules (no new schema needed).
+
+  ENTITLEMENT RESOLUTION (Phase 1):
+    plan_set     = plan_modules(plan_of_active_subscription)
+    company_on   = company_modules WHERE is_active = true (and not expired)
+    company_off  = company_modules WHERE is_active = false
+    entitled     = (plan_set  UNION  company_on)  MINUS  company_off
+    isCustom     = (company_modules rows exist AND differ from plan_set)
+
+  BACKEND CONFIRM:
+    - activeCompany.subscription.isCustom is computed as above.
+    - If a company has no company_modules rows -> entitled = plan_set,
+      isCustom = false.
+  (Optional future: dedicated custom_module_ids column — NOT needed now.)
+
+
+================================================================================
+Q8 — ONE ROLE PER USER PER COMPANY                                    [LOCKED]
+================================================================================
+  One active role per user per company in Phase 1.
+  JWT role claim = that single role_code.
+  BACKEND CONFIRM:
+    - Even though user_roles CAN hold multiple, Phase 1 login uses the FIRST/only
+      active role. If >1 active role found -> log warning, use primary
+      (lowest roleId) for determinism. No permission MERGE in Phase 1.
+  BE-TODO (minor): enforce/seed single active role per (user, company).
+
+
+================================================================================
+Q9 — REFRESH TOKEN = httpOnly COOKIE                       [LOCKED — Option B]
+================================================================================
+  Refresh token delivered as httpOnly, Secure, SameSite cookie on
+  login / switch-company / refresh. accessToken returned in body (memory).
+  BE-TODO: change auth responses to set-cookie for refresh token; keep body
+           accessToken. Logout clears cookie + revokes session.
+
+
+================================================================================
+Q10 — COMPANY / MEMBERSHIP STATUS MATRIX                              [LOCKED]
+================================================================================
+  COMPANY (companies.status):
+    trial     -> ALLOW
+    active    -> ALLOW
+    suspended -> BLOCK
+    cancelled -> BLOCK
+
+  MEMBERSHIP (user_companies.status):
+    active    -> ALLOW
+    invited   -> BLOCK (until accepted)
+    suspended -> BLOCK
+    left      -> BLOCK
+
+  BACKEND CONFIRM: enforce both gates at login and switch-company.
+  Error messages must be distinct (company suspended vs membership inactive).
+
+
+================================================================================
+Q11 — SUBSCRIPTION STATUS / TRIAL ENTITLEMENT              [LOCKED + FE-TODO]
+================================================================================
+  No active subscription -> ALLOW login, modules: [] (Option B).
+
+  ENTITLEMENT BY SUBSCRIPTION STATUS (backend authority):
+    active    -> entitled (end_date >= today OR null)
+    trial     -> ENTITLED (during trial window, end_date >= today)   <-- DECISION
+    pending   -> NOT entitled (maps to none)
+    expired   -> NOT entitled
+    cancelled -> NOT entitled
+
+  RECONCILIATION:
+    Backend treats 'trial' as live/entitled (SaaS onboarding must show modules).
+    FE-TODO: getActiveSubscription() must include 'trial' (currently 'active'
+             only) so client menu matches backend snapshot. Also handle
+             'pending' as none (not in FE enum today).
+
+  BACKEND CONFIRM: getActiveSubscription (server) = status IN ('active','trial')
+                   AND (end_date IS NULL OR end_date >= CURRENT_DATE),
+                   newest by start_date.
+
+
+================================================================================
+Q12 — SUPER ADMIN                                          [LOCKED — deferred]
+================================================================================
+  Defer to Phase 2 / Epic 7. Phase 1 login = company users only.
+
+
+================================================================================
+Q13 — SESSION STORAGE                                                 [LOCKED]
+================================================================================
+  Redis = live/cache + refresh mapping. DB user_sessions = record/audit.
+  Logout MUST invalidate token reliably (delete Redis session/refresh AND
+  set user_sessions.session_status = logged_out).
+  BE-TODO: make logout update BOTH consistently (currently DB not always updated).
+
+
+================================================================================
+Q14 — API BASE PATHS                                                  [LOCKED]
+================================================================================
+  /api/v1/auth/login | switch-company | refresh | logout | me   ALL OK.
+
+
+================================================================================
+Q15 — REDIRECT FLAGS                                       [LOCKED — Option B]
+================================================================================
+  Frontend decides redirect. Backend returns data only.
+  Backend MAY include a simple boolean: requiresCompanySelection.
+  No redirectTo path from backend.
+  NOTE: with Q3 (companyId required + picker before login), requiresCompanySelection
+  is typically FALSE at login. Keep field for future flexibility.
+
+
+================================================================================
+Q16 — SNAPSHOT vs REDUX SHAPE                              [FE-TODO — info only]
+================================================================================
+  Frontend adapts the flat login snapshot into its normalized slice via
+  lib/auth/hydrate-from-snapshot.js. Backend action: NONE.
+  Backend just guarantees a STABLE snapshot contract (documented below).
+
+
+================================================================================
+Q18 — moduleId (numeric) + moduleCode                      [LOCKED — Option A]
+================================================================================
+  modules[] includes BOTH:
+    moduleId   : numeric (stable, from modules.module_id)
+    moduleCode : string  (financials, crm, ...)
+  BACKEND CONFIRM: moduleId serialized as a NUMBER (module ids are small,
+  within JS safe range). All OTHER bigint ids (userId, companyId, roleId)
+  serialized as STRINGS. Document this split clearly to avoid confusion.
+
+
+================================================================================
+FINAL LOGIN RESPONSE CONTRACT (PHASE 1)
+================================================================================
+{
+  "accessToken": "eyJ...",
+  "expiresIn": 900,
+  "tokenType": "Bearer",
+  // refreshToken NOT in body -> httpOnly cookie (Q9)
+  "requiresCompanySelection": false,
+  "user": {
+    "userId": "1",
+    "username": "jane.doe",
+    "displayName": "Jane Doe",
+    "email": "jane@acme.com"
+  },
+  "companies": [
+    { "companyId": "1", "companyCode": "ACME", "name": "Acme", "isDefault": true, "status": "active" }
+  ],
+  "activeCompany": {
+    "companyId": "1",
+    "companyCode": "ACME",
+    "name": "Acme",
+    "status": "active",
+    "role": { "roleId": "10", "roleCode": "admin", "roleName": "Administrator" },
+    "subscription": {
+      "status": "active",
+      "planCode": "pro",
+      "planName": "Pro",
+      "endDate": "2026-12-31",
+      "isCustom": false
+    },
+    "modules": [
+      {
+        "moduleId": 5,
+        "moduleCode": "financials",
+        "moduleName": "Financials",
+        "isActive": true,
+        "permissions": ["view","create","edit","delete","approve"]
+      }
+    ]
+  }
+}
+
+JWT CLAIMS (Phase 1):
+  { "sub": "1", "cid": "1", "role": "admin", "sid": "98231", "exp": ... }
+  (no full permission list in token)
+
+
+================================================================================
+CONSOLIDATED BACKEND WORK ITEMS (feed into Epic list)
+================================================================================
+  BE-1  Login by emp code (user_companies.employee_id) + required companyId,
+        accept companyCode OR companyId for pre-login identification.   [x] DONE
+  BE-2  Company + membership status gates at login/switch.              [x] DONE
+  BE-3  buildCompanyAccessContext(userId, companyId):                   [x] DONE
+          membership -> subscription -> entitlement(plan∩company_modules)
+          -> role -> permissions(actions) -> user_module_access overrides.
+  BE-4  Add modules.module_type ('product'|'admin') discriminator + seed
+        6 product modules and their permissions.                       [x] DONE
+  BE-5  Entitlement + isCustom via company_modules union/minus logic.   [x] DONE
+  BE-6  Subscription resolver: status IN ('active','trial') & date.     [x] DONE
+  BE-7  Snapshot builder: camelCase; ids as strings; moduleId as number;
+        permissions filtered to 5 actions.                             [x] DONE
+  BE-8  Refresh token as httpOnly cookie; logout clears + revokes.      [x] DONE
+  BE-9  JWT claims sub/cid/role/sid; validate session each request.     [x] DONE
+  BE-10 One active role per (user,company); primary = lowest roleId.    [x] DONE
+  BE-11 user_login_history on success + failure.                        [x] DONE
+  BE-12 ModulePermissionGuard + checkPermission() on product routes.    [x] DONE
+  BE-13 TenantGuard: x-company-id mismatch rejection + request.tenant.    [x] DONE
+
+FRONTEND WORK ITEMS:
+  FE-1  hydrate-from-snapshot adapter (camelCase -> snake_case slice).  (Q16)
+  FE-2  getActiveSubscription include 'trial'; treat 'pending' as none. (Q11)
+  FE-3  Company picker/company-code field BEFORE login.                 (Q3)
+
+
+================================================================================
+READY-TO-CODE GATE
+================================================================================
+  All P0 questions resolved: Q1,Q2,Q3,Q4,Q5,Q6,Q10,Q11,Q17,Q18  -> LOCKED.
+  P1: Q7,Q8,Q9,Q13,Q15 -> LOCKED.  Q16 FE-only.
+  => Epic 2 (buildCompanyAccessContext) can start.
+
+  RECOMMENDED FIRST CODE STEP:
+    1) BE-4 seed product modules + permissions (data foundation)
+    2) BE-3 buildCompanyAccessContext service
+    3) BE-1 emp-code login wired to the context
+    4) BE-7 snapshot response shape
+
+
+================================================================================
+END OF DECISIONS FILE
+================================================================================

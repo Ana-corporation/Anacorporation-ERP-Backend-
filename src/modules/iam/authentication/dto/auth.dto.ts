@@ -11,18 +11,28 @@ export const SignUpSchema = z.object({
   companyName: z.string().min(1),
 });
 
-export const LoginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-  companyId: bigintIdSchema.optional(),
-});
+export const LoginSchema = z
+  .object({
+    employeeCode: z.string().min(1),
+    password: z.string().min(1),
+    companyId: bigintIdSchema.optional(),
+    companyCode: z.string().min(1).optional(),
+  })
+  .refine((data) => Boolean(data.companyId || data.companyCode), {
+    message: 'companyId or companyCode is required',
+    path: ['companyId'],
+  });
 
 export const RefreshTokenSchema = z.object({
-  refreshToken: z.string().min(1),
+  refreshToken: z.string().min(1).optional(),
 });
 
 export const SwitchCompanySchema = z.object({
   companyId: bigintIdSchema,
+});
+
+export const ResolveCompanySchema = z.object({
+  companyCode: z.string().min(1),
 });
 
 export const CompanySummarySchema = z.object({
@@ -37,3 +47,4 @@ export class LoginDto extends createZodDto(LoginSchema) {}
 export class RefreshTokenDto extends createZodDto(RefreshTokenSchema) {}
 export class SwitchCompanyDto extends createZodDto(SwitchCompanySchema) {}
 export class CompanySummaryDto extends createZodDto(CompanySummarySchema) {}
+export class ResolveCompanyDto extends createZodDto(ResolveCompanySchema) {}

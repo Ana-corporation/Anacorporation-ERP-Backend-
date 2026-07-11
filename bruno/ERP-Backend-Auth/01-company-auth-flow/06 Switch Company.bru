@@ -1,0 +1,33 @@
+meta {
+  name: 06 Switch Company
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/switch-company
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "companyId": "{{switchCompanyId}}"
+  }
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+  auth.saveCompanyAuth(res);
+}
+
+docs {
+  Set switchCompanyId in environment to another company the user belongs to.
+  If only one company, set switchCompanyId = companyId (same company).
+  Auto-saves new accessToken and snapshot.
+}

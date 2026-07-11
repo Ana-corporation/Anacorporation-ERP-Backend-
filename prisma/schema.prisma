@@ -1,6 +1,7 @@
 // ERP IAM — multi-file Prisma schema
-// Models: prisma/iam/<table>/schema.prisma
-// Validation: prisma/iam/<table>/validation.sql (run after migrate)
+// Models: prisma/iam/<table>.prisma
+// Enums:  prisma/enums.prisma
+// Validation: prisma/**/validation/*.sql (run after migrate)
 
 generator client {
   provider = "prisma-client-js"

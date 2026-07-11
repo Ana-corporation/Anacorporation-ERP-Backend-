@@ -1,0 +1,29 @@
+meta {
+  name: 03 Get Me (snapshot)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/auth/me
+  body: none
+  auth: none
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+}
+
+tests {
+  test("returns user and activeCompany", function() {
+    const data = res.getBody().data;
+    expect(data.user).to.be.an('object');
+    expect(data.activeCompany).to.be.an('object');
+  });
+}
+
+docs {
+  Token auto-attached from environment (collection pre-request script).
+  Shows full permission snapshot: modules[], role, subscription.
+}

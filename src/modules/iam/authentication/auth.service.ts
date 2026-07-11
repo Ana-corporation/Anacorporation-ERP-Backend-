@@ -5,41 +5,78 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { v4 as uuidv4 } from 'uuid';
 import { UserAuditAction } from '@prisma/client';
-import { RedisService } from '@/infrastructure/redis/redis.service';
 import { AuditService } from '@/infrastructure/audit/audit.service';
 import { AuthenticatedUser, JwtPayload } from '@/common/interfaces/auth.interface';
 import {
   ConflictException,
+  ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@/common/exceptions/business.exception';
 import { DEFAULT_ADMIN_PERMISSIONS } from '@/common/constants/permissions.constant';
 import { LoginDto, SignUpDto } from './dto/auth.dto';
 import { AuthRepository } from './auth.repository';
+import { CompanyAccessContextService } from './company-access-context.service';
+import { AuthSessionService } from './auth-session.service';
+import { CompanySecurityPolicyService } from './company-security-policy.service';
+import { UserContextCacheService } from './user-context-cache.service';
 
-interface SessionData {
-  userId: string;
-  companyId: string;
-  refreshTokenHash: string;
+export interface AuthClientMeta {
+  ipAddress?: string;
+  userAgent?: string;
 }
 
 @Injectable()
 export class AuthService {
-  private readonly refreshTtlSeconds: number;
-
   constructor(
     private readonly authRepository: AuthRepository,
+    private readonly companyAccessContextService: CompanyAccessContextService,
+    private readonly authSessionService: AuthSessionService,
+    private readonly securityPolicyService: CompanySecurityPolicyService,
+    private readonly userContextCache: UserContextCacheService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly redisService: RedisService,
     private readonly auditService: AuditService,
-  ) {
-    this.refreshTtlSeconds = 7 * 24 * 60 * 60;
+  ) {}
+
+  async resolveCompanyForLogin(companyId?: string, companyCode?: string) {
+    let company = null as Awaited<ReturnType<AuthRepository['findCompanyByCode']>>;
+
+    if (companyId) {
+      company = await this.authRepository.findCompanyById(companyId);
+    } else if (companyCode) {
+      company = await this.authRepository.findCompanyByCode(companyCode);
+    }
+
+    if (!company) {
+      throw new BadRequestException('Company not found');
+    }
+    if (company.status === 'suspended') {
+      throw new ForbiddenException('Company account is suspended');
+    }
+    if (company.status === 'cancelled') {
+      throw new ForbiddenException('Company account is cancelled');
+    }
+
+    return company;
   }
 
-  async signUp(dto: SignUpDto) {
+  async getPublicCompanyByCode(companyCode: string) {
+    const company = await this.authRepository.findCompanyByCode(companyCode);
+    if (!company) {
+      throw new NotFoundException('Company');
+    }
+
+    return {
+      companyId: company.companyId.toString(),
+      companyCode: company.companyCode,
+      name: company.name,
+      status: company.status,
+    };
+  }
+
+  async signUp(dto: SignUpDto, meta: AuthClientMeta = {}) {
     if (dto.password !== dto.confirmPassword) {
       throw new BadRequestException('Password and confirm password do not match');
     }
@@ -50,15 +87,14 @@ export class AuthService {
       throw new ConflictException('Email is already registered');
     }
 
-    await this.authRepository.ensurePermissionsSeeded();
     const permissions = await this.authRepository.getAllPermissions();
-    const adminPermissionIds = permissions
+    const adminPermissions = permissions
       .filter((p) =>
         DEFAULT_ADMIN_PERMISSIONS.includes(
           p.permissionCode as (typeof DEFAULT_ADMIN_PERMISSIONS)[number],
         ),
       )
-      .map((p) => p.permissionId);
+      .map((p) => ({ permissionId: p.permissionId, moduleId: p.moduleId }));
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
@@ -68,7 +104,7 @@ export class AuthService {
       firstName: dto.firstName.trim(),
       lastName: dto.lastName.trim(),
       companyName: dto.companyName.trim(),
-      permissionIds: adminPermissionIds,
+      adminPermissions,
     });
 
     await this.auditService.log({
@@ -81,64 +117,85 @@ export class AuthService {
       newValue: { email, companyId: result.company.id },
     });
 
-    return this.createAuthSession(result.user.id, result.company.id);
+    return this.createAuthSession(result.user.id, result.company.id, undefined, meta);
   }
 
-  async login(dto: LoginDto) {
-    const email = dto.email.trim().toLowerCase();
-    const user = await this.authRepository.findActiveUserWithAuth(email);
+  async login(dto: LoginDto, meta: AuthClientMeta = {}) {
+    const company = await this.resolveCompanyForLogin(dto.companyId, dto.companyCode);
+    const companyId = company.companyId.toString();
+    const browser = this.parseBrowser(meta.userAgent);
 
-    if (!user?.authentication) {
-      throw new UnauthorizedException('Invalid email or password');
+    const membership = await this.authRepository.findMembershipByEmployeeCode(
+      companyId,
+      dto.employeeCode,
+    );
+
+    if (!membership) {
+      await this.authRepository.recordLoginHistory({
+        companyId,
+        loginResult: 'failure',
+        failureReason: 'Invalid employee code or password',
+        ipAddress: meta.ipAddress,
+        browser,
+      });
+      throw new UnauthorizedException('Invalid employee code or password');
+    }
+
+    const user = membership.user;
+    await this.securityPolicyService.assertLoginAllowed(user.userId.toString());
+
+    if (!user.isActive || user.isLocked) {
+      await this.authRepository.recordLoginHistory({
+        userId: user.userId.toString(),
+        companyId,
+        loginResult: 'failure',
+        failureReason: user.isLocked ? 'Account locked' : 'Account inactive',
+        ipAddress: meta.ipAddress,
+        browser,
+      });
+      throw new UnauthorizedException(
+        user.isLocked ? 'Account is locked' : 'Account is inactive',
+      );
+    }
+
+    if (!user.authentication) {
+      await this.authRepository.recordLoginHistory({
+        userId: user.userId.toString(),
+        companyId,
+        loginResult: 'failure',
+        failureReason: 'Authentication record missing',
+        ipAddress: meta.ipAddress,
+        browser,
+      });
+      throw new UnauthorizedException('Invalid employee code or password');
     }
 
     const valid = await bcrypt.compare(dto.password, user.authentication.passwordHash);
     if (!valid) {
-      await this.authRepository.recordFailedLogin(user.userId.toString());
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    const memberships = await this.authRepository.findUserCompanies(user.userId.toString());
-    const active = memberships.filter((m) => m.status === 'active');
-    if (active.length === 0) {
-      throw new UnauthorizedException('No active company membership found');
-    }
-
-    let targetCompanyId = dto.companyId;
-
-    if (targetCompanyId) {
-      const belongs = active.some((m) => m.companyId.toString() === targetCompanyId);
-      if (!belongs) {
-        throw new UnauthorizedException('You do not belong to the selected company');
-      }
-    } else if (active.length > 1) {
-      const roles = await Promise.all(
-        active.map(async (m) => {
-          const ctx = await this.authRepository.findMembershipWithPermissions(
-            user.userId.toString(),
-            m.companyId.toString(),
-          );
-          return {
-            id: m.company.companyId.toString(),
-            name: m.company.name,
-            companyCode: m.company.companyCode,
-            roleName: ctx?.role?.roleName ?? 'Member',
-          };
-        }),
-      );
-
-      throw new BadRequestException({
-        message: 'Multiple companies found. Please provide companyId.',
-        companies: roles,
+      await this.securityPolicyService.recordFailedLogin(user.userId.toString(), companyId);
+      await this.authRepository.recordLoginHistory({
+        userId: user.userId.toString(),
+        companyId,
+        loginResult: 'failure',
+        failureReason: 'Invalid password',
+        ipAddress: meta.ipAddress,
+        browser,
       });
-    } else {
-      targetCompanyId = active[0].companyId.toString();
+      throw new UnauthorizedException('Invalid employee code or password');
     }
 
     await this.authRepository.updateLastLogin(user.userId.toString());
 
+    await this.authRepository.recordLoginHistory({
+      userId: user.userId.toString(),
+      companyId,
+      loginResult: 'success',
+      ipAddress: meta.ipAddress,
+      browser,
+    });
+
     await this.auditService.log({
-      companyId: targetCompanyId!,
+      companyId,
       userId: user.userId.toString(),
       performedBy: user.userId.toString(),
       action: UserAuditAction.login,
@@ -146,36 +203,68 @@ export class AuthService {
       entityId: user.userId.toString(),
     });
 
-    return this.createAuthSession(user.userId.toString(), targetCompanyId!);
+    return this.createAuthSession(user.userId.toString(), companyId, undefined, meta);
   }
 
-  async refresh(refreshToken: string) {
-    const sessionId = await this.redisService.get(`refresh:${refreshToken}`);
-    if (!sessionId) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
+  async loginOAuthUser(
+    userId: string,
+    companyId: string,
+    meta: AuthClientMeta = {},
+  ) {
+    await this.securityPolicyService.assertLoginAllowed(userId);
+
+    const membership = await this.authRepository.findMembershipByUserAndCompany(
+      userId,
+      companyId,
+    );
+    if (!membership) {
+      throw new UnauthorizedException('User is not a member of this company');
     }
 
-    const sessionRaw = await this.redisService.get(`session:${sessionId}`);
-    if (!sessionRaw) {
-      throw new UnauthorizedException('Session expired');
+    const user = membership.user;
+    if (!user.isActive || user.isLocked) {
+      throw new UnauthorizedException(
+        user.isLocked ? 'Account is locked' : 'Account is inactive',
+      );
     }
 
-    const session: SessionData = JSON.parse(sessionRaw);
-    const valid = await bcrypt.compare(refreshToken, session.refreshTokenHash);
-    if (!valid) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
+    await this.authRepository.updateLastLogin(userId);
+    await this.authRepository.recordLoginHistory({
+      userId,
+      companyId,
+      loginResult: 'success',
+      ipAddress: meta.ipAddress,
+      browser: this.parseBrowser(meta.userAgent),
+    });
 
-    await this.redisService.del(`refresh:${refreshToken}`);
-    return this.createAuthSession(session.userId, session.companyId, sessionId);
+    return this.createAuthSession(userId, companyId, undefined, meta);
   }
 
-  async logout(refreshToken: string, userId: string, companyId: string) {
-    const sessionId = await this.redisService.get(`refresh:${refreshToken}`);
-    if (sessionId) {
-      await this.redisService.del(`session:${sessionId}`);
-      await this.redisService.del(`refresh:${refreshToken}`);
+  async refresh(refreshToken: string, meta: AuthClientMeta = {}) {
+    const rotation = await this.authSessionService.rotateCompanyRefresh(refreshToken);
+    await this.authRepository.revokeSessionsByRefreshToken(refreshToken);
+
+    return this.createAuthSession(
+      rotation.userId,
+      rotation.companyId,
+      rotation.sessionId,
+      meta,
+      rotation.tokenFamilyId,
+    );
+  }
+
+  async logout(refreshToken: string | undefined, userId: string, companyId: string, sid?: string) {
+    if (refreshToken) {
+      await this.authSessionService.revokeCompanySessionByRefreshToken(refreshToken);
+      await this.authRepository.revokeSessionsByRefreshToken(refreshToken);
     }
+
+    if (sid) {
+      await this.authSessionService.revokeCompanySessionById(sid);
+      await this.authRepository.revokeSessionBySid(sid);
+    }
+
+    await this.userContextCache.invalidate(userId, companyId);
 
     await this.auditService.log({
       companyId,
@@ -190,75 +279,51 @@ export class AuthService {
   }
 
   async getMe(userId: string, companyId: string) {
+    const accessContext = await this.companyAccessContextService.buildCompanyAccessContext(
+      userId,
+      companyId,
+    );
     const membership = await this.authRepository.findMembershipWithPermissions(userId, companyId);
-    if (!membership) {
-      throw new NotFoundException('User profile');
-    }
-
-    const companies = await this.authRepository.findUserCompanies(userId);
 
     return {
-      user: {
-        id: membership.user.userId.toString(),
-        email: membership.user.email,
-        firstName: membership.user.firstName ?? '',
-        lastName: membership.user.lastName ?? '',
-      },
-      company: {
-        id: membership.company.companyId.toString(),
-        name: membership.company.name,
-        companyCode: membership.company.companyCode,
-      },
-      role: membership.role
-        ? { id: membership.role.roleId.toString(), name: membership.role.roleName }
-        : null,
-      permissions: membership.permissions,
-      companies: await Promise.all(
-        companies.map(async (m) => {
-          const ctx = await this.authRepository.findMembershipWithPermissions(
-            userId,
-            m.companyId.toString(),
-          );
-          return {
-            id: m.company.companyId.toString(),
-            name: m.company.name,
-            companyCode: m.company.companyCode,
-            roleName: ctx?.role?.roleName ?? 'Member',
-          };
-        }),
-      ),
+      ...accessContext,
+      permissions: membership?.permissions ?? [],
     };
   }
 
   async getMyCompanies(userId: string) {
     const memberships = await this.authRepository.findUserCompanies(userId);
-    return Promise.all(
-      memberships.map(async (m) => {
-        const ctx = await this.authRepository.findMembershipWithPermissions(
-          userId,
-          m.companyId.toString(),
-        );
-        return {
-          id: m.company.companyId.toString(),
-          name: m.company.name,
-          companyCode: m.company.companyCode,
-          roleName: ctx?.role?.roleName ?? 'Member',
-        };
-      }),
-    );
+    return memberships
+      .filter((m) => m.status === 'active')
+      .map((m) => ({
+        companyId: m.company.companyId.toString(),
+        companyCode: m.company.companyCode,
+        name: m.company.name,
+        isDefault: m.isDefault,
+        status: m.company.status,
+        employeeCode: m.employeeId,
+      }));
   }
 
-  async switchCompany(userId: string, companyId: string) {
-    const membership = await this.authRepository.findMembership(userId, companyId);
-    if (!membership) {
-      throw new NotFoundException('Company membership');
+  async switchCompany(
+    userId: string,
+    companyId: string,
+    meta: AuthClientMeta = {},
+    currentSessionId?: string,
+  ) {
+    await this.companyAccessContextService.buildCompanyAccessContext(userId, companyId);
+
+    if (currentSessionId) {
+      await this.authSessionService.revokeCompanySessionById(currentSessionId);
+      await this.authRepository.revokeSessionBySid(currentSessionId);
     }
-    return this.createAuthSession(userId, companyId);
+
+    await this.userContextCache.invalidate(userId, companyId);
+    return this.createAuthSession(userId, companyId, undefined, meta);
   }
 
   async validateSession(sessionId: string): Promise<boolean> {
-    const session = await this.redisService.get(`session:${sessionId}`);
-    return !!session;
+    return this.authSessionService.validateCompanySession(sessionId);
   }
 
   async getUserContext(
@@ -266,93 +331,112 @@ export class AuthService {
     companyId: string,
     sessionId: string,
   ): Promise<AuthenticatedUser | null> {
+    const valid = await this.authSessionService.validateCompanySession(sessionId);
+    if (!valid) return null;
+
+    const cached = await this.userContextCache.get(userId, companyId);
+    if (cached && cached.sessionId === sessionId) {
+      return cached;
+    }
+
     const membership = await this.authRepository.findMembershipWithPermissions(userId, companyId);
     if (!membership) return null;
 
-    return {
+    const accessContext = await this.companyAccessContextService.buildCompanyAccessContext(
+      userId,
+      companyId,
+    );
+
+    const context: AuthenticatedUser = {
       sub: userId,
       email: membership.user.email,
       companyId,
       sessionId,
+      role: accessContext.activeCompany.role?.roleCode,
       firstName: membership.user.firstName ?? '',
       lastName: membership.user.lastName ?? '',
       permissions: membership.permissions,
+      modules: accessContext.activeCompany.modules,
+      subscriptionStatus: accessContext.activeCompany.subscription.status,
     };
+
+    await this.userContextCache.set(userId, companyId, context);
+    return context;
+  }
+
+  invalidateUserContextCache(userId: string, companyId: string) {
+    return this.userContextCache.invalidate(userId, companyId);
   }
 
   private async createAuthSession(
     userId: string,
     companyId: string,
     existingSessionId?: string,
+    meta: AuthClientMeta = {},
+    existingFamilyId?: string,
   ) {
-    const membership = await this.authRepository.findMembershipWithPermissions(userId, companyId);
-    if (!membership) {
-      throw new UnauthorizedException('Unable to create session');
-    }
+    const policy = await this.securityPolicyService.getPolicyForCompany(companyId);
 
-    const companies = await this.authRepository.findUserCompanies(userId);
-    const sessionId = existingSessionId ?? uuidv4();
-    const refreshToken = uuidv4();
-    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+    await this.authSessionService.enforceConcurrentSessionPolicy(
+      userId,
+      companyId,
+      policy.allowMultipleLogins,
+      policy.maxConcurrentSessions,
+    );
+
+    const session = await this.authSessionService.createCompanySession({
+      userId,
+      companyId,
+      sessionTimeoutMin: policy.sessionTimeoutMin,
+      existingSessionId,
+      existingFamilyId,
+    });
+
+    const accessContext = await this.companyAccessContextService.buildCompanyAccessContext(
+      userId,
+      companyId,
+    );
 
     const payload: JwtPayload = {
       sub: userId,
-      email: membership.user.email,
+      email: accessContext.user.email,
+      cid: companyId,
+      sid: session.sid,
+      role: accessContext.activeCompany.role?.roleCode,
       companyId,
-      sessionId,
+      sessionId: session.sid,
     };
 
     const accessToken = this.jwtService.sign(payload);
     const expiresIn = this.configService.get<string>('jwt.accessExpiration') || '15m';
 
-    await this.redisService.set(
-      `session:${sessionId}`,
-      JSON.stringify({ userId, companyId, refreshTokenHash }),
-      this.refreshTtlSeconds,
-    );
-    await this.redisService.set(`refresh:${refreshToken}`, sessionId, this.refreshTtlSeconds);
-
     await this.authRepository.createSession({
       userId: BigInt(userId),
       companyId: BigInt(companyId),
-      refreshToken,
+      refreshToken: session.refreshToken,
+      jwtToken: session.sid,
       sessionStatus: 'active',
+      ipAddress: meta.ipAddress,
+      browser: this.parseBrowser(meta.userAgent),
     });
+
+    await this.userContextCache.invalidate(userId, companyId);
 
     return {
       accessToken,
-      refreshToken,
+      refreshToken: session.refreshToken,
       expiresIn,
       tokenType: 'Bearer',
-      user: {
-        id: userId,
-        email: membership.user.email,
-        firstName: membership.user.firstName ?? '',
-        lastName: membership.user.lastName ?? '',
-      },
-      company: {
-        id: membership.company.companyId.toString(),
-        name: membership.company.name,
-        companyCode: membership.company.companyCode,
-      },
-      role: membership.role
-        ? { id: membership.role.roleId.toString(), name: membership.role.roleName }
-        : null,
-      permissions: membership.permissions,
-      companies: await Promise.all(
-        companies.map(async (m) => {
-          const ctx = await this.authRepository.findMembershipWithPermissions(
-            userId,
-            m.companyId.toString(),
-          );
-          return {
-            id: m.company.companyId.toString(),
-            name: m.company.name,
-            companyCode: m.company.companyCode,
-            roleName: ctx?.role?.roleName ?? 'Member',
-          };
-        }),
-      ),
+      requiresCompanySelection: false,
+      user: accessContext.user,
+      companies: accessContext.companies,
+      activeCompany: accessContext.activeCompany,
     };
+  }
+
+  private parseBrowser(userAgent?: string): string | undefined {
+    if (!userAgent) return undefined;
+    if (userAgent.length > 80) return userAgent.slice(0, 80);
+    return userAgent;
   }
 }

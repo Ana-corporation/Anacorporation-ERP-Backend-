@@ -2,9 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { v4 as uuidv4 } from 'uuid';
 import { UserAuditAction } from '@prisma/client';
-import { RedisService } from '@/infrastructure/redis/redis.service';
 import { AuditService } from '@/infrastructure/audit/audit.service';
 import { SUPER_ADMIN_PERMISSIONS } from '@/common/constants/permissions.constant';
 import { AuthenticatedUser, JwtPayload } from '@/common/interfaces/auth.interface';
@@ -15,28 +13,22 @@ import {
 } from '@/common/exceptions/business.exception';
 import { serialize, parseBigIntId } from '@/common/utils/bigint.util';
 import { toPaginatedResult } from '@/common/utils/pagination.util';
+import { AuthSessionService } from '@/modules/iam/authentication/auth-session.service';
 import { CreateSuperAdminDto, SuperAdminLoginDto, UpdateSuperAdminDto } from './dto/super-admin.dto';
+import { SUPER_ADMIN_DEFAULT_REDIRECT } from './super-admins.constants';
 import { SuperAdminsRepository } from './super-admins.repository';
-
-interface SuperAdminSession {
-  superAdminId: string;
-  refreshTokenHash: string;
-}
 
 @Injectable()
 export class SuperAdminAuthService {
-  private readonly refreshTtlSeconds = 7 * 24 * 60 * 60;
-
   constructor(
     private readonly repository: SuperAdminsRepository,
+    private readonly authSessionService: AuthSessionService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly redisService: RedisService,
   ) {}
 
   async validateSession(sessionId: string): Promise<boolean> {
-    const session = await this.redisService.get(`super-admin-session:${sessionId}`);
-    return !!session;
+    return this.authSessionService.validateSuperAdminSession(sessionId);
   }
 
   async resolveUser(payload: JwtPayload): Promise<AuthenticatedUser | null> {
@@ -48,9 +40,11 @@ export class SuperAdminAuthService {
     return {
       sub: payload.sub,
       email: payload.email,
-      sessionId: payload.sessionId,
+      sessionId: payload.sid ?? payload.sessionId ?? '',
       role: 'super_admin',
       permissions: [...SUPER_ADMIN_PERMISSIONS],
+      modules: [],
+      subscriptionStatus: 'none',
       firstName: admin.name.split(' ')[0] ?? '',
       lastName: admin.name.split(' ').slice(1).join(' ') ?? '',
     };
@@ -64,6 +58,10 @@ export class SuperAdminAuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    if (!admin.isActive) {
+      throw new UnauthorizedException('Account is inactive');
+    }
+
     const valid = await bcrypt.compare(dto.password, admin.passwordHash);
     if (!valid) {
       throw new UnauthorizedException('Invalid email or password');
@@ -74,35 +72,90 @@ export class SuperAdminAuthService {
     return this.createSession(admin.superAdminId.toString(), admin.email, admin.name);
   }
 
-  private async createSession(superAdminId: string, email: string, name: string) {
-    const sessionId = uuidv4();
-    const refreshToken = uuidv4();
-    const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+  async refresh(refreshToken: string) {
+    const rotation = await this.authSessionService.rotateSuperAdminRefresh(refreshToken);
+
+    const admin = await this.repository.findById(rotation.superAdminId);
+    if (!admin || !admin.isActive) {
+      throw new UnauthorizedException('Account is inactive');
+    }
+
+    return this.createSession(
+      rotation.superAdminId,
+      admin.email,
+      admin.name,
+      rotation.sessionId,
+      rotation.tokenFamilyId,
+    );
+  }
+
+  async logout(refreshToken: string | undefined, superAdminId: string, sid?: string) {
+    if (refreshToken) {
+      await this.authSessionService.revokeSuperAdminByRefreshToken(refreshToken);
+    }
+
+    if (sid) {
+      await this.authSessionService.revokeSuperAdminSession(sid);
+    }
+
+    return { message: 'Logged out successfully' };
+  }
+
+  async getMe(superAdminId: string) {
+    const admin = await this.repository.findById(superAdminId);
+    if (!admin) {
+      throw new NotFoundException('Super admin');
+    }
+
+    return {
+      role: 'super_admin',
+      redirectTo: SUPER_ADMIN_DEFAULT_REDIRECT,
+      user: {
+        superAdminId: admin.superAdminId.toString(),
+        email: admin.email,
+        name: admin.name,
+        isActive: admin.isActive,
+        lastLoginAt: admin.lastLoginAt,
+      },
+      permissions: [...SUPER_ADMIN_PERMISSIONS],
+    };
+  }
+
+  private async createSession(
+    superAdminId: string,
+    email: string,
+    name: string,
+    existingSessionId?: string,
+    existingFamilyId?: string,
+  ) {
+    const session = await this.authSessionService.createSuperAdminSession({
+      superAdminId,
+      existingSessionId,
+      existingFamilyId,
+    });
 
     const payload: JwtPayload = {
       sub: superAdminId,
       email,
-      sessionId,
+      sid: session.sessionId,
       role: 'super_admin',
     };
 
     const accessToken = this.jwtService.sign(payload);
     const expiresIn = this.configService.get<string>('jwt.accessExpiration') || '15m';
 
-    await this.redisService.set(
-      `super-admin-session:${sessionId}`,
-      JSON.stringify({ superAdminId, refreshTokenHash } satisfies SuperAdminSession),
-      this.refreshTtlSeconds,
-    );
-    await this.redisService.set(`super-admin-refresh:${refreshToken}`, sessionId, this.refreshTtlSeconds);
-
     return {
       accessToken,
-      refreshToken,
+      refreshToken: session.refreshToken,
       expiresIn,
       tokenType: 'Bearer',
       role: 'super_admin',
-      user: { id: superAdminId, email, name },
+      redirectTo: SUPER_ADMIN_DEFAULT_REDIRECT,
+      user: {
+        superAdminId,
+        email,
+        name,
+      },
       permissions: [...SUPER_ADMIN_PERMISSIONS],
     };
   }

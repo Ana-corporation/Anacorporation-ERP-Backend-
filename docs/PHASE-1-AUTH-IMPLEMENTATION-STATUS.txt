@@ -1,0 +1,392 @@
+================================================================================
+  PHASE 1 AUTH — IMPLEMENTATION STATUS REPORT
+  Source: docs/PHASE-1-AUTH-DECISIONS.txt
+  Last updated: 2026-07-10 (Phase 2 auth items completed)
+  Purpose: Track what is DONE vs what is PENDING before running / testing
+================================================================================
+
+HOW TO READ THIS FILE
+---------------------
+  [DONE]     = Code written and build passes (npm run build)
+  [PARTIAL]  = Started but not fully complete (e.g. no controllers yet for a module)
+  [PENDING]  = Not started or requires manual step (DB, frontend, Phase 2)
+  [FE]       = Frontend team responsibility
+  [MANUAL]   = You must run a command locally before testing
+
+
+================================================================================
+SAAS MODEL (IMPORTANT — READ FIRST)
+================================================================================
+
+  YOUR PRODUCT (company customer):
+    Person signs up -> becomes COMPANY ADMIN (tenant admin) for their company.
+    Table path: users + user_companies + user_roles (role ADMIN)
+    Login: POST /api/v1/auth/login { employeeCode, password, companyId|companyCode }
+    Manages: their company only (users, roles, modules, org setup)
+
+  PLATFORM ADMIN (optional — Ana Corporation internal team):
+    Table: super_admins (separate from company users)
+    Login: POST /api/v1/super-admins/auth/login { email, password }
+    Manages: platform super admin accounts only (not customer ERP data yet)
+
+
+================================================================================
+SECTION A — LOCKED DECISIONS (Q1–Q18) vs IMPLEMENTATION
+================================================================================
+
+Q1 — LOGIN FIELD (employee code)                                    [DONE]
+  Decision: Login uses employeeCode + password + companyId/companyCode
+  Files:
+    - src/modules/iam/authentication/dto/auth.dto.ts
+    - src/modules/iam/authentication/auth.repository.ts (findMembershipByEmployeeCode)
+    - src/modules/iam/authentication/auth.service.ts (login)
+  Signup assigns employeeId = EMP-{userId padded} e.g. EMP-00001
+
+
+Q2 — PASSWORD (no MFA Phase 1)                                      [DONE]
+  auth.service.ts login() — bcrypt.compare, no MFA gate
+
+
+Q3 — COMPANY ID REQUIRED AT LOGIN                                   [DONE]
+  companyId OR companyCode required at login
+  Files:
+    - dto/auth.dto.ts (refine validation)
+    - auth.service.ts resolveCompanyForLogin(), getPublicCompanyByCode()
+    - auth.controller.ts GET /api/v1/auth/company?companyCode=
+
+
+Q4 — RESPONSE camelCase                                             [DONE]
+  company-access-context.service.ts + auth.service.ts createAuthSession()
+
+
+Q5 + Q17 — PRODUCT vs ADMIN MODULES                                 [DONE]
+  modules[] snapshot = product only; admin gated by role_permissions
+  Files:
+    - prisma/migrations/20260708120000_module_type_product_modules/migration.sql
+    - prisma/enums.prisma (ModuleType enum)
+    - src/common/constants/modules.constant.ts
+    - scripts/seed-erp-product-modules.js (npm run seed:erp-modules)
+    - company-access-context.service.ts buildModuleSnapshot()
+
+
+Q6 — PERMISSIONS (5 actions only)                                   [DONE]
+  view, create, edit, delete, approve in snapshot only
+  Files: modules.constant.ts, company-access-context.service.ts, permissions.constant.ts
+
+
+Q7 — CUSTOM SUBSCRIPTION / isCustom                                 [DONE]
+  company-access-context.service.ts resolveEntitledModuleIds()
+
+
+Q8 — ONE ROLE PER USER PER COMPANY                                  [DONE]
+  Primary role = lowest roleId; warn if multiple roles
+  Files: company-access-context.repository.ts, auth.repository.ts
+
+
+Q9 — REFRESH TOKEN httpOnly COOKIE                                  [DONE]
+  Company users: cookie refresh_token on path /api/v1/auth
+  Files: auth.constants.ts, auth.controller.ts, main.ts (cookie-parser)
+
+
+Q10 — COMPANY / MEMBERSHIP STATUS GATES                             [DONE]
+  Blocks suspended/cancelled company; active membership only
+
+
+Q11 — SUBSCRIPTION / TRIAL ENTITLEMENT                              [DONE backend]
+  status IN (active, trial); no subscription -> login OK, modules: []
+  [FE] FE-2: frontend getActiveSubscription() must include trial
+
+
+Q12 — SUPER ADMIN (platform)                                        [DONE core]
+  Separate login — NOT merged with employee login
+  Endpoints:
+    POST /api/v1/super-admins/bootstrap        (first admin only)
+    POST /api/v1/super-admins/auth/login
+    POST /api/v1/super-admins/auth/refresh
+    GET  /api/v1/super-admins/auth/me
+    POST /api/v1/super-admins/auth/logout
+  Cookie: super_admin_refresh_token on path /api/v1/super-admins/auth
+  JWT: role=super_admin, sid, no cid
+  Response: role, redirectTo=/super-admin/dashboard, permissions, user
+  Files:
+    - src/modules/iam/super-admins/super-admins.constants.ts
+    - src/modules/iam/super-admins/super-admins.controller.ts
+    - src/modules/iam/super-admins/super-admins.service.ts
+    - src/modules/iam/super-admins/dto/super-admin.dto.ts
+  [PENDING future]:
+    - Platform routes GET /super-admin/companies (manage all tenants)
+    - Unified POST /auth/login for platform + company
+    - super_admin_login_history table
+
+
+Q13 — SESSION STORAGE (Redis + DB)                                  [DONE]
+  Redis live session + refresh; user_sessions DB record; logout revokes both
+
+
+Q14 — API BASE PATHS                                                [DONE]
+  /api/v1/auth/* and /api/v1/super-admins/*
+
+
+Q15 — REDIRECT FLAGS (frontend-owned)                               [DONE]
+  Backend returns requiresCompanySelection: false; super admin gets redirectTo
+
+
+Q16 — SNAPSHOT vs REDUX                                             [FE]
+  [FE] FE-1 hydrate-from-snapshot.js on frontend
+
+
+Q18 — moduleId numeric + moduleCode string                            [DONE]
+  moduleId as number; userId/companyId/roleId as strings
+
+
+================================================================================
+SECTION B — BACKEND WORK ITEMS (BE-1 to BE-15)
+================================================================================
+
+BE-1  Employee code login + companyId/companyCode                   [DONE]
+BE-2  Company + membership status gates                             [DONE]
+BE-3  buildCompanyAccessContext()                                   [DONE]
+BE-4  module_type discriminator + seed 6 product modules            [DONE]
+        Migrations + seed:erp-modules applied 2026-07-10
+BE-5  Entitlement + isCustom via company_modules                    [DONE]
+BE-6  Subscription resolver active/trial + date                     [DONE]
+BE-7  Snapshot response shape (camelCase, ids, 5 actions)             [DONE]
+BE-8  Refresh token httpOnly cookie; logout clears + revokes        [DONE]
+BE-9  JWT claims sub/cid/role/sid; session validation               [DONE]
+BE-10 One role per company; primary = lowest roleId                 [DONE]
+BE-11 user_login_history on success + failure                       [DONE]
+BE-12 ModulePermissionGuard + unified checkPermission()             [DONE]
+        - module-permission.guard.ts + @RequireModulePermission
+        - permission-check.util.ts: checkPermission, checkPermissionCode
+        - permissions.guard.ts uses checkPermissionCode() on ALL routes
+        - Legacy codes (customers:read etc.) map to crm/supply-chain modules
+        - Admin modules: role permission only (no subscription gate)
+        - Product controllers: CRM, vendors, products, inventory wired
+BE-13 TenantGuard + tenant scoping helpers                          [DONE]
+        - tenant.guard.ts: x-company-id mismatch, request.tenant
+        - tenant-scope.util.ts: withCompanyScope(companyId)
+        - current-user.decorator.ts: TenantCompanyId decorator
+        - departments.repository.ts uses withCompanyScope (pattern for other repos)
+BE-14 Super admin full auth flow (login/refresh/logout/me)            [DONE]
+        - super-admins.constants.ts, controller, service, dto
+BE-15 Demo login seed script                                        [DONE]
+        - scripts/seed-phase1-login-user.js
+        - npm run seed:phase1-login (applied 2026-07-10)
+
+
+================================================================================
+SECTION C — AUTH SPEC CHECKLIST (from frontend/backend contract)
+================================================================================
+
+Phase 1 server-side (must-have)                         Status
+------------------------------------------------------------------
+ 1. Login API (employee code + password)                  [DONE]
+ 2. Password verify (user_authentication)                 [DONE]
+ 3. Membership resolver (user_companies + companies)      [DONE]
+ 4. Subscription resolver                                 [DONE]
+ 5. Module resolver (plan_modules + company_modules)      [DONE]
+ 6. RBAC resolver (roles + permissions + overrides)       [DONE]
+ 7. Auth middleware (JWT on every route)                  [DONE]
+ 8. Permission middleware                                [DONE]
+ 9. Tenant middleware (company from token)               [DONE]
+10. Switch company API                                    [DONE]
+11. Logout API (revoke session)                          [DONE]
+12. Audit (user_login_history + user_audit)              [DONE]
+
+Phase 1 client-side (Next.js)                           Status
+------------------------------------------------------------------
+ sessionStorage snapshot                                 [FE]
+ middleware.ts redirects                                [FE]
+ sidebar from login snapshot                            [FE]
+ company picker before login                            [FE] (API ready)
+
+Phase 2 (not required now)                              Status
+------------------------------------------------------------------
+ Refresh token rotation                                 [DONE]
+        - auth-session.service.ts: token families, reuse detection, JWT_REFRESH_EXPIRATION TTL
+ Session timeout / lockout policies                     [DONE]
+        - company-security-policy.service.ts enforces maxLoginAttempts, lockoutDurationMin
+        - sessionTimeoutMin idle timeout on Redis sessions
+        - concurrent session limits (allowMultipleLogins, maxConcurrentSessions)
+        - default security policy seeded on signup
+ Redis permission cache                                 [DONE]
+        - user-context-cache.service.ts caches JWT user context (PERMISSION_CACHE_TTL_SECONDS)
+ OAuth (Google/Outlook)                                 [DONE]
+        - GET/POST /auth/oauth/google*, /auth/oauth/microsoft*
+        - user_oauth_identities table (migration 20260710120000)
+        - Configure GOOGLE_OAUTH_* / MICROSOFT_OAUTH_* in .env
+ Platform super-admin company oversight routes           [DONE]
+        - GET    /api/v1/super-admin/companies
+        - GET    /api/v1/super-admin/companies/:id
+        - PATCH  /api/v1/super-admin/companies/:id/status
+
+
+================================================================================
+SECTION D — EVERY FILE CREATED OR UPDATED
+================================================================================
+
+--- NEW FILES CREATED ---
+  src/modules/iam/authentication/auth.constants.ts
+  src/modules/iam/authentication/company-access-context.service.ts
+  src/modules/iam/authentication/company-access-context.repository.ts
+  src/modules/iam/authentication/interfaces/company-access-context.interface.ts
+  src/common/constants/modules.constant.ts
+  src/common/guards/module-permission.guard.ts
+  src/common/utils/permission-check.util.ts
+  src/common/utils/tenant-scope.util.ts
+  src/modules/iam/super-admins/super-admins.constants.ts
+  prisma/migrations/20260708120000_module_type_product_modules/migration.sql
+  scripts/seed-erp-product-modules.js
+  scripts/seed-phase1-login-user.js
+  src/common/utils/permission-check.util.spec.ts
+  docs/PHASE-1-AUTH-IMPLEMENTATION-STATUS.txt
+
+--- EXISTING FILES UPDATED ---
+  src/modules/iam/authentication/dto/auth.dto.ts
+  src/modules/iam/authentication/auth.repository.ts
+  src/modules/iam/authentication/auth.service.ts
+  src/modules/iam/authentication/auth.controller.ts
+  src/modules/iam/authentication/auth.module.ts
+  src/modules/iam/authentication/strategies/jwt.strategy.ts
+  src/modules/iam/super-admins/super-admins.controller.ts
+  src/modules/iam/super-admins/super-admins.service.ts
+  src/modules/iam/super-admins/dto/super-admin.dto.ts
+  src/common/interfaces/auth.interface.ts
+  src/common/decorators/auth.decorators.ts
+  src/common/decorators/current-user.decorator.ts
+  src/common/constants/metadata.constants.ts
+  src/common/constants/permissions.constant.ts
+  src/common/guards/permissions.guard.ts
+  src/common/guards/tenant.guard.ts
+  src/modules/organization/departments/departments.repository.ts
+  src/modules/crm/customers/customers.controller.ts
+  src/modules/purchase/vendors/vendors.controller.ts
+  src/modules/inventory/items/products.controller.ts
+  src/modules/inventory/stock/inventory.controller.ts
+  src/app.module.ts
+  src/main.ts
+  prisma/enums.prisma
+  package.json (seed:phase1-login script)
+  docs/PHASE-1-AUTH-DECISIONS.txt
+  docs/API-ENDPOINTS.md
+
+--- PACKAGES ADDED ---
+  cookie-parser
+  @types/cookie-parser
+
+
+================================================================================
+SECTION E — STILL PENDING (before end-to-end test)
+================================================================================
+
+PRIORITY 1 — DATABASE [DONE 2026-07-10]
+  1. npx prisma migrate deploy          ✓ applied
+  2. npm run seed:erp-modules           ✓ applied
+  3. npm run seed:phase1-login          ✓ applied (DEMO_ACME / EMP-00001)
+  4. npm run start:dev                  ✓ verified — login/me/logout OK
+
+PRIORITY 2 — FRONTEND [FE]
+  FE-1  hydrate-from-snapshot.js
+  FE-2  getActiveSubscription() include trial
+  FE-3  Company picker before login (API: GET /auth/company?companyCode=)
+
+PRIORITY 3 — TESTING [PARTIAL]
+  Bruno collection: bruno/ERP-Backend-Auth/  (open in Bruno app)
+  Guide: docs/BRUNO-AUTH-TESTING-GUIDE.txt
+  Unit tests: src/common/utils/permission-check.util.spec.ts (11 tests pass)
+  Manual API flow verified 2026-07-10 (company lookup, login, /me, logout)
+  [PENDING] Full e2e integration test suite (login snapshot, switch-company)
+
+PRIORITY 4 — FUTURE (when new modules built) [PENDING]
+  @RequireModulePermission on financials, hcm, manufacturing, projects controllers
+  Platform super-admin routes to manage all tenant companies
+  MFA, lockout, session timeout (Phase 2 security policies)
+
+
+================================================================================
+SECTION F — TEST FLOW (copy-paste ready)
+================================================================================
+
+  Demo credentials (after npm run seed:phase1-login):
+    companyCode:   DEMO_ACME
+    employeeCode:  EMP-00001
+    password:      TestPass1!
+
+  Step 1 — Resolve company
+    GET http://localhost:3000/api/v1/auth/company?companyCode=DEMO_ACME
+
+  Step 2 — Login
+    POST http://localhost:3000/api/v1/auth/login
+    {
+      "employeeCode": "EMP-00001",
+      "password": "TestPass1!",
+      "companyCode": "DEMO_ACME"
+    }
+
+  Step 3 — Get snapshot
+    GET http://localhost:3000/api/v1/auth/me
+    Authorization: Bearer <accessToken>
+
+  Step 4 — Switch company (multi-company users only)
+    POST http://localhost:3000/api/v1/auth/switch-company
+    { "companyId": "2" }
+
+  Step 5 — Logout
+    POST http://localhost:3000/api/v1/auth/logout
+
+  Alternative — Sign up new company admin:
+    POST http://localhost:3000/api/v1/auth/signup
+    {
+      "email": "owner@mycompany.com",
+      "password": "SecurePass1",
+      "confirmPassword": "SecurePass1",
+      "firstName": "Owner",
+      "lastName": "Name",
+      "companyName": "My Company Ltd"
+    }
+    Then login with employee code from user_companies (EMP-00001 etc.)
+
+
+================================================================================
+SECTION G — API ENDPOINTS SUMMARY
+================================================================================
+
+  COMPANY USER AUTH (/api/v1/auth)
+    GET  /company              Pre-login company lookup
+    POST /signup               Create company + admin user
+    POST /login                employeeCode + password + company
+    POST /refresh              Refresh access token (cookie)
+    GET  /me                   Profile + permission snapshot
+    GET  /companies            List user's companies
+    POST /switch-company       New token + snapshot for other company
+    POST /logout               Revoke session
+
+  PLATFORM SUPER ADMIN (/api/v1/super-admins)
+    POST /bootstrap            First platform admin only
+    POST /auth/login           email + password
+    POST /auth/refresh         Refresh token (cookie)
+    GET  /auth/me              Super admin profile
+    POST /auth/logout          Revoke session
+    GET  /                     List super admins (CRUD...)
+
+
+================================================================================
+SECTION H — SUMMARY COUNTS
+================================================================================
+
+  Locked decisions (Q1–Q18):       17 items -> 15 DONE, 1 FE-only, 1 future
+  Backend work items (BE-1–15):    15 DONE (DB seeded + API verified)
+  New source files created:        14 (+ permission-check.util.spec.ts)
+  Existing files updated:          27
+  Manual steps before test:        0 remaining (all run 2026-07-10)
+  Frontend items remaining:        3 (FE-1, FE-2, FE-3)
+  Unit tests:                      11 passing (permission-check.util)
+  E2E integration tests:           0 (optional Phase 1.1)
+
+  BUILD STATUS: npm run build PASSES
+  RUNTIME STATUS: auth flow verified against DEMO_ACME demo user
+
+
+================================================================================
+END OF IMPLEMENTATION STATUS REPORT
+================================================================================

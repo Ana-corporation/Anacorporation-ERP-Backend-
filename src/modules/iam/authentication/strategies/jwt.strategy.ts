@@ -22,7 +22,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     if (payload.role === 'super_admin') {
-      const sessionValid = await this.superAdminAuthService.validateSession(payload.sessionId);
+      const sessionId = payload.sid ?? payload.sessionId;
+      if (!sessionId) {
+        throw new UnauthorizedException('Invalid token');
+      }
+
+      const sessionValid = await this.superAdminAuthService.validateSession(sessionId);
       if (!sessionValid) {
         throw new UnauthorizedException('Session expired or revoked');
       }
@@ -35,19 +40,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       return superAdmin;
     }
 
-    if (!payload.companyId) {
+    if (!payload.cid && !payload.companyId) {
       throw new UnauthorizedException('Invalid token');
     }
 
-    const sessionValid = await this.authService.validateSession(payload.sessionId);
+    const companyId = payload.cid ?? payload.companyId!;
+    const sessionId = payload.sid ?? payload.sessionId!;
+
+    const sessionValid = await this.authService.validateSession(sessionId);
     if (!sessionValid) {
       throw new UnauthorizedException('Session expired or revoked');
     }
 
     const userContext = await this.authService.getUserContext(
       payload.sub,
-      payload.companyId,
-      payload.sessionId,
+      companyId,
+      sessionId,
     );
 
     if (!userContext) {

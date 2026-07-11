@@ -1,0 +1,44 @@
+meta {
+  name: 01 Login (companyCode)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "employeeCode": "{{employeeCode}}",
+    "password": "{{password}}",
+    "companyCode": "{{companyCode}}"
+  }
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+  auth.saveCompanyAuth(res);
+}
+
+tests {
+  test("login returns accessToken", function() {
+    expect(res.getBody().data.accessToken).to.be.a('string');
+  });
+  test("activeCompany has modules array", function() {
+    expect(res.getBody().data.activeCompany.modules).to.be.an('array');
+  });
+}
+
+docs {
+  Main login flow. Auto-saves accessToken + companyId + userId.
+  Demo: EMP-00001 / TestPass1! / DEMO_ACME (after npm run seed:phase1-login)
+  Refresh cookie saved automatically by Bruno cookie jar.
+}

@@ -1,0 +1,628 @@
+================================================================================
+  ERP BACKEND — PHASE 1 FRONTEND INTEGRATION GUIDE
+================================================================================
+  Status:   ALL 8 TENANT AUTH APIs IMPLEMENTED AND TESTED
+  Updated:  2026-07-10
+  Backend:  http://localhost:3000/api/v1
+  Frontend: http://localhost:3001
+  Swagger:  http://localhost:3000/docs
+
+  Copy this file to your frontend repo (e.g. docs/FRONTEND-INTEGRATION.txt)
+  For extended Q&A see: docs/PHASE-1-FRONTEND-HANDOFF.txt
+
+
+================================================================================
+1. BACKEND STATUS — WHAT IS READY
+================================================================================
+
+All endpoints required for Phase 1 tenant login/signup/session are live:
+
+  #   Method   Endpoint                  Auth        Status
+  --  -------  ------------------------  ----------  ------
+  1   GET      /auth/company             Public      READY
+  2   POST     /auth/login               Public      READY
+  3   POST     /auth/signup              Public      READY
+  4   GET      /auth/me                  Bearer      READY
+  5   GET      /auth/companies           Bearer      READY
+  6   POST     /auth/switch-company      Bearer      READY
+  7   POST     /auth/refresh             Cookie      READY
+  8   POST     /auth/logout              Bearer      READY
+
+Optional (not needed for Phase 1 tenant UI):
+  - Super admin:  POST /super-admins/auth/login, GET/PATCH /super-admin/companies/*
+  - OAuth:        GET /auth/oauth/google, /auth/oauth/microsoft
+
+
+================================================================================
+2. ENVIRONMENT SETUP
+================================================================================
+
+BACKEND — start locally
+-----------------------
+  cd ERP-Backend
+  npm install
+  npx prisma migrate deploy
+  npm run seed:erp-modules
+  npm run seed:phase1-login
+  npm run start:dev
+
+BACKEND .env (minimum for frontend)
+-----------------------------------
+  PORT=3000
+  CORS_ORIGIN=http://localhost:3001
+
+FRONTEND .env.local
+-------------------
+  NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+
+PORTS
+-----
+  Backend:  :3000
+  Frontend: :3001   (e.g. next dev -p 3001)
+
+
+================================================================================
+3. RESPONSE ENVELOPE (ALL APIs)
+================================================================================
+
+Every response uses this shape:
+
+  {
+    "success": true,
+    "message": "Success",
+    "data": { ... },
+    "timestamp": "2026-07-10T12:00:00.000Z"
+  }
+
+On error:
+
+  {
+    "success": false,
+    "message": "Human readable error",
+    "data": null,
+    "error": "Unauthorized",
+    "timestamp": "...",
+    "path": "/api/v1/auth/login"
+  }
+
+FRONTEND RULE: Always read the payload from envelope.data
+  axios response -> response.data.data   (after axios unwraps HTTP body once)
+
+
+================================================================================
+4. AXIOS CONFIG (REQUIRED)
+================================================================================
+
+  // src/lib/api/axios.js
+  import axios from 'axios';
+
+  const api = axios.create({
+    baseURL: process.env.NEXT_PUBLIC_API_URL,   // http://localhost:3000/api/v1
+    withCredentials: true,                        // REQUIRED for refresh cookie
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  // Request: attach access token
+  api.interceptors.request.use((config) => {
+    const token = sessionStorage.getItem('accessToken');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    const companyId = sessionStorage.getItem('activeCompanyId');
+    if (companyId) config.headers['x-company-id'] = companyId;
+    return config;
+  });
+
+  // Response: on 401 try refresh once, then redirect to login
+  api.interceptors.response.use(
+    (res) => res,
+    async (error) => {
+      const original = error.config;
+      if (error.response?.status === 401 && !original._retry) {
+        original._retry = true;
+        try {
+          const refreshed = await api.post('/auth/refresh');
+          const newToken = refreshed.data.data.accessToken;
+          sessionStorage.setItem('accessToken', newToken);
+          original.headers.Authorization = `Bearer ${newToken}`;
+          return api(original);
+        } catch {
+          sessionStorage.clear();
+          window.location.href = '/auth/login';
+        }
+      }
+      return Promise.reject(error);
+    },
+  );
+
+  export default api;
+
+
+================================================================================
+5. UNWRAP HELPER
+================================================================================
+
+  // src/lib/api/unwrap.js
+  export function unwrap(promise) {
+    return promise.then((res) => res.data.data);
+  }
+
+
+================================================================================
+6. AUTH API WRAPPER (src/lib/api/auth-api.js)
+================================================================================
+
+  import api from './axios';
+  import { unwrap } from './unwrap';
+
+  export const resolveCompany = (companyCode) =>
+    unwrap(api.get('/auth/company', { params: { companyCode } }));
+
+  export const login = (body) =>
+    unwrap(api.post('/auth/login', body));
+
+  export const signup = (body) =>
+    unwrap(api.post('/auth/signup', body));
+
+  export const getMe = () =>
+    unwrap(api.get('/auth/me'));
+
+  export const getCompanies = () =>
+    unwrap(api.get('/auth/companies'));
+
+  export const switchCompany = (companyId) =>
+    unwrap(api.post('/auth/switch-company', { companyId }));
+
+  export const refresh = () =>
+    unwrap(api.post('/auth/refresh'));
+
+  export const logout = () =>
+    unwrap(api.post('/auth/logout'));
+
+
+================================================================================
+7. API DETAILS — ALL 8 ENDPOINTS
+================================================================================
+
+------------------------------------------------------------------------------
+7.1  GET /auth/company
+------------------------------------------------------------------------------
+  Auth:     None (public)
+  Purpose:  Verify company code before login (optional "Verify" button)
+
+  Request:
+    GET /api/v1/auth/company?companyCode=DEMO_ACME
+    companyCode is case-insensitive
+
+  Response data:
+    {
+      "companyId": "15",
+      "companyCode": "DEMO_ACME",
+      "name": "Demo Acme Corp",
+      "status": "trial"
+    }
+
+  Errors: 404 company not found
+
+
+------------------------------------------------------------------------------
+7.2  POST /auth/login
+------------------------------------------------------------------------------
+  Auth:     None (public)
+  Purpose:  Sign in with company + employee code + password
+
+  Request body (use companyCode OR companyId):
+    {
+      "employeeCode": "EMP-00001",
+      "password": "TestPass1!",
+      "companyCode": "DEMO_ACME"
+    }
+
+  IMPORTANT: Login uses employeeCode — NOT email, NOT username.
+
+  Response data (login snapshot):
+    {
+      "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+      "expiresIn": "15m",
+      "tokenType": "Bearer",
+      "requiresCompanySelection": false,
+      "user": {
+        "userId": "15",
+        "username": "demo.admin",
+        "displayName": "Demo Admin",
+        "email": "admin@demo-acme.com"
+      },
+      "companies": [
+        {
+          "companyId": "15",
+          "companyCode": "DEMO_ACME",
+          "name": "Demo Acme Corp",
+          "isDefault": true,
+          "status": "trial"
+        }
+      ],
+      "activeCompany": {
+        "companyId": "15",
+        "companyCode": "DEMO_ACME",
+        "name": "Demo Acme Corp",
+        "status": "trial",
+        "role": {
+          "roleId": "3",
+          "roleCode": "ADMIN",
+          "roleName": "Administrator"
+        },
+        "subscription": {
+          "status": "trial",
+          "planCode": "TRIAL",
+          "planName": "Trial Plan",
+          "endDate": "2026-08-10T00:00:00.000Z",
+          "isCustom": false
+        },
+        "modules": [
+          {
+            "moduleId": 6,
+            "moduleCode": "financials",
+            "moduleName": "Financials",
+            "isActive": true,
+            "permissions": ["view", "create", "edit", "delete", "approve"]
+          }
+        ]
+      }
+    }
+
+  Side effect: Sets httpOnly cookie
+    Name: refresh_token
+    Path: /api/v1/auth
+    NOT returned in JSON body
+
+  Does NOT include: permissions[] (call GET /auth/me)
+
+  Errors: 401 invalid credentials, 403 suspended/locked company
+
+
+------------------------------------------------------------------------------
+7.3  POST /auth/signup
+------------------------------------------------------------------------------
+  Auth:     None (public)
+  Purpose:  Register new company + first admin user
+
+  Request body:
+    {
+      "email": "owner@mycompany.com",
+      "password": "SecurePass1",
+      "confirmPassword": "SecurePass1",
+      "firstName": "Owner",
+      "lastName": "Name",
+      "companyName": "My Company Ltd"
+    }
+
+  Password rules:
+    - Minimum 8 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - confirmPassword must match password
+
+  Response data: Same shape as POST /auth/login (user is auto-logged-in)
+
+  After signup — for FUTURE logins user needs:
+    companyCode   -> in response activeCompany.companyCode (auto-generated)
+    employeeCode  -> call GET /auth/companies (field: employeeCode)
+    password      -> what they chose at signup
+    NOT email for login
+
+  Errors:
+    400  validation (password rules, confirm mismatch)
+    409  email already registered
+
+
+------------------------------------------------------------------------------
+7.4  GET /auth/me
+------------------------------------------------------------------------------
+  Auth:     Bearer token (required)
+  Purpose:  Full session + admin permissions[] for sidebar/menus
+
+  Headers:
+    Authorization: Bearer <accessToken>
+    x-company-id: <companyId>   (optional; must match JWT if sent)
+
+  Response data: Login snapshot PLUS permissions array:
+    {
+      "user": { ... },
+      "companies": [ ... ],
+      "activeCompany": { ... },
+      "permissions": [
+        "companies:view",
+        "users:view",
+        "roles:view",
+        "financials:view",
+        ...
+      ]
+    }
+
+  permissions[] format: "<resource>:<action>"
+    Examples: users:view, roles:create, financials:edit
+
+  Call this:
+    - After login
+    - After signup
+    - On page reload (if accessToken in sessionStorage)
+    - After switch-company
+
+  Errors: 401 expired or invalid token
+
+
+------------------------------------------------------------------------------
+7.5  GET /auth/companies
+------------------------------------------------------------------------------
+  Auth:     Bearer token
+  Purpose:  List all companies user belongs to (company switcher)
+
+  Response data: ARRAY directly (not wrapped in an object)
+    [
+      {
+        "companyId": "15",
+        "companyCode": "DEMO_ACME",
+        "name": "Demo Acme Corp",
+        "isDefault": true,
+        "status": "trial",
+        "employeeCode": "EMP-00001"
+      }
+    ]
+
+  Note: employeeCode is ONLY on this endpoint, not on login snapshot.
+
+
+------------------------------------------------------------------------------
+7.6  POST /auth/switch-company
+------------------------------------------------------------------------------
+  Auth:     Bearer token
+  Purpose:  Change active tenant when user has multiple companies
+
+  Request body:
+    { "companyId": "16" }
+
+  Response data: Same as login (new accessToken + new activeCompany)
+
+  Frontend after switch:
+    1. Save new accessToken to sessionStorage
+    2. GET /auth/me for updated permissions[]
+    3. Re-hydrate Redux state
+
+
+------------------------------------------------------------------------------
+7.7  POST /auth/refresh
+------------------------------------------------------------------------------
+  Auth:     Cookie only (refresh_token httpOnly)
+  Purpose:  Get new access token when API returns 401
+
+  Request body: {} or empty
+  Cookie: refresh_token (sent automatically when withCredentials: true)
+
+  Response data: FULL login snapshot (same as login — not token-only)
+
+  permissions[]: Call GET /auth/me separately after refresh
+
+  Used by: axios 401 interceptor
+
+
+------------------------------------------------------------------------------
+7.8  POST /auth/logout
+------------------------------------------------------------------------------
+  Auth:     Bearer token + refresh cookie
+  Purpose:  End session
+
+  Request body: none or {}
+
+  Response data:
+    { "message": "Logged out successfully" }
+
+  Side effect: Clears refresh_token cookie
+
+  Frontend:
+    1. POST /auth/logout
+    2. Clear sessionStorage
+    3. Reset Redux
+    4. Redirect to /auth/login
+
+
+================================================================================
+8. FRONTEND FLOWS
+================================================================================
+
+LOGIN
+-----
+  1. (Optional) GET  /auth/company?companyCode=DEMO_ACME
+  2. POST /auth/login
+  3. Save accessToken to sessionStorage
+  4. GET  /auth/me
+  5. Hydrate Redux (auth + iam slices)
+  6. Redirect to /dashboard
+
+SIGNUP
+------
+  1. POST /auth/signup
+  2. Save accessToken
+  3. GET  /auth/me
+  4. (Optional) GET /auth/companies to show user their employeeCode
+  5. Hydrate Redux
+  6. Redirect to /dashboard
+
+PAGE RELOAD (already logged in)
+-------------------------------
+  1. If accessToken in sessionStorage -> GET /auth/me
+  2. Hydrate Redux
+  3. On 401 -> try POST /auth/refresh -> retry /auth/me
+  4. On refresh fail -> clear session -> /auth/login
+
+TOKEN EXPIRED (any API call)
+----------------------------
+  1. POST /auth/refresh (cookie sent automatically)
+  2. Save new accessToken
+  3. Retry original request
+  4. On fail -> clear session -> /auth/login
+
+LOGOUT
+------
+  1. POST /auth/logout
+  2. Clear sessionStorage + Redux
+  3. Redirect /auth/login
+
+
+================================================================================
+9. CONTRACT RULES (DO NOT BREAK)
+================================================================================
+
+  [1] Login field is employeeCode — never email or username
+  [2] companyId OR companyCode required at login
+  [3] Always read payload from response.data.data
+  [4] axios withCredentials: true is mandatory
+  [5] refresh_token is httpOnly cookie only — never store in JS
+  [6] permissions[] only from GET /auth/me — not login/signup/refresh
+  [7] roleCode from API is UPPERCASE ("ADMIN") — normalize in frontend if needed
+  [8] expiresIn is string "15m" — not seconds
+  [9] IDs (userId, companyId, roleId) are strings in JSON
+  [10] moduleId is a number
+  [11] Post-login redirect: /dashboard (no redirectTo for tenant users)
+  [12] activeCompany.modules[] = product ERP apps only (6 modules)
+  [13] Admin menus use permissions[] — not modules[]
+
+
+================================================================================
+10. SESSION STORAGE
+================================================================================
+
+  Store in sessionStorage:
+    accessToken       JWT string from login/signup/refresh/switch
+    activeCompanyId   string from activeCompany.companyId
+    authContext       optional cached { user, companies, activeCompany }
+
+  NEVER store:
+    refreshToken (cookie only)
+    password
+
+
+================================================================================
+11. REDUX HYDRATION (after login snapshot or /me)
+================================================================================
+
+  auth slice:
+    accessToken
+    user            { userId, username, displayName, email }
+    isAuthenticated true
+
+  iam slice:
+    companies       from snapshot.companies
+    activeCompany   from snapshot.activeCompany
+    permissions     from /auth/me only (permissions[])
+
+  roleCode adapter (if your UI expects lowercase):
+    roleCode: (api.activeCompany.role?.roleCode || '').toLowerCase()
+
+
+================================================================================
+12. PRODUCT vs ADMIN MODULES
+================================================================================
+
+  Product modules (in activeCompany.modules[]):
+    financials, supply-chain, hcm, manufacturing, crm, projects
+
+  Module actions (5 only):
+    view, create, edit, delete, approve
+
+  Admin areas (NOT in modules[] — gate with permissions[]):
+    iam, organization, subscription, shared
+
+  Company status for switcher: treat "trial" and "active" as usable
+    ['active', 'trial'].includes(company.status)
+
+
+================================================================================
+13. HTTP ERROR HANDLING
+================================================================================
+
+  400  Validation — show field errors (signup password, confirm mismatch)
+  401  Bad credentials / expired token / session revoked
+  403  Suspended company / account locked / x-company-id mismatch
+  404  Company not found (GET /auth/company)
+  409  Email already registered (signup)
+  500  Server error — generic message to user
+
+  Common signup issues:
+    409 = email already used (try different email or use login)
+    400 = password does not meet rules
+    Network error = backend not running OR CORS_ORIGIN not set
+
+
+================================================================================
+14. DEMO CREDENTIALS
+================================================================================
+
+  companyCode:   DEMO_ACME
+  employeeCode:  EMP-00001
+  password:      TestPass1!
+
+  Frontend URLs:
+    Login:  http://localhost:3001/auth/login
+    Signup: http://localhost:3001/auth/signup
+
+  Backend health check:
+    GET http://localhost:3000/api/v1/auth/company?companyCode=DEMO_ACME
+    Should return 200 with company name
+
+
+================================================================================
+15. FRONTEND BUILD CHECKLIST
+================================================================================
+
+  [ ] .env.local with NEXT_PUBLIC_API_URL
+  [ ] axios.js with withCredentials: true
+  [ ] unwrap.js
+  [ ] auth-api.js (all 8 methods)
+  [ ] session-storage helpers
+  [ ] auth Redux slice
+  [ ] iam Redux slice
+  [ ] hydrate-from-snapshot.js
+  [ ] Login page (companyCode + employeeCode + password)
+  [ ] Signup page
+  [ ] bootstrap-auth on app load (GET /auth/me if token exists)
+  [ ] AuthGuard on protected routes
+  [ ] 401 refresh interceptor
+  [ ] Logout handler
+  [ ] Company switcher (GET /auth/companies + POST /auth/switch-company)
+
+
+================================================================================
+16. OPTIONAL — SUPER ADMIN (SEPARATE UI)
+================================================================================
+
+  Not part of tenant /auth/login flow.
+
+  POST /api/v1/super-admins/auth/login
+    Body: { "email": "...", "password": "..." }
+    Cookie: super_admin_refresh_token
+    Response may include redirectTo: "/super-admin/dashboard"
+
+  Platform tenant management (super admin bearer token):
+    GET   /api/v1/super-admin/companies
+    GET   /api/v1/super-admin/companies/:id
+    PATCH /api/v1/super-admin/companies/:id/status
+          Body: { "status": "trial"|"active"|"suspended"|"cancelled" }
+
+
+================================================================================
+17. TESTING WITH BRUNO / SWAGGER
+================================================================================
+
+  Swagger UI:  http://localhost:3000/docs
+  Bruno collection (in backend repo): bruno/ERP-Backend-Auth/
+
+  Quick curl test:
+    curl "http://localhost:3000/api/v1/auth/company?companyCode=DEMO_ACME"
+
+    curl -X POST http://localhost:3000/api/v1/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"employeeCode":"EMP-00001","password":"TestPass1!","companyCode":"DEMO_ACME"}'
+
+
+================================================================================
+END — All Phase 1 tenant auth APIs are ready for frontend integration.
+================================================================================

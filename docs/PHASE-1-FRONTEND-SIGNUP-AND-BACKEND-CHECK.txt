@@ -1,0 +1,304 @@
+================================================================================
+  PHASE 1 — BACKEND CHECK + SIGNUP GUIDE (FRONTEND)
+  Single file: verify backend is up + fix signup errors
+  Backend: http://localhost:3000/api/v1
+  Verified: 2026-07-10
+================================================================================
+
+  FEED THIS FILE TO FRONTEND when signup/login integration has issues.
+
+
+================================================================================
+SECTION 1 — BACKEND IS RUNNING (VERIFY FIRST)
+================================================================================
+
+BACKEND START (local)
+---------------------
+  cd C:\ERP-Backend
+  npm run start:dev
+
+  API base:  http://localhost:3000/api/v1
+  Swagger:   http://localhost:3000/docs
+
+QUICK HEALTH CHECK (browser or Postman)
+-------------------------------------
+  GET http://localhost:3000/api/v1/auth/company?companyCode=DEMO_ACME
+
+  Expected HTTP 200:
+    {
+      "success": true,
+      "message": "Success",
+      "data": {
+        "companyId": "15",
+        "companyCode": "DEMO_ACME",
+        "name": "Demo Acme Corp",
+        "status": "trial"
+      }
+    }
+
+  If this fails:
+    - Backend not running -> run npm run start:dev
+    - Wrong URL -> must include /api/v1
+    - Wrong port -> default is 3000
+
+
+================================================================================
+SECTION 2 — FRONTEND + BACKEND ENV (CORS)
+================================================================================
+
+If frontend sees NETWORK ERROR (not HTTP 409/400):
+
+BACKEND .env (ERP-Backend)
+--------------------------
+  PORT=3000
+  CORS_ORIGIN=http://localhost:3001
+
+  Restart backend after changing .env.
+
+FRONTEND .env.local
+-------------------
+  NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+
+FRONTEND axios (required)
+-------------------------
+  axios.create({
+    baseURL: process.env.NEXT_PUBLIC_API_URL,
+    withCredentials: true,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+PORTS
+-----
+  Backend:  :3000
+  Frontend: :3001   (npm run dev -- -p 3001)
+
+CORS_ORIGIN must match frontend origin EXACTLY (including port).
+
+
+================================================================================
+SECTION 3 — SIGNUP API
+================================================================================
+
+  POST /api/v1/auth/signup
+  Auth: None (public)
+
+REQUEST BODY (all fields required)
+--------------------------------
+  {
+    "email": "owner2@mycompany.com",
+    "password": "SecurePass1",
+    "confirmPassword": "SecurePass1",
+    "firstName": "Owner",
+    "lastName": "Name",
+    "companyName": "My Company Ltd"
+  }
+
+SUCCESS RESPONSE
+----------------
+  HTTP 200 (not 201)
+  {
+    "success": true,
+    "message": "Success",
+    "data": {
+      "accessToken": "eyJ...",
+      "expiresIn": "15m",
+      "tokenType": "Bearer",
+      "requiresCompanySelection": false,
+      "user": { "userId", "username", "displayName", "email" },
+      "companies": [ ... ],
+      "activeCompany": { ... modules, role, subscription ... }
+    }
+  }
+
+  refresh_token cookie set automatically (httpOnly — do not read in JS).
+
+AFTER SIGNUP
+------------
+  1. Store accessToken in sessionStorage
+  2. Call GET /auth/me for permissions[]
+  3. Employee code assigned automatically (e.g. EMP-00001 style)
+  4. Or login later with employeeCode + companyCode from signup response
+
+FRONTEND UNWRAP
+---------------
+  const payload = response.data.data;   // not response.data directly
+
+
+================================================================================
+SECTION 4 — SIGNUP ERRORS (WHAT THEY MEAN + FIX)
+================================================================================
+
+------------------------------------------------------------------------------
+ERROR A — HTTP 409 Conflict
+------------------------------------------------------------------------------
+  MEANING: Email already registered in database.
+
+  Response:
+    {
+      "success": false,
+      "message": "Email is already registered",
+      "data": null,
+      "path": "/api/v1/auth/signup"
+    }
+
+  FIX:
+    - Use a different email address
+    - Do NOT use admin@demo-acme.com (demo seed user)
+
+  UI MESSAGE: "This email is already registered. Try another email or log in."
+
+------------------------------------------------------------------------------
+ERROR B — HTTP 400 Validation
+------------------------------------------------------------------------------
+  MEANING: Invalid request body (password rules, missing fields, etc.)
+
+  PASSWORD RULES (backend enforced):
+    - Minimum 8 characters
+    - At least 1 UPPERCASE letter
+    - At least 1 lowercase letter
+    - At least 1 digit (0-9)
+
+  VALID passwords:   SecurePass1, TestPass1!, MyPass99
+  INVALID passwords: weak, password, 12345678, alllowercase1
+
+  PASSWORD MISMATCH:
+    If password !== confirmPassword:
+      message: "Password and confirm password do not match"
+
+  VALIDATION ERROR SHAPE (Zod):
+    {
+      "success": false,
+      "message": "Validation failed",
+      "data": null,
+      "errors": [
+        {
+          "path": ["password"],
+          "message": "Password must be at least 8 characters and include uppercase, lowercase, and a number",
+          "code": "invalid_format"
+        }
+      ],
+      "path": "/api/v1/auth/signup"
+    }
+
+  FRONTEND MAP FIELD ERRORS:
+    const field = error.path?.join('.') || 'form';
+    const msg = error.message;
+
+  UI MESSAGE: Show message under password field or toast.
+
+------------------------------------------------------------------------------
+ERROR C — Network error / Failed to fetch / CORS
+------------------------------------------------------------------------------
+  MEANING: Request never reached backend OR browser blocked response.
+
+  CHECKLIST:
+    [ ] Backend running?  npm run start:dev
+    [ ] URL correct?      http://localhost:3000/api/v1/auth/signup
+    [ ] CORS_ORIGIN=http://localhost:3001 in backend .env
+    [ ] Frontend on port 3001?
+    [ ] withCredentials: true on axios
+    [ ] Restart backend after .env change
+
+  UI MESSAGE: "Cannot reach server. Check backend is running on port 3000."
+
+------------------------------------------------------------------------------
+ERROR D — HTTP 401 / 403 on other calls (not signup)
+------------------------------------------------------------------------------
+  401 = bad token or wrong login credentials
+  403 = company suspended, account locked, x-company-id mismatch
+
+  Signup itself is public — should not get 401 on POST /signup.
+
+
+================================================================================
+SECTION 5 — SKIP SIGNUP: USE DEMO LOGIN
+================================================================================
+
+  If signup is not needed for Phase 1, use existing demo user:
+
+  Step 1 — Resolve company
+    GET /api/v1/auth/company?companyCode=DEMO_ACME
+
+  Step 2 — Login
+    POST /api/v1/auth/login
+    {
+      "employeeCode": "EMP-00001",
+      "password": "TestPass1!",
+      "companyCode": "DEMO_ACME"
+    }
+
+  Step 3 — Get permissions
+    GET /api/v1/auth/me
+    Authorization: Bearer <accessToken>
+
+  Seeds (if demo user missing):
+    npx prisma migrate deploy
+    npm run seed:erp-modules
+    npm run seed:phase1-login
+
+
+================================================================================
+SECTION 6 — SIGNUP vs LOGIN (PHASE 1)
+================================================================================
+
+  | Feature          | Signup                    | Login                    |
+  |------------------|---------------------------|--------------------------|
+  | Endpoint         | POST /auth/signup         | POST /auth/login         |
+  | Identifier       | email                     | employeeCode             |
+  | Company          | companyName (creates new) | companyCode or companyId |
+  | Phase 1 UI       | Optional                  | Required                 |
+
+  Backend decision: Login-only UI is OK for Phase 1.
+  Signup API works if frontend builds registration page.
+
+
+================================================================================
+SECTION 7 — FRONTEND SIGNUP FORM CHECKLIST
+================================================================================
+
+  [ ] POST to {NEXT_PUBLIC_API_URL}/auth/signup
+  [ ] Send JSON Content-Type application/json
+  [ ] withCredentials: true (for refresh cookie on success)
+  [ ] Parse response.data.data (envelope wrapper)
+  [ ] On 409: show "email already used"
+  [ ] On 400: map errors[].path to form fields
+  [ ] Password hint on form: "8+ chars, upper, lower, number"
+  [ ] confirmPassword must match password
+  [ ] On success: same flow as login (token + /auth/me + hydrate)
+
+
+================================================================================
+SECTION 8 — COPY-PASTE TEST (POSTMAN / BRUNO)
+================================================================================
+
+  TEST 1 — Should succeed (use unique email each time)
+  POST http://localhost:3000/api/v1/auth/signup
+  Body:
+  {
+    "email": "newuser2026@example.com",
+    "password": "SecurePass1",
+    "confirmPassword": "SecurePass1",
+    "firstName": "New",
+    "lastName": "User",
+    "companyName": "New Company Ltd"
+  }
+
+  TEST 2 — Should return 409
+  Same body but email: "admin@demo-acme.com"
+
+  TEST 3 — Should return 400
+  Same body but password: "weak", confirmPassword: "weak"
+
+
+================================================================================
+SECTION 9 — RELATED DOCS (OPTIONAL)
+================================================================================
+
+  Full auth integration:  docs/PHASE-1-FRONTEND-HANDOFF.txt
+  Bruno API tests:        bruno/ERP-Backend-Auth/
+  Bruno guide:            docs/BRUNO-AUTH-TESTING-GUIDE.txt
+
+
+================================================================================
+END — BACKEND CHECK + SIGNUP GUIDE FOR FRONTEND
+================================================================================

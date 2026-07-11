@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { AuthSessionModule } from '@/modules/iam/authentication/auth-session.module';
 import { SuperAdminsController } from './super-admins.controller';
 import { SuperAdminsRepository } from './super-admins.repository';
 import { SuperAdminAuthService, SuperAdminsService } from './super-admins.service';
 
 @Module({
   imports: [
+    AuthSessionModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({

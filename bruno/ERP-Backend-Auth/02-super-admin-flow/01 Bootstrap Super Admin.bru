@@ -1,0 +1,33 @@
+meta {
+  name: 01 Bootstrap Super Admin
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/super-admins/bootstrap
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "{{superAdminName}}",
+    "email": "{{superAdminEmail}}",
+    "password": "{{superAdminPassword}}"
+  }
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+}
+
+docs {
+  Run ONCE when super_admins table is empty.
+  Skip if super admin already exists.
+}

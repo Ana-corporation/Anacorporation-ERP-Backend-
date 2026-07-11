@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
+import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import {
   getRedisConnectionOptionsFromEnv,
@@ -37,12 +38,18 @@ async function bootstrap() {
   await ensureRedisOrFallback(logger);
   const app = await NestFactory.create(AppModule);
 
+  app.use(cookieParser());
+
   const configService = app.get(ConfigService);
   const port = configService.get<number>('app.port') ?? 3000;
   const apiPrefix = configService.get<string>('app.apiPrefix') ?? 'api/v1';
 
   app.setGlobalPrefix(apiPrefix);
-  app.enableCors();
+  const corsOrigin = configService.get<string>('app.corsOrigin') ?? 'http://localhost:3001';
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: true,
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Manufacturing ERP API')

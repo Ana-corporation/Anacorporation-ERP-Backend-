@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from './authentication/auth.module';
+import { PlatformModule } from './platform/platform.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
@@ -21,6 +22,7 @@ import { UserSignaturesModule } from './user-signatures/user-signatures.module';
 @Module({
   imports: [
     AuthModule,
+    PlatformModule,
     UsersModule,
     RolesModule,
     PermissionsModule,
@@ -41,6 +43,7 @@ import { UserSignaturesModule } from './user-signatures/user-signatures.module';
   ],
   exports: [
     AuthModule,
+    PlatformModule,
     UsersModule,
     RolesModule,
     PermissionsModule,

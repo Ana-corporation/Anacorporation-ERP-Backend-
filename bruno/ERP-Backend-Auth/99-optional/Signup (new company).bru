@@ -1,0 +1,43 @@
+meta {
+  name: Signup (new company + admin)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/signup
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "email": "{{signupEmail}}",
+    "password": "{{signupPassword}}",
+    "confirmPassword": "{{signupPassword}}",
+    "firstName": "{{signupFirstName}}",
+    "lastName": "{{signupLastName}}",
+    "companyName": "{{signupCompanyName}}"
+  }
+}
+
+script:pre-request {
+  const unique = Date.now();
+  bru.setEnvVar('signupEmail', `owner.${unique}@demo.com`);
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+  auth.saveCompanyAuth(res);
+}
+
+docs {
+  Creates new company + company admin user.
+  Email auto-made unique each run (owner.{timestamp}@demo.com).
+  Auto-saves accessToken after signup.
+}

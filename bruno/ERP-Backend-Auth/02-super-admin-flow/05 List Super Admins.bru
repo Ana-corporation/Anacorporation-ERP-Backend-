@@ -1,0 +1,25 @@
+meta {
+  name: 05 List Super Admins
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/v1/super-admins
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  limit: 10
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+}
+
+docs {
+  Protected CRUD route — uses superAdminAccessToken automatically.
+}

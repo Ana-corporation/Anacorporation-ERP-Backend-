@@ -1,0 +1,346 @@
+================================================================================
+PHASE 1 — BACKEND APIs REQUIRED BY ERP-FRONTEND
+================================================================================
+Last updated: 2026-07-10
+Scope: Tenant auth (login, signup, session, company switch)
+Base URL: http://localhost:3000/api/v1
+Frontend port: 3001
+
+All responses use the standard envelope:
+  {
+    "success": true | false,
+    "message": "Success" | error text,
+    "data": { ... } | null,
+    "timestamp": "ISO-8601"
+  }
+
+Frontend reads payload from: envelope.data  (see src/lib/api/unwrap.js)
+
+Axios config (src/lib/api/axios.js):
+  - withCredentials: true   (required for refresh_token 
+  httpOnly cookie)
+  - Authorization: Bearer <accessToken>  (from sessionStorage)
+  - x-company-id: <activeCompanyId>      (optional, on authenticated calls)
+
+
+================================================================================
+REQUIRED AUTH APIs (8 endpoints)
+================================================================================
+
+------------------------------------------------------------------------------
+1. GET /auth/company
+------------------------------------------------------------------------------
+Auth:     PUBLIC (no token)
+Purpose:  Verify company code before login (optional "Verify" button on login UI)
+
+Query:
+  companyCode=DEMO_ACME    (required, case-insensitive)
+
+Example:
+  GET /api/v1/auth/company?companyCode=DEMO_ACME
+
+Response data:
+  {
+    "companyId": "15",
+    "companyCode": "DEMO_ACME",
+    "name": "Demo Acme Corp",
+    "status": "trial"
+  }
+
+Errors: 404 if company not found
+
+
+------------------------------------------------------------------------------
+2. POST /auth/login
+------------------------------------------------------------------------------
+Auth:     PUBLIC
+Purpose:  Sign in with company + employee code + password
+
+Request body:
+  {
+    "employeeCode": "EMP-00001",
+    "password": "TestPass1!",
+    "companyCode": "DEMO_ACME"
+  }
+
+  OR use companyId instead of companyCode:
+  {
+    "employeeCode": "EMP-00001",
+    "password": "TestPass1!",
+    "companyId": "15"
+  }
+
+Response data: login snapshot
+  {
+    "accessToken": "eyJ...",
+    "expiresIn": "15m",
+    "tokenType": "Bearer",
+    "requiresCompanySelection": false,
+    "user": {
+      "userId": "15",
+      "username": "demo.admin",
+      "displayName": "Demo Admin",
+      "email": "admin@demo-acme.com"
+    },
+    "companies": [ { "companyId", "companyCode", "name", "isDefault", "status" } ],
+    "activeCompany": {
+      "companyId", "companyCode", "name", "status",
+      "role": { "roleId", "roleCode", "roleName" },
+      "subscription": { "status", "planCode", "planName", "endDate", "isCustom" },
+      "modules": [
+        {
+          "moduleId": 6,
+          "moduleCode": "financials",
+          "moduleName": "Financials",
+          "isActive": true,
+          "permissions": ["view","create","edit","delete","approve"]
+        }
+      ]
+    }
+  }
+
+Side effect: Sets httpOnly cookie refresh_token (not in JSON body)
+
+Frontend after login:
+  1. Save accessToken to sessionStorage
+  2. GET /auth/me  (for permissions[])
+  3. Hydrate Redux (auth + iam slices)
+  4. Redirect to /dashboard
+
+Errors: 401 invalid credentials, 403 suspended/locked
+
+
+------------------------------------------------------------------------------
+3. POST /auth/signup
+------------------------------------------------------------------------------
+Auth:     PUBLIC
+Purpose:  Register new company + admin user
+
+Request body:
+  {
+    "email": "owner@mycompany.com",
+    "password": "SecurePass1",
+    "confirmPassword": "SecurePass1",
+    "firstName": "Owner",
+    "lastName": "Name",
+    "companyName": "My Company Ltd"
+  }
+
+Password rules: min 8 chars, upper, lower, digit
+confirmPassword must match password
+
+Response data: same shape as POST /auth/login
+
+After signup, user logs in with:
+  - companyCode  (auto-generated from company name, e.g. MY_COMPANY_LTD)
+  - employeeCode (auto-generated, e.g. EMP-00022)
+  - password     (what they chose at signup)
+  NOT email — login uses employee code, not email.
+
+Frontend after signup: same as login (save token -> GET /auth/me -> hydrate -> /dashboard)
+
+Errors: 400 validation, 409 email already registered
+
+
+------------------------------------------------------------------------------
+4. GET /auth/me
+------------------------------------------------------------------------------
+Auth:     BEARER (required)
+Purpose:  Full session snapshot + admin permissions[] for sidebar/menus
+
+Headers:
+  Authorization: Bearer <accessToken>
+  x-company-id: <companyId>    (optional; must match JWT if sent)
+
+Response data: login snapshot PLUS:
+  "permissions": [
+    "companies:view",
+    "users:view",
+    "roles:view",
+    ...
+  ]
+
+Note: permissions[] are NOT in login/signup response — must call /auth/me.
+
+Used on:
+  - After login/signup
+  - Page reload (bootstrap-auth.js if token exists in sessionStorage)
+  - After switch-company
+
+Errors: 401 expired/invalid token
+
+
+------------------------------------------------------------------------------
+5. GET /auth/companies
+------------------------------------------------------------------------------
+Auth:     BEARER
+Purpose:  List companies the logged-in user belongs to (company switcher — API ready, UI pending)
+
+Response data: ARRAY (not wrapped in an object)
+  [
+    {
+      "companyId": "15",
+      "companyCode": "DEMO_ACME",
+      "name": "Demo Acme Corp",
+      "isDefault": true,
+      "status": "trial",
+      "employeeCode": "EMP-00001"
+    }
+  ]
+
+
+------------------------------------------------------------------------------
+6. POST /auth/switch-company
+------------------------------------------------------------------------------
+Auth:     BEARER
+Purpose:  Switch active company when user belongs to multiple tenants
+
+Request body:
+  {
+    "companyId": "16"
+  }
+
+Response data: same as login (new accessToken + new activeCompany snapshot)
+
+Frontend after switch:
+  1. Save new accessToken
+  2. GET /auth/me for updated permissions[]
+  3. Re-hydrate Redux
+
+
+------------------------------------------------------------------------------
+7. POST /auth/refresh
+------------------------------------------------------------------------------
+Auth:     COOKIE only (refresh_token httpOnly cookie)
+Purpose:  Renew access token when API returns 401
+
+Request body: empty {}
+Cookie: refresh_token (sent automatically with withCredentials: true)
+
+Response data: FULL login snapshot (same as login — not token-only)
+permissions[]: call GET /auth/me separately
+
+Used by: axios 401 interceptor (src/lib/api/axios.js)
+
+
+------------------------------------------------------------------------------
+8. POST /auth/logout
+------------------------------------------------------------------------------
+Auth:     BEARER + COOKIE
+Purpose:  End session
+
+Request body: empty or none
+
+Response data:
+  { "message": "Logged out successfully" }
+
+Side effect: Clears refresh_token cookie
+Frontend: clear sessionStorage, reset Redux, redirect /auth/login
+
+
+================================================================================
+TYPICAL FLOWS
+================================================================================
+
+LOGIN FLOW
+----------
+  1. GET  /auth/company?companyCode=DEMO_ACME     (optional verify)
+  2. POST /auth/login
+  3. GET  /auth/me
+  4. Redirect /dashboard
+
+SIGNUP FLOW
+-----------
+  1. POST /auth/signup
+  2. GET  /auth/me
+  3. Redirect /dashboard
+
+PAGE RELOAD (already logged in)
+-------------------------------
+  1. GET /auth/me   (if accessToken in sessionStorage)
+  2. Hydrate Redux or redirect /auth/login on 401
+
+TOKEN EXPIRED (any API call)
+----------------------------
+  1. POST /auth/refresh  (cookie)
+  2. Retry original request with new accessToken
+  3. On refresh fail -> clear session -> /auth/login
+
+LOGOUT
+------
+  1. POST /auth/logout
+  2. Clear sessionStorage + Redux
+  3. Redirect /auth/login
+
+
+================================================================================
+DEMO CREDENTIALS (for testing)
+================================================================================
+
+  companyCode:   DEMO_ACME
+  employeeCode:  EMP-00001
+  password:      TestPass1!
+
+  Login URL:  http://localhost:3001/auth/login
+  Signup URL: http://localhost:3001/auth/signup
+
+
+================================================================================
+HTTP ERROR CODES (frontend handling)
+================================================================================
+
+  400  Validation errors — map errors[].path to form fields (signup)
+  401  Bad credentials / expired token
+  403  Suspended company / account locked / x-company-id mismatch
+  404  Company not found
+  409  Email already registered (signup)
+  500  Server error — show generic message
+
+
+================================================================================
+WHAT LOGIN RESPONSE DOES NOT INCLUDE
+================================================================================
+
+  - permissions[]        -> only from GET /auth/me
+  - refresh_token        -> httpOnly cookie only, never in JSON
+  - Admin module menus   -> gated by permissions[] from /auth/me
+
+Product modules in activeCompany.modules[]:
+  financials, supply-chain, hcm, manufacturing, crm, projects
+
+Admin areas (NOT in modules[] — use permissions[]):
+  iam, organization, subscription, shared
+
+
+================================================================================
+FRONTEND API WRAPPER (src/lib/api/auth-api.js)
+================================================================================
+
+  resolveCompany(companyCode)  -> GET  /auth/company
+  login(body)                  -> POST /auth/login
+  signup(body)                 -> POST /auth/signup
+  getMe()                      -> GET  /auth/me
+  getCompanies()               -> GET  /auth/companies
+  switchCompany(companyId)     -> POST /auth/switch-company
+  refresh()                    -> POST /auth/refresh
+  logout()                     -> POST /auth/logout
+
+
+================================================================================
+OPTIONAL — NOT PART OF PHASE 1 TENANT AUTH UI
+================================================================================
+
+Super Admin (separate /super-admin/* routes):
+  POST  /api/v1/super-admins/auth/login       { email, password }
+  GET   /api/v1/super-admin/companies
+  GET   /api/v1/super-admin/companies/:id
+  PATCH /api/v1/super-admin/companies/:id/status
+
+OAuth (future):
+  GET /auth/oauth/google?companyCode=&redirectUri=
+  GET /auth/oauth/microsoft?companyCode=&redirectUri=
+
+
+================================================================================
+END
+================================================================================

@@ -1,0 +1,25 @@
+meta {
+  name: 03 List Customers CRM (token test)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/customers
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  limit: 10
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+}
+
+docs {
+  Product module route — needs crm module in subscription snapshot.
+}

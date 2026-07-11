@@ -1,16 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PermissionAction, Prisma } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { ALL_MODULES } from '@/common/constants/modules.constant';
 import { PERMISSIONS } from '@/common/constants/permissions.constant';
 import { parseBigIntId } from '@/common/utils/bigint.util';
 import { slugify } from '@/common/utils/helpers';
-
-const MODULE_SEEDS = [
-  { code: 'shared', name: 'Shared Master Data' },
-  { code: 'organization', name: 'Organization' },
-  { code: 'iam', name: 'Identity & Access' },
-  { code: 'subscription', name: 'Subscription & Billing' },
-] as const;
 
 @Injectable()
 export class AuthRepository {
@@ -30,20 +24,36 @@ export class AuthRepository {
   }
 
   async ensurePermissionsSeeded() {
-    for (const mod of MODULE_SEEDS) {
+    const existingCount = await this.prisma.permission.count();
+    if (existingCount >= PERMISSIONS.length) {
+      return;
+    }
+
+    for (const mod of ALL_MODULES) {
       await this.prisma.module.upsert({
         where: { moduleCode: mod.code },
-        update: {},
+        update: {
+          moduleName: mod.name,
+          moduleType: mod.moduleType,
+          sortOrder: mod.sortOrder,
+          description: mod.description,
+          icon: mod.icon,
+          isActive: true,
+        },
         create: {
           moduleCode: mod.code,
           moduleName: mod.name,
+          moduleType: mod.moduleType,
+          sortOrder: mod.sortOrder,
+          description: mod.description,
+          icon: mod.icon,
           isActive: true,
         },
       });
     }
 
     const modules = await this.prisma.module.findMany({
-      where: { moduleCode: { in: MODULE_SEEDS.map((m) => m.code) } },
+      where: { moduleCode: { in: ALL_MODULES.map((m) => m.code) } },
     });
     const moduleByCode = new Map(modules.map((m) => [m.moduleCode, m]));
 
@@ -76,7 +86,69 @@ export class AuthRepository {
 
   findCompanyByCode(companyCode: string) {
     return this.prisma.company.findFirst({
-      where: { companyCode, deletedAt: null },
+      where: { companyCode: companyCode.trim().toUpperCase(), deletedAt: null },
+    });
+  }
+
+  findCompanyById(companyId: string) {
+    return this.prisma.company.findFirst({
+      where: { companyId: parseBigIntId(companyId), deletedAt: null },
+    });
+  }
+
+  findMembershipByEmployeeCode(companyId: string, employeeCode: string) {
+    return this.prisma.userCompany.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        employeeId: employeeCode.trim(),
+        deletedAt: null,
+        status: 'active',
+      },
+      include: {
+        user: { include: { authentication: true } },
+        company: true,
+      },
+    });
+  }
+
+  async recordLoginHistory(params: {
+    userId?: string;
+    companyId?: string;
+    loginResult: 'success' | 'failure';
+    failureReason?: string;
+    ipAddress?: string;
+    browser?: string;
+  }) {
+    return this.prisma.userLoginHistory.create({
+      data: {
+        userId: params.userId ? parseBigIntId(params.userId) : null,
+        companyId: params.companyId ? parseBigIntId(params.companyId) : null,
+        loginResult: params.loginResult,
+        failureReason: params.failureReason,
+        ipAddress: params.ipAddress,
+        browser: params.browser,
+      },
+    });
+  }
+
+  findSessionByRefreshToken(refreshToken: string) {
+    return this.prisma.userSession.findFirst({
+      where: { refreshToken, sessionStatus: 'active' },
+      orderBy: { loginTime: 'desc' },
+    });
+  }
+
+  async revokeSessionsByRefreshToken(refreshToken: string) {
+    return this.prisma.userSession.updateMany({
+      where: { refreshToken, sessionStatus: 'active' },
+      data: { sessionStatus: 'logged_out', logoutTime: new Date() },
+    });
+  }
+
+  async revokeSessionBySid(sid: string) {
+    return this.prisma.userSession.updateMany({
+      where: { jwtToken: sid, sessionStatus: 'active' },
+      data: { sessionStatus: 'logged_out', logoutTime: new Date() },
     });
   }
 
@@ -116,6 +188,7 @@ export class AuthRepository {
         companyId: parseBigIntId(companyId),
         isActive: true,
       },
+      orderBy: { roleId: 'asc' },
       include: {
         role: {
           include: {
@@ -164,7 +237,7 @@ export class AuthRepository {
     firstName: string;
     lastName: string;
     companyName: string;
-    permissionIds: bigint[];
+    adminPermissions: { permissionId: bigint; moduleId: bigint }[];
   }) {
     const username = params.email.split('@')[0];
     let companyCode = slugify(params.companyName).toUpperCase().replace(/-/g, '_');
@@ -207,21 +280,15 @@ export class AuthRepository {
         },
       });
 
-      const modules = await tx.module.findMany();
-      const moduleById = new Map(modules.map((m) => [m.moduleId, m]));
-
-      for (const permissionId of params.permissionIds) {
-        const permission = await tx.permission.findUnique({ where: { permissionId } });
-        if (!permission) continue;
-
-        await tx.rolePermission.create({
-          data: {
+      if (params.adminPermissions.length > 0) {
+        await tx.rolePermission.createMany({
+          data: params.adminPermissions.map((permission) => ({
             roleId: role.roleId,
             moduleId: permission.moduleId,
             permissionId: permission.permissionId,
             isAllowed: true,
             createdBy: user.userId,
-          },
+          })),
         });
       }
 
@@ -229,6 +296,7 @@ export class AuthRepository {
         data: {
           userId: user.userId,
           companyId: company.companyId,
+          employeeId: `EMP-${String(user.userId).padStart(5, '0')}`,
           status: 'active',
           isDefault: true,
           createdBy: user.userId,
@@ -244,6 +312,13 @@ export class AuthRepository {
         },
       });
 
+      await tx.companySecurityPolicy.create({
+        data: {
+          companyId: company.companyId,
+          createdBy: user.userId,
+        },
+      });
+
       return {
         user: { id: user.userId.toString(), email: user.email, firstName: user.firstName ?? '', lastName: user.lastName ?? '' },
         company: { id: company.companyId.toString(), name: company.name, companyCode: company.companyCode },
@@ -253,12 +328,146 @@ export class AuthRepository {
   }
 
   async recordFailedLogin(userId: string) {
-    await this.prisma.userAuthentication.update({
+    await this.incrementFailedLogin(userId);
+  }
+
+  findAuthentication(userId: string) {
+    return this.prisma.userAuthentication.findUnique({
+      where: { userId: parseBigIntId(userId) },
+    });
+  }
+
+  incrementFailedLogin(userId: string) {
+    return this.prisma.userAuthentication.update({
       where: { userId: parseBigIntId(userId) },
       data: {
         failedLoginCount: { increment: 1 },
         lastFailedLogin: new Date(),
         updatedAt: new Date(),
+      },
+    });
+  }
+
+  async clearAccountLock(userId: string) {
+    await this.prisma.$transaction([
+      this.prisma.userAuthentication.update({
+        where: { userId: parseBigIntId(userId) },
+        data: {
+          accountLockedUntil: null,
+          failedLoginCount: 0,
+          updatedAt: new Date(),
+        },
+      }),
+      this.prisma.user.update({
+        where: { userId: parseBigIntId(userId) },
+        data: {
+          isLocked: false,
+          lockReason: null,
+          updatedAt: new Date(),
+        },
+      }),
+    ]);
+  }
+
+  async lockAccount(userId: string, lockedUntil: Date, reason: string) {
+    await this.prisma.$transaction([
+      this.prisma.userAuthentication.update({
+        where: { userId: parseBigIntId(userId) },
+        data: {
+          accountLockedUntil: lockedUntil,
+          updatedAt: new Date(),
+        },
+      }),
+      this.prisma.user.update({
+        where: { userId: parseBigIntId(userId) },
+        data: {
+          isLocked: true,
+          lockReason: reason,
+          updatedAt: new Date(),
+        },
+      }),
+    ]);
+  }
+
+  findSecurityPolicy(companyId: string) {
+    return this.prisma.companySecurityPolicy.findUnique({
+      where: { companyId: parseBigIntId(companyId) },
+    });
+  }
+
+  ensureDefaultSecurityPolicy(companyId: string, createdBy?: string) {
+    return this.prisma.companySecurityPolicy.upsert({
+      where: { companyId: parseBigIntId(companyId) },
+      update: {},
+      create: {
+        companyId: parseBigIntId(companyId),
+        createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
+      },
+    });
+  }
+
+  findOAuthIdentity(provider: string, providerUserId: string) {
+    return this.prisma.userOAuthIdentity.findUnique({
+      where: {
+        provider_providerUserId: {
+          provider: provider as 'google' | 'microsoft',
+          providerUserId,
+        },
+      },
+      include: {
+        user: { include: { authentication: true } },
+      },
+    });
+  }
+
+  findMembershipByUserAndCompany(userId: string, companyId: string) {
+    return this.findMembership(userId, companyId);
+  }
+
+  findMembershipByEmail(companyId: string, email: string) {
+    return this.prisma.userCompany.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        status: 'active',
+        user: {
+          email: email.trim().toLowerCase(),
+          deletedAt: null,
+          isActive: true,
+        },
+      },
+      include: {
+        user: { include: { authentication: true } },
+        company: true,
+      },
+    });
+  }
+
+  upsertOAuthIdentity(params: {
+    userId: string;
+    provider: 'google' | 'microsoft';
+    providerUserId: string;
+    email?: string;
+    displayName?: string;
+  }) {
+    return this.prisma.userOAuthIdentity.upsert({
+      where: {
+        provider_providerUserId: {
+          provider: params.provider,
+          providerUserId: params.providerUserId,
+        },
+      },
+      update: {
+        email: params.email,
+        displayName: params.displayName,
+        updatedAt: new Date(),
+      },
+      create: {
+        userId: parseBigIntId(params.userId),
+        provider: params.provider,
+        providerUserId: params.providerUserId,
+        email: params.email,
+        displayName: params.displayName,
       },
     });
   }

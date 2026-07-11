@@ -1,0 +1,97 @@
+================================================================================
+  BRUNO — FULL AUTH TEST COLLECTION GUIDE
+  Collection: bruno/ERP-Backend-Auth/
+================================================================================
+
+WHAT IS AUTO (no manual copy-paste)
+------------------------------------
+  [x] accessToken saved after Login / Signup / Refresh / Switch Company
+  [x] superAdminAccessToken saved after Super Admin Login / Refresh
+  [x] companyId saved after Resolve Company and Login
+  [x] Authorization Bearer header auto-added to ALL protected requests
+  [x] Super admin routes auto-use superAdminAccessToken
+  [x] Refresh cookies handled by Bruno cookie jar
+  [x] Signup email auto-unique each run (timestamp)
+
+
+SETUP (one time)
+----------------
+  1. Install Bruno: https://www.usebruno.com/downloads
+  2. Open Collection -> C:\ERP-Backend\bruno\ERP-Backend-Auth
+  3. Environment (top-right): Local
+  4. Bruno Settings -> Cookies -> ON
+  5. Terminal:
+       cd C:\ERP-Backend
+       npx prisma migrate deploy
+       npm run seed:erp-modules
+       npm run seed:phase1-login
+       npm run start:dev
+
+
+EASIEST WAY TO TEST ALL (Collection Runner)
+-------------------------------------------
+  1. Right-click folder: 00-setup -> Run
+  2. Right-click folder: 01-company-auth-flow -> Run
+  3. Optional: 03-protected-api-tests -> Run (after login flow)
+
+  Or run requests one by one in order (01, 02, 03...)
+
+
+FOLDER STRUCTURE
+----------------
+  00-setup/
+    01 Health Check
+    02 Resolve Company
+
+  01-company-auth-flow/     <- MAIN FLOW (run in order)
+    01 Login (companyCode)
+    02 Login (companyId)      optional alternative
+    03 Get Me (snapshot)
+    04 Get My Companies
+    05 Refresh Token
+    06 Switch Company         set switchCompanyId in env
+    07 Logout
+
+  02-super-admin-flow/
+    01 Bootstrap Super Admin  once only
+    02 Super Admin Login
+    03 Super Admin Me
+    04 Super Admin Refresh
+    05 List Super Admins
+    06 Super Admin Logout
+
+  03-protected-api-tests/     proves token works
+    01 List Users
+    02 List Departments
+    03 List Customers CRM
+
+  99-optional/
+    Signup (new company)      auto unique email
+
+
+ENVIRONMENT VARIABLES (Local)
+-----------------------------
+  baseUrl:              http://localhost:3000
+  companyCode:          DEMO_ACME
+  employeeCode:         EMP-00001
+  password:             TestPass1!
+  accessToken:          (auto)
+  companyId:            (auto)
+  userId:               (auto)
+  switchCompanyId:      set for switch test (= companyId if one company)
+  superAdminEmail:      admin@platform.com
+  superAdminPassword:   TestPass1!
+
+
+5-MINUTE QUICK TEST
+-------------------
+  00-setup/01 Health Check
+  00-setup/02 Resolve Company
+  01-company-auth-flow/01 Login (companyCode)
+  01-company-auth-flow/03 Get Me (snapshot)
+  03-protected-api-tests/01 List Users
+  01-company-auth-flow/07 Logout
+
+================================================================================
+END
+================================================================================

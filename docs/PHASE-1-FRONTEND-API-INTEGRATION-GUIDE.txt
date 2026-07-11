@@ -1,0 +1,887 @@
+================================================================================
+  PHASE 1 — FRONTEND API INTEGRATION GUIDE
+  ERP Frontend — APIs, fields, payloads, storage, wiring
+  Backend repo: ERP-Backend (NestJS)
+  API base path: /api/v1
+  Backend verified: 2026-07-10
+  Frontend status: NOT wired — implement using this file
+================================================================================
+
+
+================================================================================
+SECTION 0 — READ THIS FIRST (BACKEND CONTRACT RULES)
+================================================================================
+
+1. ALL successful API responses are WRAPPED. Always read response.data:
+
+     {
+       "success": true,
+       "message": "Success",
+       "data": { ... actual payload ... },
+       "timestamp": "2026-07-10T06:00:00.000Z"
+     }
+
+   Axios example:
+     const { data: envelope } = await axios.post('/auth/login', body);
+     const payload = envelope.data;   // <-- use this
+
+2. ALL error responses:
+
+     {
+       "success": false,
+       "message": "Invalid employee code or password",
+       "data": null,
+       "timestamp": "...",
+       "path": "/api/v1/auth/login"
+     }
+
+3. Login field is EMPLOYEE CODE (not username) — locked Phase 1 decision.
+   Username exists on user record but is NOT used for login.
+
+4. Company must be known BEFORE login:
+   companyId OR companyCode is REQUIRED on POST /auth/login.
+   Use GET /auth/company?companyCode= to resolve company name first.
+
+5. refreshToken is NEVER in JSON body (stripped by backend).
+   Backend sets httpOnly cookie: refresh_token
+   Frontend MUST use withCredentials: true on axios.
+
+6. Login response does NOT include flat permissions[] (admin/IAM codes).
+   Call GET /auth/me after login to get permissions[] for admin menus.
+
+7. expiresIn is a STRING (e.g. "15m"), not seconds.
+
+8. IDs are STRINGS in JSON ("15"), except moduleId is a NUMBER.
+
+9. roleCode from backend is uppercase (e.g. "ADMIN"), not "admin".
+
+10. Company/subscription status can be "trial" (not only "active").
+
+
+================================================================================
+SECTION 1 — ENVIRONMENT SETUP
+================================================================================
+
+BACKEND (.env in ERP-Backend)
+-----------------------------
+  PORT=3000                    # default; change if needed
+  API_PREFIX=api/v1          # set in app config
+  JWT_ACCESS_EXPIRATION=15m
+  JWT_REFRESH_EXPIRATION=7d
+
+  Swagger docs: http://localhost:{PORT}/docs
+
+FRONTEND (.env.local in Next.js project root)
+---------------------------------------------
+  NEXT_PUBLIC_APP_NAME=ERP
+  NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+
+PORT LAYOUT (recommended)
+-------------------------
+  Option A — same port conflict avoided:
+    Backend  :3000   (default)
+    Frontend :3001   (next dev -p 3001)
+
+  Option B — separate ports:
+    Backend  :4000   (set PORT=4000 in backend .env)
+    Frontend :3000
+    NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
+
+CRITICAL AXIOS CONFIG
+---------------------
+  const api = axios.create({
+    baseURL: process.env.NEXT_PUBLIC_API_URL,   // must end with /api/v1
+    withCredentials: true,                     // sends refresh_token cookie
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+CORS NOTE (confirmed 2026-07-10)
+-------------------------
+  Backend reads CORS_ORIGIN from .env (default http://localhost:3001).
+  Backend enables credentials: true for httpOnly refresh cookie.
+
+  Backend .env:
+    CORS_ORIGIN=http://localhost:3001
+
+  Frontend .env.local:
+    NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+
+  Cookie (dev): sameSite=lax, secure=false
+  Cookie (production): secure=true when NODE_ENV=production
+
+  Cross-origin cookies (frontend :3001 -> backend :3000) work when
+  withCredentials: true and CORS_ORIGIN matches frontend origin exactly.
+
+
+================================================================================
+SECTION 2 — FRONTEND FILES TO CREATE
+================================================================================
+
+  src/lib/api/axios.js                 Shared axios + interceptors
+  src/lib/api/auth-api.js              All /auth/* HTTP calls
+  src/lib/auth/session-storage.js      accessToken + authContext keys
+  src/lib/auth/hydrate-from-snapshot.js  API snapshot -> Redux iam slice
+  src/redux/slices/auth.js             isAuthenticated, user, token, companyId
+  src/app/auth/login/page.js           Company code + employee code + password
+  src/middleware.js                    Protect /dashboard/* (or /company/*)
+  src/auth/guard/auth-guard.js         Client redirect + /auth/me bootstrap
+
+
+================================================================================
+SECTION 3 — RESPONSE ENVELOPE HELPER (USE EVERYWHERE)
+================================================================================
+
+  // src/lib/api/unwrap.js
+  export function unwrap(response) {
+    const envelope = response.data;
+    if (!envelope?.success) {
+      throw new Error(envelope?.message || 'API request failed');
+    }
+    return envelope.data;
+  }
+
+  // Usage:
+  const payload = unwrap(await api.post('/auth/login', body));
+
+
+================================================================================
+SECTION 4 — COMPANY USER AUTH APIs (PRIMARY)
+================================================================================
+
+Base: {NEXT_PUBLIC_API_URL}  e.g. http://localhost:3000/api/v1
+
+------------------------------------------------------------------------------
+4.1  PRE-LOGIN — RESOLVE COMPANY
+------------------------------------------------------------------------------
+  GET /auth/company?companyCode={code}
+
+  Auth:     None (public)
+  When:     User enters company code on login screen (before password)
+
+  Query params:
+    companyCode   string   required   e.g. "DEMO_ACME" (case-insensitive lookup)
+
+  Response data:
+    {
+      "companyId": "15",
+      "companyCode": "DEMO_ACME",
+      "name": "Demo Acme Corp",
+      "status": "trial"
+    }
+
+  Errors:
+    404  Company not found
+
+  Frontend:
+    - Show company name on login form
+    - Store companyId OR pass companyCode to login POST
+
+------------------------------------------------------------------------------
+4.2  SIGN UP — NEW COMPANY ADMIN
+------------------------------------------------------------------------------
+  POST /auth/signup
+
+  Auth:     None (public)
+
+  Request body:
+    {
+      "email": "owner@mycompany.com",
+      "password": "SecurePass1",
+      "confirmPassword": "SecurePass1",
+      "firstName": "Owner",
+      "lastName": "Name",
+      "companyName": "My Company Ltd"
+    }
+
+  Password rules (backend validation):
+    - Min 8 characters
+    - At least 1 uppercase, 1 lowercase, 1 digit
+
+  Response data: Same shape as login (Section 4.3)
+  Cookie: refresh_token set (httpOnly)
+
+  Notes:
+    - Employee code auto-assigned: EMP-00001 style (EMP-{userId padded})
+    - Default security policy row created for company
+    - User gets ADMIN role with all non-platform permissions
+
+------------------------------------------------------------------------------
+4.3  LOGIN — MAIN ENTRY POINT
+------------------------------------------------------------------------------
+  POST /auth/login
+
+  Auth:     None (public)
+
+  Request body (companyId OR companyCode — at least one required):
+    {
+      "employeeCode": "EMP-00001",
+      "password": "TestPass1!",
+      "companyCode": "DEMO_ACME"
+    }
+    OR
+    {
+      "employeeCode": "EMP-00001",
+      "password": "TestPass1!",
+      "companyId": "15"
+    }
+
+  Request fields:
+    employeeCode   string   required
+    password       string   required
+    companyCode    string   optional (one of companyId/companyCode required)
+    companyId      string   optional (numeric string, e.g. "15")
+
+  Response data:
+    {
+      "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+      "expiresIn": "15m",
+      "tokenType": "Bearer",
+      "requiresCompanySelection": false,
+      "user": {
+        "userId": "15",
+        "username": "demo.admin",
+        "displayName": "Demo Admin",
+        "email": "admin@demo-acme.com"
+      },
+      "companies": [
+        {
+          "companyId": "15",
+          "companyCode": "DEMO_ACME",
+          "name": "Demo Acme Corp",
+          "isDefault": true,
+          "status": "trial"
+        }
+      ],
+      "activeCompany": {
+        "companyId": "15",
+        "companyCode": "DEMO_ACME",
+        "name": "Demo Acme Corp",
+        "status": "trial",
+        "role": {
+          "roleId": "15",
+          "roleCode": "ADMIN",
+          "roleName": "Administrator"
+        },
+        "subscription": {
+          "status": "trial",
+          "planCode": "DEMO_STARTER",
+          "planName": "Demo Starter",
+          "endDate": "2027-07-10",
+          "isCustom": false
+        },
+        "modules": [
+          {
+            "moduleId": 6,
+            "moduleCode": "financials",
+            "moduleName": "Financials",
+            "isActive": true,
+            "permissions": ["view", "create", "edit", "delete", "approve"]
+          },
+          {
+            "moduleId": 16,
+            "moduleCode": "crm",
+            "moduleName": "CRM",
+            "isActive": true,
+            "permissions": ["view", "create", "edit", "delete", "approve"]
+          }
+        ]
+      }
+    }
+
+  Cookie set by backend (do NOT read in JavaScript):
+    Name:   refresh_token
+    Flags:  httpOnly, secure (production), sameSite=lax
+    Path:   /api/v1/auth
+
+  NOT in response body:
+    refreshToken (removed; cookie only)
+
+  NOT in login response (call /auth/me for these):
+    permissions[]   flat admin codes e.g. ["users:view", "companies:edit"]
+
+  Frontend after login:
+    1. sessionStorage.setItem('accessToken', data.accessToken)
+    2. sessionStorage.setItem('authContext', JSON.stringify({
+         user: data.user,
+         activeCompanyId: data.activeCompany.companyId,
+         companies: data.companies,
+         activeCompany: data.activeCompany
+       }))
+    3. dispatch setAuth(...)
+    4. GET /auth/me -> merge permissions[] -> hydrateIam(...)
+    5. redirect to /dashboard or /company/{companyId}/dashboard
+
+  Login error cases (HTTP status):
+    400  Missing companyId/companyCode, validation error (see below)
+    401  Wrong employee code/password, inactive user, locked user
+    403  Company suspended/cancelled, account locked until timestamp
+    404  Company not found (resolve step)
+
+  HTTP 400 validation error example:
+    {
+      "success": false,
+      "message": "Validation failed",
+      "data": null,
+      "errors": [
+        { "path": ["employeeCode"], "message": "...", "code": "invalid_type" }
+      ],
+      "timestamp": "...",
+      "path": "/api/v1/auth/login"
+    }
+    Map field: errors[i].path.join('.')
+
+  HTTP 403 lockout example:
+    {
+      "success": false,
+      "message": "Account is locked until 2026-07-10T12:30:00.000Z",
+      "data": null
+    }
+    (No data.lockedUntil field in Phase 1 — parse from message if needed)
+
+------------------------------------------------------------------------------
+4.4  GET CURRENT USER + FULL SNAPSHOT
+------------------------------------------------------------------------------
+  GET /auth/me
+
+  Auth:     Bearer {accessToken}
+
+  Headers:
+    Authorization: Bearer <accessToken>
+    x-company-id: <companyId>   optional; if sent MUST match JWT cid or 403
+
+  Response data:
+    {
+      "user": { "userId", "username", "displayName", "email" },
+      "companies": [ ... ],
+      "activeCompany": { ... same shape as login ... },
+      "permissions": [
+        "users:view",
+        "users:create",
+        "companies:view",
+        "customers:read",
+        ...
+      ]
+    }
+
+  permissions[] explained:
+    - Flat string codes for ADMIN/IAM/organization routes
+    - Product ERP routes also accept legacy codes (customers:read -> crm:view)
+    - Use for admin sidebar + settings menus
+    - Product module sidebar uses activeCompany.modules[].permissions
+
+  Frontend:
+    - Call on app load if accessToken exists in sessionStorage
+    - Re-hydrate Redux without re-login
+
+------------------------------------------------------------------------------
+4.5  LIST USER COMPANIES (SWITCHER)
+------------------------------------------------------------------------------
+  GET /auth/companies
+
+  Auth:     Bearer {accessToken}
+
+  Response data: ARRAY (not wrapped in { companies: [] })
+    [
+      {
+        "companyId": "15",
+        "companyCode": "DEMO_ACME",
+        "name": "Demo Acme Corp",
+        "isDefault": true,
+        "status": "trial",
+        "employeeCode": "EMP-00001"
+      }
+    ]
+
+  Frontend:
+    - Populate company switcher dropdown
+    - employeeCode shown per membership (useful for support)
+
+------------------------------------------------------------------------------
+4.6  SWITCH COMPANY
+------------------------------------------------------------------------------
+  POST /auth/switch-company
+
+  Auth:     Bearer {accessToken}
+
+  Request body:
+    {
+      "companyId": "16"
+    }
+
+  Response data: FULL login shape (new accessToken + fresh activeCompany)
+    Same fields as Section 4.3 login response
+
+  Cookie: New refresh_token issued; old session revoked server-side
+
+  Frontend:
+    1. Replace accessToken in sessionStorage
+    2. Update authContext
+    3. GET /auth/me (or use switch response + permissions from /me)
+    4. Re-run hydrateFromSnapshot()
+    5. Update activeCompanyId in auth slice
+    6. Rebuild sidebar modules
+
+------------------------------------------------------------------------------
+4.7  REFRESH ACCESS TOKEN
+------------------------------------------------------------------------------
+  POST /auth/refresh
+
+  Auth:     refresh_token httpOnly cookie (automatic with withCredentials)
+            Optional body: { "refreshToken": "..." } if not using cookie
+
+  Request body: empty {} or omit
+
+  Response data: FULL snapshot (same as login — not just token)
+    {
+      "accessToken": "...",
+      "expiresIn": "15m",
+      "tokenType": "Bearer",
+      "requiresCompanySelection": false,
+      "user": { ... },
+      "companies": [ ... ],
+      "activeCompany": { ... }
+    }
+
+  Frontend (401 interceptor):
+    1. POST /auth/refresh with withCredentials: true
+    2. Save envelope.data.accessToken
+    3. Optionally re-hydrate from full response
+    4. Retry failed request with new Bearer token
+    5. If refresh fails -> clearAuth() -> /auth/login
+
+  Security note:
+    Backend rotates refresh token on each refresh (reuse detection enabled)
+
+------------------------------------------------------------------------------
+4.8  LOGOUT
+------------------------------------------------------------------------------
+  POST /auth/logout
+
+  Auth:     Bearer {accessToken} + refresh cookie
+
+  Request body: empty (optional refreshToken in body if no cookie)
+
+  Response data:
+    { "message": "Logged out successfully" }
+
+  Cookie: refresh_token cleared by backend
+
+  Frontend:
+    1. sessionStorage.removeItem('accessToken')
+    2. sessionStorage.removeItem('authContext')
+    3. dispatch clearAuth()
+    4. redirect to /auth/login
+
+
+================================================================================
+SECTION 5 — JWT CLAIMS (WHAT TOKEN CONTAINS)
+================================================================================
+
+  Decode accessToken (client-side, for display only — server validates):
+
+    {
+      "sub": "15",           // userId
+      "email": "admin@demo-acme.com",
+      "cid": "15",           // active companyId
+      "sid": "uuid-session", // session id (Redis)
+      "role": "ADMIN",       // roleCode
+      "companyId": "15",     // duplicate of cid
+      "sessionId": "uuid",   // duplicate of sid
+      "iat": 1783659397,
+      "exp": 1783660297
+    }
+
+  Do NOT put permissions in JWT. Use snapshot + /auth/me permissions[].
+
+
+================================================================================
+SECTION 6 — REDUX / STATE MAPPING
+================================================================================
+
+------------------------------------------------------------------------------
+6.1  AUTH SLICE — src/redux/slices/auth.js
+------------------------------------------------------------------------------
+  state:
+    isAuthenticated: false
+    accessToken: null
+    user: null                 // { userId, username, displayName, email }
+    activeCompanyId: null
+    companies: []
+    permissions: []            // flat codes from /auth/me
+
+  actions:
+    setAuth({ accessToken, user, activeCompanyId, companies, permissions })
+    clearAuth()
+    setActiveCompany(companyId)
+
+------------------------------------------------------------------------------
+6.2  IAM SLICE HYDRATION — hydrate-from-snapshot.js
+------------------------------------------------------------------------------
+  Input: login or /auth/me response (envelope.data)
+
+  Map activeCompany into iam tables (snake_case internally if existing):
+
+  user -> iam.users[]
+  companies[] -> iam.companies[]
+  activeCompany.role -> iam.roles[], iam.userRoles[]
+  activeCompany.subscription -> iam.subscriptions[]
+  activeCompany.modules[] -> iam.modules[], iam.companyModules[]
+  activeCompany.modules[].permissions[] -> iam.rolePermissions[] (synthetic rows)
+  permissions[] (from /me) -> keep in auth slice for admin route gates
+
+  PRODUCT MODULE CODES (sidebar business apps):
+    financials, supply-chain, hcm, manufacturing, crm, projects
+
+  ADMIN AREAS (NOT in activeCompany.modules[]):
+    iam, organization, subscription, shared, platform
+    Gated by permissions[] flat codes from /auth/me
+
+  PERMISSION ACTIONS (exactly 5 in module snapshot):
+    view, create, edit, delete, approve
+
+------------------------------------------------------------------------------
+6.3  FE-2 FIX — getActiveSubscription() in iam-selectors.js
+------------------------------------------------------------------------------
+  Change:
+    s.status === 'active'
+  To:
+    ['active', 'trial'].includes(s.status)
+
+  Backend treats both as entitled for product modules.
+
+
+================================================================================
+SECTION 7 — SESSION STORAGE
+================================================================================
+
+  Key              | Store
+  -----------------|--------------------------------------------------
+  accessToken      | JWT string (short-lived, ~15m)
+  authContext      | JSON: { user, activeCompanyId, companies, activeCompany }
+
+  NEVER store:
+    refreshToken     | httpOnly cookie only
+    password         | never
+
+  authContext example:
+    {
+      "user": { "userId": "15", "username": "...", "displayName": "...", "email": "..." },
+      "activeCompanyId": "15",
+      "companies": [ ... ],
+      "activeCompany": { "companyId", "companyCode", "name", "status", "role",
+                         "subscription", "modules" }
+    }
+
+
+================================================================================
+SECTION 8 — AXIOS INTERCEPTORS (COPY PATTERN)
+================================================================================
+
+  // REQUEST
+  api.interceptors.request.use((config) => {
+    const token = sessionStorage.getItem('accessToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  });
+
+  // RESPONSE — 401 refresh
+  let refreshing = false;
+  api.interceptors.response.use(
+    (res) => res,
+    async (error) => {
+      const original = error.config;
+      if (error.response?.status === 401 && !original._retry) {
+        original._retry = true;
+        try {
+          const res = await api.post('/auth/refresh');
+          const data = unwrap(res);
+          sessionStorage.setItem('accessToken', data.accessToken);
+          original.headers.Authorization = `Bearer ${data.accessToken}`;
+          return api(original);
+        } catch {
+          sessionStorage.clear();
+          window.location.href = '/auth/login';
+        }
+      }
+      throw error;
+    }
+  );
+
+
+================================================================================
+SECTION 9 — ROUTE PROTECTION
+================================================================================
+
+  middleware.js (Next.js):
+    Protect: /dashboard/*, /company/*
+    Public: /, /auth/login, /auth/signup
+    Note: middleware cannot read sessionStorage (server-side).
+    Options:
+      a) Check cookie via server call to /auth/me
+      b) Client-only AuthGuard for protected layouts
+
+  AuthGuard (client component):
+    - If !accessToken -> redirect /auth/login
+    - If token && !redux hydrated -> GET /auth/me -> hydrate
+
+  Redirect after login:
+    /company/{activeCompany.companyId}/dashboard
+    or PATH_AFTER_LOGIN (/dashboard)
+
+
+================================================================================
+SECTION 10 — SIDEBAR / PERMISSION CHECKS (CLIENT UX ONLY)
+================================================================================
+
+  Product module visible in sidebar IF:
+    activeCompany.modules includes moduleCode
+    AND module.isActive === true
+    AND module.permissions includes 'view'
+    AND subscription.status in ('active', 'trial')
+
+  Admin menu item visible IF:
+    permissions[] includes code e.g. 'users:view'
+
+  Server ALWAYS re-checks on API calls — client checks are UX only.
+
+  Example client check (product module):
+    const mod = activeCompany.modules.find(m => m.moduleCode === 'crm');
+    const canView = mod?.isActive && mod.permissions.includes('view');
+
+  Example client check (admin):
+    const canManageUsers = permissions.includes('users:view');
+
+
+================================================================================
+SECTION 11 — PLATFORM SUPER ADMIN (SEPARATE FLOW)
+================================================================================
+
+  NOT for company employees. Separate UI at /super-admin/*.
+
+  Base: /api/v1/super-admins
+
+  POST /bootstrap
+    Body: { "name", "email", "password" }
+    Public; only works when super_admins table is empty
+
+  POST /auth/login
+    Body: { "email", "password" }
+    Response data: { accessToken, expiresIn, role: "super_admin",
+                     redirectTo: "/super-admin/dashboard", user, permissions }
+    Cookie: super_admin_refresh_token (path: /api/v1/super-admins/auth)
+
+  POST /auth/refresh   Cookie-based (same as company flow)
+  GET  /auth/me        Bearer super-admin token
+  POST /auth/logout    Bearer + cookie
+
+  PLATFORM TENANT MANAGEMENT (super admin Bearer token):
+  Base: /api/v1/super-admin
+
+  GET    /companies
+    Query: page, limit, search, sort (standard pagination)
+    Response data: paginated list with subscription summary per company
+
+  GET    /companies/:id
+    Response data: company detail + subscription + security policy summary
+
+  PATCH  /companies/:id/status
+    Body: { "status": "trial" | "active" | "suspended" | "cancelled" }
+    Response data: { companyId, status }
+
+
+================================================================================
+SECTION 12 — OAUTH (PHASE 2 — OPTIONAL, DEFER UI)
+================================================================================
+
+  Requires backend .env: GOOGLE_OAUTH_*, MICROSOFT_OAUTH_*
+  Requires migration: user_oauth_identities
+
+  GET  /auth/oauth/google?companyCode=&redirectUri=
+  GET  /auth/oauth/google/callback?code=&state=
+  POST /auth/oauth/google/token  { code, companyCode, redirectUri }
+
+  GET  /auth/oauth/microsoft?companyCode=&redirectUri=
+  GET  /auth/oauth/microsoft/callback?code=&state=
+  POST /auth/oauth/microsoft/token  { code, companyCode, redirectUri }
+
+  OAuth links existing user by email in selected company.
+  Returns same login snapshot shape on success.
+
+
+================================================================================
+SECTION 13 — ERROR HANDLING IN UI
+================================================================================
+
+  HTTP 400   Validation (show field errors; Zod messages in message)
+  HTTP 401   Invalid credentials / expired session / invalid token
+  HTTP 403   Company suspended, membership issue, company context mismatch,
+             account locked until {timestamp}
+  HTTP 404   Company or resource not found
+  HTTP 409   Email already registered (signup)
+  HTTP 500   Generic server error toast
+
+  Parse errors:
+    const msg = error.response?.data?.message || 'Something went wrong';
+
+  Login-specific messages (401):
+    "Invalid employee code or password"
+    "Account is locked"
+    "Account is inactive"
+
+
+================================================================================
+SECTION 14 — DEMO CREDENTIALS (LOCAL TESTING)
+================================================================================
+
+  Backend running:
+    cd ERP-Backend
+    npx prisma migrate deploy
+    npm run seed:erp-modules
+    npm run seed:phase1-login
+    npm run start:dev
+
+  Swagger: http://localhost:3000/docs
+  Bruno collection: bruno/ERP-Backend-Auth/  (see BRUNO-AUTH-TESTING-GUIDE.txt)
+
+  Demo login:
+    companyCode:   DEMO_ACME
+    employeeCode:  EMP-00001
+    password:      TestPass1!
+
+  Test sequence:
+    1. GET  /api/v1/auth/company?companyCode=DEMO_ACME
+    2. POST /api/v1/auth/login
+    3. GET  /api/v1/auth/me          (Bearer token)
+    4. POST /api/v1/auth/logout
+
+
+================================================================================
+SECTION 15 — INTEGRATION BUILD ORDER
+================================================================================
+
+  Step 1   .env.local + src/lib/api/axios.js (withCredentials: true)
+  Step 2   src/lib/api/unwrap.js + src/lib/api/auth-api.js
+  Step 3   src/redux/slices/auth.js + register in store
+  Step 4   src/lib/auth/session-storage.js
+  Step 5   src/lib/auth/hydrate-from-snapshot.js
+  Step 6   Fix getActiveSubscription() for trial status
+  Step 7   Login page: company code -> resolve -> employee code + password
+  Step 8   login() -> store token -> /auth/me -> hydrate -> redirect
+  Step 9   AuthGuard + middleware
+  Step 10  Axios 401 -> /auth/refresh -> retry
+  Step 11  Logout button
+  Step 12  Company switcher -> switchCompany()
+  Step 13  App init: token in sessionStorage -> GET /auth/me
+  Step 14  Sidebar: modules from snapshot + admin from permissions[]
+
+
+================================================================================
+SECTION 16 — API QUICK REFERENCE
+================================================================================
+
+  COMPANY USER  (/api/v1/auth)
+  ----
+  GET    /company                 Public
+  POST   /signup                  Public
+  POST   /login                   Public
+  POST   /refresh                 Cookie (+ optional body token)
+  GET    /me                      Bearer
+  GET    /companies               Bearer  -> returns ARRAY in data
+  POST   /switch-company          Bearer
+  POST   /logout                  Bearer + cookie
+
+  SUPER ADMIN  (/api/v1/super-admins)
+  ----
+  POST   /bootstrap               Public (once)
+  POST   /auth/login              Public
+  POST   /auth/refresh            Cookie
+  GET    /auth/me                 Bearer
+  POST   /auth/logout             Bearer + cookie
+  CRUD   /                        Bearer (super admin management)
+
+  PLATFORM  (/api/v1/super-admin)
+  ----
+  GET    /companies               Super admin Bearer
+  GET    /companies/:id           Super admin Bearer
+  PATCH  /companies/:id/status    Super admin Bearer
+
+  OAUTH  (/api/v1/auth/oauth)  Phase 2 optional
+  ----
+  GET    /google
+  GET    /google/callback
+  POST   /google/token
+  GET    /microsoft
+  GET    /microsoft/callback
+  POST   /microsoft/token
+
+
+================================================================================
+SECTION 17 — BACKEND vs FRONTEND RESPONSIBILITY
+================================================================================
+
+  BACKEND PROVIDES:
+    - accessToken (JWT, short-lived)
+    - refresh_token (httpOnly cookie, automatic)
+    - user, companies[], activeCompany snapshot
+    - activeCompany.modules[] with per-module permissions
+    - /auth/me permissions[] for admin/IAM areas
+    - Server-side guards on every protected API route
+
+  FRONTEND OWNS:
+    - sessionStorage for accessToken + authContext cache
+    - Redux auth + iam slices (hydrate from snapshot)
+    - Login UI (company code picker + employee code + password)
+    - Route guards and post-login redirect
+    - Sidebar visibility (client-side checkPermission for UX)
+    - 401 interceptor calling /auth/refresh
+    - Logout cleanup and redirect
+
+
+================================================================================
+SECTION 18 — auth-api.js FUNCTION STUBS
+================================================================================
+
+  // src/lib/api/auth-api.js
+  import api from './axios';
+  import { unwrap } from './unwrap';
+
+  export async function resolveCompany(companyCode) {
+    return unwrap(await api.get('/auth/company', { params: { companyCode } }));
+  }
+
+  export async function login({ employeeCode, password, companyCode, companyId }) {
+    return unwrap(await api.post('/auth/login', {
+      employeeCode, password, companyCode, companyId,
+    }));
+  }
+
+  export async function signup(body) {
+    return unwrap(await api.post('/auth/signup', body));
+  }
+
+  export async function getMe() {
+    return unwrap(await api.get('/auth/me'));
+  }
+
+  export async function getCompanies() {
+    return unwrap(await api.get('/auth/companies'));
+  }
+
+  export async function switchCompany(companyId) {
+    return unwrap(await api.post('/auth/switch-company', { companyId }));
+  }
+
+  export async function refresh() {
+    return unwrap(await api.post('/auth/refresh'));
+  }
+
+  export async function logout() {
+    return unwrap(await api.post('/auth/logout'));
+  }
+
+
+================================================================================
+END OF FRONTEND API INTEGRATION GUIDE
+================================================================================

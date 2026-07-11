@@ -1,0 +1,25 @@
+meta {
+  name: 02 List Departments (token test)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/companies/{{companyId}}/departments
+  body: none
+  auth: none
+}
+
+params:query {
+  page: 1
+  limit: 10
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+}
+
+docs {
+  Uses companyId from environment. Token auto-attached.
+}

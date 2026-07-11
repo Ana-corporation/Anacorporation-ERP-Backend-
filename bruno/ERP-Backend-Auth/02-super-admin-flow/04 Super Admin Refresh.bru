@@ -1,0 +1,29 @@
+meta {
+  name: 04 Super Admin Refresh
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/super-admins/auth/refresh
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+  auth.saveSuperAdminAuth(res);
+}
+
+docs {
+  Uses super_admin_refresh_token cookie from Super Admin Login.
+}

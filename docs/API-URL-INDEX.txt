@@ -1,0 +1,534 @@
+================================================================================
+  ERP BACKEND — ALL API URLs & CONTROLLER FILE PATHS
+  Quick index for navigation (open controller files in Cursor with Ctrl+P)
+  Generated: 2026-07-08
+================================================================================
+
+BASE URL (local):
+  http://localhost:3000/api/v1
+
+SWAGGER (interactive — click any route to try):
+  http://localhost:3000/docs
+
+APP ENTRY:
+  src/main.ts                    — sets prefix api/v1
+  src/app.module.ts              — registers all modules + guards
+
+AUTH HEADER (protected routes):
+  Authorization: Bearer <accessToken>
+
+
+================================================================================
+1. HEALTH
+================================================================================
+  Controller: src/modules/health/health.module.ts
+
+  GET    /api/v1/health
+
+
+================================================================================
+2. AUTH (login, signup, session)
+================================================================================
+  Controller: src/modules/iam/authentication/auth.controller.ts
+  Service:    src/modules/iam/authentication/auth.service.ts
+  DTO:        src/modules/iam/authentication/dto/auth.dto.ts
+
+  POST   /api/v1/auth/signup
+  POST   /api/v1/auth/login
+  POST   /api/v1/auth/refresh
+  GET    /api/v1/auth/me
+  GET    /api/v1/auth/companies
+  POST   /api/v1/auth/logout
+  POST   /api/v1/auth/switch-company
+
+
+================================================================================
+3. SUPER ADMINS (platform)
+================================================================================
+  Controller: src/modules/iam/super-admins/super-admins.controller.ts
+
+  POST   /api/v1/super-admins/bootstrap
+  POST   /api/v1/super-admins/auth/login
+  GET    /api/v1/super-admins
+  GET    /api/v1/super-admins/:id
+  POST   /api/v1/super-admins
+  PATCH  /api/v1/super-admins/:id
+  DELETE /api/v1/super-admins/:id
+
+
+================================================================================
+4. SHARED — CURRENCIES
+================================================================================
+  Controller: src/modules/shared/currencies/currencies.controller.ts
+
+  GET    /api/v1/currencies
+  GET    /api/v1/currencies/:id
+  POST   /api/v1/currencies
+  PATCH  /api/v1/currencies/:id
+  DELETE /api/v1/currencies/:id
+
+
+================================================================================
+5. ORGANIZATION — COMPANIES
+================================================================================
+  Controller: src/modules/organization/companies/companies.controller.ts
+
+  GET    /api/v1/companies
+  GET    /api/v1/companies/:id
+  POST   /api/v1/companies
+  PATCH  /api/v1/companies/:id
+  DELETE /api/v1/companies/:id
+
+
+================================================================================
+6. ORGANIZATION — DEPARTMENTS (per company)
+================================================================================
+  Controller: src/modules/organization/departments/departments.controller.ts
+
+  GET    /api/v1/companies/:companyId/departments
+  GET    /api/v1/companies/:companyId/departments/:id
+  POST   /api/v1/companies/:companyId/departments
+  PATCH  /api/v1/companies/:companyId/departments/:id
+  DELETE /api/v1/companies/:companyId/departments/:id
+
+
+================================================================================
+7. ORGANIZATION — DESIGNATIONS (per company)
+================================================================================
+  Controller: src/modules/organization/designations/designations.controller.ts
+
+  GET    /api/v1/companies/:companyId/designations
+  GET    /api/v1/companies/:companyId/designations/:id
+  POST   /api/v1/companies/:companyId/designations
+  PATCH  /api/v1/companies/:companyId/designations/:id
+  DELETE /api/v1/companies/:companyId/designations/:id
+
+
+================================================================================
+8. ORGANIZATION — BRANCHES (per company)
+================================================================================
+  Controller: src/modules/organization/branches/branches.controller.ts
+
+  GET    /api/v1/companies/:companyId/branches
+  GET    /api/v1/companies/:companyId/branches/:id
+  POST   /api/v1/companies/:companyId/branches
+  PATCH  /api/v1/companies/:companyId/branches/:id
+  DELETE /api/v1/companies/:companyId/branches/:id
+
+
+================================================================================
+9. ORGANIZATION — WAREHOUSES (per company)
+================================================================================
+  Controller: src/modules/organization/warehouses/warehouses.controller.ts
+
+  GET    /api/v1/companies/:companyId/warehouses
+  GET    /api/v1/companies/:companyId/warehouses/:id
+  POST   /api/v1/companies/:companyId/warehouses
+  PATCH  /api/v1/companies/:companyId/warehouses/:id
+  DELETE /api/v1/companies/:companyId/warehouses/:id
+
+
+================================================================================
+10. ORGANIZATION — SECURITY POLICIES (per company)
+================================================================================
+  Controller: src/modules/organization/company-security-policies/company-security-policies.controller.ts
+
+  GET    /api/v1/companies/:companyId/security-policies
+  GET    /api/v1/companies/:companyId/security-policies/:id
+  POST   /api/v1/companies/:companyId/security-policies
+  PATCH  /api/v1/companies/:companyId/security-policies/:id
+  DELETE /api/v1/companies/:companyId/security-policies/:id
+
+
+================================================================================
+11. SUBSCRIPTION — PLANS
+================================================================================
+  Controller: src/modules/subscription/plans/plans.controller.ts
+
+  GET    /api/v1/subscription/plans
+  GET    /api/v1/subscription/plans/:id
+  POST   /api/v1/subscription/plans
+  PATCH  /api/v1/subscription/plans/:id
+  DELETE /api/v1/subscription/plans/:id
+
+
+================================================================================
+12. SUBSCRIPTION — ERP MODULES (catalogue)
+================================================================================
+  Controller: src/modules/subscription/erp-modules/erp-modules.controller.ts
+
+  GET    /api/v1/subscription/modules
+  GET    /api/v1/subscription/modules/:id
+  POST   /api/v1/subscription/modules
+  PATCH  /api/v1/subscription/modules/:id
+  DELETE /api/v1/subscription/modules/:id
+
+
+================================================================================
+13. SUBSCRIPTION — PLAN MODULES (plan ↔ module)
+================================================================================
+  Controller: src/modules/subscription/plans/plan-modules.controller.ts
+
+  GET    /api/v1/subscription/plans/:planId/modules
+  GET    /api/v1/subscription/plans/:planId/modules/:id
+  POST   /api/v1/subscription/plans/:planId/modules
+  DELETE /api/v1/subscription/plans/:planId/modules/:id
+
+
+================================================================================
+14. SUBSCRIPTION — COMPANY SUBSCRIPTIONS (per company)
+================================================================================
+  Controller: src/modules/subscription/company-subscriptions/company-subscriptions.controller.ts
+
+  GET    /api/v1/companies/:companyId/subscriptions
+  GET    /api/v1/companies/:companyId/subscriptions/:id
+  POST   /api/v1/companies/:companyId/subscriptions
+  PATCH  /api/v1/companies/:companyId/subscriptions/:id
+  DELETE /api/v1/companies/:companyId/subscriptions/:id
+
+
+================================================================================
+15. SUBSCRIPTION — COMPANY MODULES (per company)
+================================================================================
+  Controller: src/modules/subscription/company-modules/company-modules.controller.ts
+
+  GET    /api/v1/companies/:companyId/modules
+  GET    /api/v1/companies/:companyId/modules/:id
+  POST   /api/v1/companies/:companyId/modules
+  PATCH  /api/v1/companies/:companyId/modules/:id
+  DELETE /api/v1/companies/:companyId/modules/:id
+
+
+================================================================================
+16. IAM — USERS
+================================================================================
+  Controller: src/modules/iam/users/users.controller.ts
+
+  GET    /api/v1/users
+  GET    /api/v1/users/:id
+  POST   /api/v1/users
+  PATCH  /api/v1/users/:id
+  DELETE /api/v1/users/:id
+  POST   /api/v1/users/:id/roles
+
+
+================================================================================
+17. IAM — ROLES (per company)
+================================================================================
+  Controller: src/modules/iam/roles/roles.controller.ts
+
+  GET    /api/v1/companies/:companyId/roles
+  GET    /api/v1/companies/:companyId/roles/:id
+  POST   /api/v1/companies/:companyId/roles
+  PATCH  /api/v1/companies/:companyId/roles/:id
+  DELETE /api/v1/companies/:companyId/roles/:id
+  PUT    /api/v1/companies/:companyId/roles/:id/permissions
+
+
+================================================================================
+18. IAM — PERMISSIONS (read-only)
+================================================================================
+  Controller: src/modules/iam/permissions/permissions.controller.ts
+
+  GET    /api/v1/permissions
+  GET    /api/v1/permissions/:id
+
+
+================================================================================
+19. IAM — USER API KEYS
+================================================================================
+  Controller: src/modules/iam/api-keys/api-keys.controller.ts
+
+  GET    /api/v1/users/:userId/api-keys
+  GET    /api/v1/users/:userId/api-keys/:id
+  POST   /api/v1/users/:userId/api-keys
+  PATCH  /api/v1/users/:userId/api-keys/:id
+  DELETE /api/v1/users/:userId/api-keys/:id
+
+
+================================================================================
+20. IAM — USER ATTACHMENTS
+================================================================================
+  Controller: src/modules/iam/user-attachments/user-attachments.controller.ts
+
+  GET    /api/v1/users/:userId/attachments
+  GET    /api/v1/users/:userId/attachments/:id
+  POST   /api/v1/users/:userId/attachments
+  PATCH  /api/v1/users/:userId/attachments/:id
+  DELETE /api/v1/users/:userId/attachments/:id
+
+
+================================================================================
+21. IAM — USER CONSENTS
+================================================================================
+  Controller: src/modules/iam/user-consents/user-consents.controller.ts
+
+  GET    /api/v1/users/:userId/consents
+  GET    /api/v1/users/:userId/consents/:id
+  POST   /api/v1/users/:userId/consents
+  PATCH  /api/v1/users/:userId/consents/:id
+  DELETE /api/v1/users/:userId/consents/:id
+
+
+================================================================================
+22. IAM — USER DELEGATIONS
+================================================================================
+  Controller: src/modules/iam/user-delegations/user-delegations.controller.ts
+
+  GET    /api/v1/users/:userId/delegations
+  GET    /api/v1/users/:userId/delegations/:id
+  POST   /api/v1/users/:userId/delegations
+  PATCH  /api/v1/users/:userId/delegations/:id
+  DELETE /api/v1/users/:userId/delegations/:id
+
+
+================================================================================
+23. IAM — USER DEVICES
+================================================================================
+  Controller: src/modules/iam/user-devices/user-devices.controller.ts
+
+  GET    /api/v1/users/:userId/devices
+  GET    /api/v1/users/:userId/devices/:id
+  POST   /api/v1/users/:userId/devices
+  PATCH  /api/v1/users/:userId/devices/:id
+  DELETE /api/v1/users/:userId/devices/:id
+
+
+================================================================================
+24. IAM — USER MFA
+================================================================================
+  Controller: src/modules/iam/user-mfa/user-mfa.controller.ts
+
+  GET    /api/v1/users/:userId/mfa
+  GET    /api/v1/users/:userId/mfa/:id
+  POST   /api/v1/users/:userId/mfa
+  PATCH  /api/v1/users/:userId/mfa/:id
+  DELETE /api/v1/users/:userId/mfa/:id
+
+
+================================================================================
+25. IAM — USER MODULE ACCESS
+================================================================================
+  Controller: src/modules/iam/user-module-access/user-module-access.controller.ts
+
+  GET    /api/v1/users/:userId/module-access
+  GET    /api/v1/users/:userId/module-access/:id
+  POST   /api/v1/users/:userId/module-access
+  PATCH  /api/v1/users/:userId/module-access/:id
+  DELETE /api/v1/users/:userId/module-access/:id
+
+
+================================================================================
+26. IAM — USER PREFERENCES
+================================================================================
+  Controller: src/modules/iam/user-preferences/user-preferences.controller.ts
+
+  GET    /api/v1/users/:userId/preferences
+  GET    /api/v1/users/:userId/preferences/:id
+  POST   /api/v1/users/:userId/preferences
+  PATCH  /api/v1/users/:userId/preferences/:id
+  DELETE /api/v1/users/:userId/preferences/:id
+
+
+================================================================================
+27. IAM — USER SESSIONS
+================================================================================
+  Controller: src/modules/iam/user-sessions/user-sessions.controller.ts
+
+  GET    /api/v1/users/:userId/sessions
+  GET    /api/v1/users/:userId/sessions/:id
+  POST   /api/v1/users/:userId/sessions
+  PATCH  /api/v1/users/:userId/sessions/:id
+  DELETE /api/v1/users/:userId/sessions/:id
+
+
+================================================================================
+28. IAM — USER LOGIN HISTORY
+================================================================================
+  Controller: src/modules/iam/user-login-history/user-login-history.controller.ts
+
+  GET    /api/v1/users/:userId/login-history
+  GET    /api/v1/users/:userId/login-history/:id
+  POST   /api/v1/users/:userId/login-history
+  DELETE /api/v1/users/:userId/login-history/:id
+
+
+================================================================================
+29. IAM — USER NOTIFICATIONS
+================================================================================
+  Controller: src/modules/iam/user-notifications/user-notifications.controller.ts
+
+  GET    /api/v1/users/:userId/notifications
+  POST   /api/v1/users/:userId/notifications
+  PATCH  /api/v1/users/:userId/notifications
+  DELETE /api/v1/users/:userId/notifications
+
+
+================================================================================
+30. IAM — USER SIGNATURES
+================================================================================
+  Controller: src/modules/iam/user-signatures/user-signatures.controller.ts
+
+  GET    /api/v1/users/:userId/signatures
+  GET    /api/v1/users/:userId/signatures/:id
+  POST   /api/v1/users/:userId/signatures
+  PATCH  /api/v1/users/:userId/signatures/:id
+  DELETE /api/v1/users/:userId/signatures/:id
+
+
+================================================================================
+31. IAM — USER AUDIT LOGS (read-only)
+================================================================================
+  Controller: src/modules/iam/user-audit/user-audit.controller.ts
+
+  GET    /api/v1/users/:userId/audit-logs
+  GET    /api/v1/users/:userId/audit-logs/:id
+
+
+================================================================================
+32. CRM — CUSTOMERS
+================================================================================
+  Controller: src/modules/crm/customers/customers.controller.ts
+
+  GET    /api/v1/customers
+  GET    /api/v1/customers/:id
+  POST   /api/v1/customers
+  PATCH  /api/v1/customers/:id
+  DELETE /api/v1/customers/:id
+
+
+================================================================================
+33. PURCHASE — VENDORS
+================================================================================
+  Controller: src/modules/purchase/vendors/vendors.controller.ts
+
+  GET    /api/v1/vendors
+  GET    /api/v1/vendors/:id
+  POST   /api/v1/vendors
+  PATCH  /api/v1/vendors/:id
+  DELETE /api/v1/vendors/:id
+
+
+================================================================================
+34. INVENTORY — PRODUCTS
+================================================================================
+  Controller: src/modules/inventory/items/products.controller.ts
+
+  GET    /api/v1/products
+  GET    /api/v1/products/:id
+  POST   /api/v1/products
+  PATCH  /api/v1/products/:id
+  DELETE /api/v1/products/:id
+
+
+================================================================================
+35. INVENTORY — STOCK / WAREHOUSES / TRANSACTIONS
+================================================================================
+  Controller: src/modules/inventory/stock/inventory.controller.ts
+
+  GET    /api/v1/inventory/warehouses
+  POST   /api/v1/inventory/warehouses
+  GET    /api/v1/inventory/items
+  GET    /api/v1/inventory/items/:id
+  POST   /api/v1/inventory/items
+  POST   /api/v1/inventory/transactions
+  GET    /api/v1/inventory/items/:id/transactions
+
+
+================================================================================
+MODULE FOLDER MAP (src/modules/)
+================================================================================
+
+  health/              → Health check
+  iam/
+    authentication/    → Auth (login, signup, switch)
+    users/             → Users CRUD
+    roles/             → Roles per company
+    permissions/       → Permissions read
+    super-admins/      → Platform super admins
+    api-keys/          → User API keys
+    user-attachments/  → User attachments
+    user-consents/     → User consents
+    user-delegations/  → User delegations
+    user-devices/      → User devices
+    user-mfa/          → User MFA
+    user-module-access/→ User module overrides
+    user-preferences/  → User preferences
+    user-sessions/     → User sessions
+    user-login-history/→ Login history
+    user-notifications/→ Notifications
+    user-signatures/   → Signatures
+    user-audit/        → Audit logs (read)
+  organization/
+    companies/         → Companies
+    departments/       → Departments
+    designations/      → Designations
+    branches/          → Branches
+    warehouses/        → Warehouses
+    company-security-policies/ → Security policies
+  subscription/
+    plans/             → Plans + plan-modules
+    erp-modules/       → Module catalogue
+    company-subscriptions/ → Company subscriptions
+    company-modules/   → Company enabled modules
+  shared/
+    currencies/        → Currencies
+  crm/
+    customers/         → Customers
+  purchase/
+    vendors/           → Vendors
+  inventory/
+    items/             → Products
+    stock/             → Inventory stock
+
+
+================================================================================
+HOW TO OPEN ANY CONTROLLER IN CURSOR
+================================================================================
+
+  1. Press Ctrl+P
+  2. Type controller name, e.g.:
+       auth.controller.ts
+       users.controller.ts
+       branches.controller.ts
+  3. Or open folder:
+       src/modules/iam/
+       src/modules/organization/
+       src/modules/subscription/
+
+FULL DETAILED DOC (with DTOs, permissions, examples):
+  docs/API-ENDPOINTS.md
+
+
+================================================================================
+ROUTE COUNT SUMMARY
+================================================================================
+
+  Health              1 route
+  Auth                7 routes
+  Super Admins        7 routes
+  Currencies          5 routes
+  Companies           5 routes
+  Departments         5 routes
+  Designations        5 routes
+  Branches            5 routes
+  Warehouses          5 routes
+  Security Policies   5 routes
+  Subscription Plans  5 routes
+  ERP Modules         5 routes
+  Plan Modules        4 routes
+  Company Subs        5 routes
+  Company Modules     5 routes
+  Users               6 routes
+  Roles               6 routes
+  Permissions         2 routes
+  User satellites     ~55 routes (api-keys, devices, sessions, etc.)
+  CRM / Purchase      10 routes
+  Inventory           12 routes
+  ─────────────────────────────
+  TOTAL               ~143+ active API routes
+
+
+================================================================================
+END OF URL INDEX
+================================================================================

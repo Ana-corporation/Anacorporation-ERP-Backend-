@@ -1,4 +1,15 @@
-export const PERMISSIONS = [
+import { PHASE1_PERMISSION_ACTIONS, PRODUCT_MODULES } from './modules.constant';
+
+const PRODUCT_PERMISSIONS = PRODUCT_MODULES.flatMap((mod) =>
+  PHASE1_PERMISSION_ACTIONS.map((action) => ({
+    module: mod.code,
+    code: `${mod.code}:${action}`,
+    name: `${mod.name} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+    action,
+  })),
+);
+
+const ADMIN_PERMISSIONS = [
   { module: 'organization', code: 'companies:view', name: 'View Companies', action: 'view' },
   { module: 'organization', code: 'companies:create', name: 'Create Companies', action: 'create' },
   { module: 'organization', code: 'companies:edit', name: 'Edit Companies', action: 'edit' },
@@ -104,7 +115,11 @@ export const PERMISSIONS = [
   { module: 'platform', code: 'super_admins:create', name: 'Create Super Admins', action: 'create' },
   { module: 'platform', code: 'super_admins:edit', name: 'Edit Super Admins', action: 'edit' },
   { module: 'platform', code: 'super_admins:delete', name: 'Delete Super Admins', action: 'delete' },
+  { module: 'platform', code: 'platform_companies:view', name: 'View Platform Companies', action: 'view' },
+  { module: 'platform', code: 'platform_companies:edit', name: 'Manage Platform Companies', action: 'edit' },
 ] as const;
+
+export const PERMISSIONS = [...ADMIN_PERMISSIONS, ...PRODUCT_PERMISSIONS] as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[number]['code'];
 
@@ -113,6 +128,8 @@ export const SUPER_ADMIN_PERMISSIONS = [
   'super_admins:create',
   'super_admins:edit',
   'super_admins:delete',
+  'platform_companies:view',
+  'platform_companies:edit',
 ] as const satisfies readonly PermissionCode[];
 
 export const DEFAULT_ADMIN_PERMISSIONS: PermissionCode[] = PERMISSIONS.filter(

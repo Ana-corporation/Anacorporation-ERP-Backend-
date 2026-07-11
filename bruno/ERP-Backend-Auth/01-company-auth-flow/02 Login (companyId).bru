@@ -1,0 +1,34 @@
+meta {
+  name: 02 Login (companyId)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "employeeCode": "{{employeeCode}}",
+    "password": "{{password}}",
+    "companyId": "{{companyId}}"
+  }
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+  auth.saveCompanyAuth(res);
+}
+
+docs {
+  Alternative login using companyId instead of companyCode.
+  Run 00-setup/02 Resolve Company first to set companyId.
+}

@@ -7,7 +7,7 @@ import {
   InventoryTransactionDto,
 } from './dto/inventory.dto';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
-import { RequirePermissions } from '@/common/decorators/auth.decorators';
+import { RequireModulePermission, RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser, OrganizationId } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 
@@ -19,6 +19,7 @@ export class InventoryController {
 
   @Get('warehouses')
   @RequirePermissions('inventory:read')
+  @RequireModulePermission('supply-chain', 'view')
   @ApiOperation({ summary: 'List warehouses' })
   listWarehouses(@OrganizationId() organizationId: string) {
     return this.inventoryService.listWarehouses(organizationId);
@@ -26,6 +27,7 @@ export class InventoryController {
 
   @Post('warehouses')
   @RequirePermissions('inventory:write')
+  @RequireModulePermission('supply-chain', 'create')
   @ApiOperation({ summary: 'Create warehouse' })
   createWarehouse(
     @OrganizationId() organizationId: string,
@@ -37,6 +39,7 @@ export class InventoryController {
 
   @Get('items')
   @RequirePermissions('inventory:read')
+  @RequireModulePermission('supply-chain', 'view')
   @ApiOperation({ summary: 'List inventory items' })
   listItems(@OrganizationId() organizationId: string, @Query() query: PaginationQueryDto) {
     return this.inventoryService.listItems(organizationId, query);
@@ -44,6 +47,7 @@ export class InventoryController {
 
   @Get('items/:id')
   @RequirePermissions('inventory:read')
+  @RequireModulePermission('supply-chain', 'view')
   @ApiOperation({ summary: 'Get inventory item' })
   getItem(@OrganizationId() organizationId: string, @Param('id') id: string) {
     return this.inventoryService.getItem(organizationId, id);
@@ -51,6 +55,7 @@ export class InventoryController {
 
   @Post('items')
   @RequirePermissions('inventory:write')
+  @RequireModulePermission('supply-chain', 'create')
   @ApiOperation({ summary: 'Create inventory item' })
   createItem(
     @OrganizationId() organizationId: string,
@@ -62,6 +67,7 @@ export class InventoryController {
 
   @Post('transactions')
   @RequirePermissions('inventory:write')
+  @RequireModulePermission('supply-chain', 'edit')
   @ApiOperation({ summary: 'Record inventory transaction' })
   recordTransaction(
     @OrganizationId() organizationId: string,
@@ -73,6 +79,7 @@ export class InventoryController {
 
   @Get('items/:id/transactions')
   @RequirePermissions('inventory:read')
+  @RequireModulePermission('supply-chain', 'view')
   @ApiOperation({ summary: 'Get inventory transaction history' })
   getTransactions(
     @OrganizationId() organizationId: string,

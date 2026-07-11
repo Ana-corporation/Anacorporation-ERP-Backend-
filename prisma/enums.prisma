@@ -1,4 +1,5 @@
-// IAM enums (match SQL CHECK constraints)
+// ERP IAM enums (match SQL CHECK constraints)
+// Location: prisma/enums.prisma — open this file directly in the editor.
 
 enum CompanyStatus {
   trial
@@ -48,6 +49,13 @@ enum ModuleAccessType {
   deny
 
   @@map("module_access_type")
+}
+
+enum ModuleType {
+  product
+  admin
+
+  @@map("module_type")
 }
 
 enum PermissionAction {
@@ -181,4 +189,11 @@ enum Theme {
   system
 
   @@map("theme")
+}
+
+enum OAuthProvider {
+  google
+  microsoft
+
+  @@map("oauth_provider")
 }

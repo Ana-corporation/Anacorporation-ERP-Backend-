@@ -1,0 +1,510 @@
+================================================================================
+  PHASE 1 AUTH — BACKEND TASK BREAKDOWN
+  ERP Backend (NestJS) — For Frontend Team Contract
+  Repo: Anacorporation-ERP-Backend-
+  Generated: 2026-07-06
+================================================================================
+
+PURPOSE
+-------
+Segregated backend tasks for Phase 1 authentication (username/password login,
+permission snapshot, company switch). Build one epic at a time.
+
+Frontend expectation: Server does heavy lifting at login (and company switch),
+returns small signed token + permission snapshot for UI sessionStorage.
+
+
+================================================================================
+HIGH-LEVEL FLOW (REFERENCE)
+================================================================================
+
+  UI -> POST /api/v1/auth/login { username, password, companyId? }
+  Server -> Validate user + password
+  Server -> Load memberships, roles, subscription, modules, permissions
+  Server -> Create session / issue refresh token
+  Server -> Return accessToken + user + companies + activeCompany + permissions
+  UI -> Store token + permission snapshot (sessionStorage)
+  UI -> Redirect to /company/{companyId}/dashboard
+
+RULES:
+  - Server decides access (DB queries + business rules)
+  - Client only stores what UI needs (token + cached permission map)
+  - Every API call re-validates token; do NOT trust sessionStorage alone
+
+
+================================================================================
+CURRENT BACKEND STATE (WHAT EXISTS TODAY)
+================================================================================
+
+DONE (PARTIAL):
+  [x] POST /api/v1/auth/login          (uses EMAIL, not username yet)
+  [x] POST /api/v1/auth/signup
+  [x] POST /api/v1/auth/refresh        (Redis-backed)
+  [x] POST /api/v1/auth/logout         (Redis cleared; user_sessions partial)
+  [x] POST /api/v1/auth/switch-company (basic; no full snapshot)
+  [x] GET  /api/v1/auth/me
+  [x] GET  /api/v1/auth/companies
+  [x] Password verify                  (users + user_authentication + bcrypt)
+  [x] Membership check                 (user_companies + companies)
+  [x] Basic RBAC                       (user_roles -> role_permissions flat codes)
+  [x] JWT + Redis session              (sub, email, companyId, sessionId)
+  [x] user_audit on login/logout/signup
+  [x] Failed login count increment
+  [x] Multi-company: requires companyId if user has multiple companies
+
+NOT DONE (GAPS VS FRONTEND SPEC):
+  [ ] username login (only email today)
+  [ ] buildCompanyAccessContext() service
+  [ ] Subscription resolver (company_subscriptions + plan_modules)
+  [ ] Module entitlement (company_modules.is_active)
+  [ ] user_module_access overrides (grant/deny)
+  [ ] Login response: activeCompany.modules[].permissions[]
+  [ ] user_login_history on success/failure
+  [ ] Default company from user_companies.is_default
+  [ ] Company status gate (suspended/trial/active)
+  [ ] JWT claims: cid, role (role_code), sid
+  [ ] checkPermission(moduleCode, action) server helper
+  [ ] Module + subscription gates on API routes
+  [ ] Tenant middleware (enforce company_id from token)
+  [ ] Super admin login flow
+  [ ] company_security_policies (lockout, session timeout) — Phase 2
+
+
+================================================================================
+TABLES USED AT LOGIN (BY PURPOSE)
+================================================================================
+
+A. AUTHENTICATION (who is logging in?)
+   - users                  (identity, username, email, is_active, is_locked)
+   - user_authentication    (password hash, lockout, MFA flags, last login)
+   - user_login_history     (audit success/failure) — NOT WIRED YET
+
+B. COMPANY MEMBERSHIP (which companies can user enter?)
+   - user_companies         (membership per tenant, is_default)
+   - companies              (name, status: trial/active/suspended)
+
+C. SUBSCRIPTION GATE (modules only if subscribed)
+   - company_subscriptions  (active plan window, status)
+   - subscription_plans     (plan metadata)
+   - plan_modules           (modules in plan)
+   - company_modules        (which subscribed modules are ON)
+
+D. ROLE + PERMISSIONS (what user can do)
+   - user_roles             (role per user per company)
+   - roles                  (role_code, role_name, is_system)
+   - role_permissions       (role -> module -> permission)
+   - permissions            (atomic actions: view/create/edit/delete/approve)
+   - modules                (module_code, module_name)
+   - user_module_access     (per-user grant/deny override) — NOT WIRED YET
+
+E. ORG CONTEXT (optional at login, load on demand)
+   - branches, departments, designations, warehouses
+   - user_companies.department_id, branch_id, etc.
+
+
+================================================================================
+EPIC 0 — CONTRACT ALIGNMENT (DO FIRST)
+================================================================================
+
+Goal: Lock API contract with frontend before coding.
+
+  ID    | Task                                              | Output
+  ------|---------------------------------------------------|------------------
+  0.1   | Confirm login field: username vs email (or both)  | Update LoginDto
+  0.2   | Freeze login response shape                       | OpenAPI / types
+  0.3   | Define modules[].permissions format               | Enum + docs
+        |   (view, create, edit, delete, approve)         |
+  0.4   | Confirm refresh token: body vs httpOnly cookie    | Security decision
+  0.5   | Document redirect rules (frontend-owned flags)    | AUTH-API doc
+
+STATUS: [ ] NOT STARTED
+
+
+================================================================================
+EPIC 1 — CORE LOGIN HARDENING
+================================================================================
+
+Goal: Reliable username/password login with validation and audit.
+
+  ID    | Task                                              | Tables           | Priority
+  ------|---------------------------------------------------|------------------|----------
+  1.1   | Support username login (username OR email)        | users            | P0
+  1.2   | Reject locked/inactive users with clear errors    | users, auth      | P0
+  1.3   | Write user_login_history on success AND failure   | user_login_hist  | P0
+  1.4   | Update last_successful_login / failed_login_count | user_auth        | P0
+  1.5   | Auto-select company: is_default -> single -> id   | user_companies   | P0
+  1.6   | Validate company status (reject suspended)        | companies        | P0
+  1.7   | Return companies[] with isDefault in response     | user_companies   | P1
+
+STATUS: [ ] NOT STARTED
+
+Files to touch:
+  - src/modules/iam/authentication/dto/auth.dto.ts
+  - src/modules/iam/authentication/auth.repository.ts
+  - src/modules/iam/authentication/auth.service.ts
+
+
+================================================================================
+EPIC 2 — buildCompanyAccessContext() [CORE — BUILD THIS FIRST]
+================================================================================
+
+Goal: One service function that builds permission snapshot for user + company.
+
+  ID    | Task                                              | Tables           | Priority
+  ------|---------------------------------------------------|------------------|----------
+  2.1   | Create CompanyAccessContextService                | —                | P0
+  2.2   | Membership resolver (active user_companies)       | user_companies   | P0
+  2.3   | Subscription resolver (active subscription+plan)  | co_subscriptions | P0
+  2.4   | Module entitlement (plan_modules ∩ company_mod)   | plan/co_modules  | P0
+  2.5   | Role resolver (user_roles + roles)                | user_roles       | P0
+  2.6   | Permission resolver (role_perms by module+action) | role_permissions | P0
+  2.7   | Override resolver (user_module_access grant/deny)| user_mod_access  | P0
+  2.8   | Merge: entitled + role perms + overrides        | —                | P0
+  2.9   | No subscription -> empty modules, allow login     | business rule    | P1
+  2.10  | Optional org context (branch/dept/designation)    | user_companies   | P2
+
+DELIVERABLE:
+  buildCompanyAccessContext(userId, companyId) returns:
+  {
+    company: { companyId, name, status },
+    subscription: { status, planCode, planName, endDate, isCustom },
+    role: { roleId, roleCode, roleName },
+    modules: [
+      {
+        moduleCode: "financials",
+        moduleName: "Financials",
+        isActive: true,
+        permissions: ["view", "create", "edit", "delete", "approve"]
+      }
+    ]
+  }
+
+STATUS: [ ] NOT STARTED
+
+New file:
+  - src/modules/iam/authentication/company-access-context.service.ts
+
+
+================================================================================
+EPIC 3 — LOGIN & SWITCH-COMPANY API RESPONSE UPGRADE
+================================================================================
+
+Goal: Match frontend snapshot contract.
+
+  ID    | Task                                              | Endpoint         | Priority
+  ------|---------------------------------------------------|------------------|----------
+  3.1   | Refactor createAuthSession() to use context svc   | internal         | P0
+  3.2   | Restructure login response -> activeCompany block | POST /auth/login | P0
+  3.3   | Add username, displayName to user object          | login, me        | P1
+  3.4   | Upgrade switch-company: full re-resolve + token   | switch-company   | P0
+  3.5   | Upgrade GET /auth/me with same snapshot           | GET /auth/me     | P1
+  3.6   | Multi-company: requiresCompanySelection flag      | login            | P1
+
+EXPECTED LOGIN RESPONSE (TARGET):
+{
+  "accessToken": "eyJ...",
+  "refreshToken": "rt_...",
+  "expiresIn": 3600,
+  "user": {
+    "userId": "1",
+    "username": "jane.doe",
+    "displayName": "Jane Doe",
+    "email": "jane@acme.com"
+  },
+  "companies": [
+    { "companyId": "1", "name": "Acme", "isDefault": true },
+    { "companyId": "2", "name": "Globex", "isDefault": false }
+  ],
+  "activeCompany": {
+    "companyId": "1",
+    "name": "Acme",
+    "status": "active",
+    "subscription": {
+      "status": "active",
+      "planCode": "pro",
+      "planName": "Pro",
+      "endDate": "2026-12-31",
+      "isCustom": false
+    },
+    "modules": [
+      {
+        "moduleCode": "financials",
+        "moduleName": "Financials",
+        "isActive": true,
+        "permissions": ["view", "create", "edit", "delete", "approve"]
+      }
+    ],
+    "role": {
+      "roleId": "1",
+      "roleCode": "admin",
+      "roleName": "Administrator"
+    }
+  }
+}
+
+STATUS: [ ] NOT STARTED
+
+
+================================================================================
+EPIC 4 — JWT & SESSION MODEL
+================================================================================
+
+Goal: Minimal signed token; permissions in snapshot/cache only.
+
+  ID    | Task                                              | Priority
+  ------|---------------------------------------------------|----------
+  4.1   | JWT claims: sub, cid, role (roleCode), sid, exp   | P0
+  4.2   | Do NOT embed full permissions in JWT                | P0
+  4.3   | Persist session in user_sessions (status=active)  | P0
+  4.4   | Logout: user_sessions.session_status=logged_out   | P0
+  4.5   | Validate session (sid) on every protected request | P0
+  4.6   | Refresh token rotation                            | P1
+  4.7   | Optional: httpOnly cookie for refresh token        | P2
+
+SUGGESTED JWT PAYLOAD:
+{
+  "sub": "1",           // user_id
+  "cid": "1",           // active company_id
+  "role": "admin",      // role_code
+  "sid": "98231",       // session_id
+  "exp": 1710000000
+}
+
+STATUS: [ ] NOT STARTED
+
+
+================================================================================
+EPIC 5 — SERVER-SIDE PERMISSION ENFORCEMENT
+================================================================================
+
+Goal: Server decides access; client snapshot is UX only.
+
+  ID    | Task                                              | Priority
+  ------|---------------------------------------------------|----------
+  5.1   | checkPermission(ctx, moduleCode, action) helper   | P0
+  5.2   | ModulePermissionGuard (@RequirePermission decorator)| P0
+  5.3   | Subscription gate in guard                        | P1
+  5.4   | Module gate (company_modules.is_active)           | P1
+  5.5   | Apply user_module_access deny in guard            | P1
+  5.6   | Wire guards on all protected API routes           | P1
+  5.7   | Cache snapshot in Redis (user:id:company:id:perms)| P2
+
+PERMISSION CHECK ORDER (SERVER):
+  1. Token valid?
+  2. User belongs to company in token?
+  3. Company subscription active?
+  4. Module in active company_modules?
+  5. user_module_access deny/grant?
+  6. role_permissions contains action?
+
+STATUS: [ ] NOT STARTED
+
+New files:
+  - src/common/utils/permission-check.util.ts
+  - src/common/guards/module-permission.guard.ts
+
+
+================================================================================
+EPIC 6 — TENANT ISOLATION MIDDLEWARE
+================================================================================
+
+Goal: Every query scoped to company_id from token.
+
+  ID    | Task                                              | Priority
+  ------|---------------------------------------------------|----------
+  6.1   | TenantGuard — enforce companyId from JWT            | P0
+  6.2   | Reject cid mismatch if client sends wrong header    | P0
+  6.3   | Repository base — auto-inject companyId in where    | P1
+  6.4   | Super-admin bypass path                             | P2
+
+STATUS: [ ] NOT STARTED
+
+
+================================================================================
+EPIC 7 — SUPER ADMIN FLOW (FUTURE)
+================================================================================
+
+  ID    | Task                          | Tables
+  ------|-------------------------------|------------------
+  7.1   | Detect super_admins at login  | super_admins
+  7.2   | JWT claim role: super_admin   | —
+  7.3   | GET /super-admin/* routes     | —
+  7.4   | Response redirectTo flag      | —
+
+STATUS: [ ] NOT STARTED
+
+
+================================================================================
+EPIC 8 — SECURITY POLICIES (PHASE 2)
+================================================================================
+
+  ID    | Task                                    | Tables
+  ------|-----------------------------------------|------------------------
+  8.1   | Lockout after N failed attempts         | company_security_policies
+  8.2   | Session timeout from session_timeout_min| company_security_policies
+  8.3   | Password policy enforcement             | company_security_policies
+  8.4   | MFA flags (prepare only)                | user_mfa
+
+STATUS: [ ] NOT STARTED (PHASE 2)
+
+
+================================================================================
+EPIC 9 — DOCS, SEEDS & TESTS
+================================================================================
+
+  ID    | Task
+  ------|--------------------------------------------------
+  9.1   | Seed: user + user_authentication + memberships
+  9.2   | Seed: subscription + plan_modules + company_modules
+  9.3   | Seed: roles with module-level permissions
+  9.4   | Integration test: login -> snapshot shape
+  9.5   | Integration test: switch-company -> new permissions
+  9.6   | Update docs/API-ENDPOINTS.md with auth contract
+
+STATUS: [ ] NOT STARTED
+
+
+================================================================================
+RECOMMENDED BUILD ORDER (ONE BY ONE)
+================================================================================
+
+  Step 1:  Epic 0  — Contract alignment with frontend team
+  Step 2:  Epic 2  — buildCompanyAccessContext()  <-- CORE LOGIC
+  Step 3:  Epic 1  — Login hardening + audit
+  Step 4:  Epic 3  — Login/switch response shape
+  Step 5:  Epic 4  — JWT + user_sessions
+  Step 6:  Epic 5  — Permission guards
+  Step 7:  Epic 6  — Tenant middleware
+  Step 8:  Epic 9  — Seeds + tests
+  Step 9:  Epic 7  — Super admin (when needed)
+  Step 10: Epic 8  — Security policies (Phase 2)
+
+
+================================================================================
+SUGGESTED FILE STRUCTURE (BACKEND)
+================================================================================
+
+src/modules/iam/authentication/
+  auth.controller.ts
+  auth.service.ts
+  auth.repository.ts
+  company-access-context.service.ts    <-- NEW (Epic 2)
+  dto/
+    auth.dto.ts
+    auth-response.dto.ts             <-- NEW (Epic 0/3)
+  strategies/
+    jwt.strategy.ts
+
+src/common/
+  interfaces/auth.interface.ts
+  utils/permission-check.util.ts     <-- NEW (Epic 5)
+  guards/
+    jwt-auth.guard.ts
+    permissions.guard.ts
+    module-permission.guard.ts       <-- NEW (Epic 5)
+    tenant.guard.ts                  <-- NEW (Epic 6)
+
+
+================================================================================
+CLIENT STORAGE GUIDE (FOR FRONTEND REFERENCE)
+================================================================================
+
+STORE IN sessionStorage (UI cache only):
+  - accessToken
+  - authContext: { user, activeCompanyId, companies, modules, role, subscriptionStatus }
+
+DO NOT STORE:
+  - password hash
+  - refresh token in sessionStorage if XSS risk (prefer httpOnly cookie)
+
+BETTER SPLIT:
+  accessToken        -> memory or sessionStorage (short-lived)
+  refreshToken       -> httpOnly secure cookie
+  permission snapshot-> sessionStorage (for menu/gates)
+
+
+================================================================================
+REDIRECT RULES (FRONTEND — BACKEND RETURNS FLAGS)
+================================================================================
+
+  Condition                              | Redirect
+  ---------------------------------------|----------------------------------
+  Super admin                            | /super-admin/dashboard
+  Company user, 1 company                | /company/{id}/dashboard
+  Company user, many companies           | /select-company or switcher
+  Membership suspended                   | /unauthorized
+  Company suspended / no subscription    | /company/{id}/dashboard + banner
+
+MODULE SIDEBAR RULE:
+  show module IF:
+    subscription.active
+    AND module in entitled list
+    AND company_modules.is_active
+    AND permissions includes 'view'
+
+
+================================================================================
+COMPANY SWITCH FLOW
+================================================================================
+
+  POST /api/v1/auth/switch-company
+  Request: { "companyId": "2" }
+
+  Server re-runs:
+    - verify user_companies
+    - reload subscription/modules/role/permissions
+    - issue NEW access token with new cid claim
+    - return fresh activeCompany snapshot
+
+  Client replaces sessionStorage context.
+
+
+================================================================================
+SQL JOIN SKETCH (ONE COMPANY CONTEXT)
+================================================================================
+
+-- 1) membership
+SELECT * FROM user_companies
+WHERE user_id = ? AND company_id = ? AND status = 'active';
+
+-- 2) subscription
+SELECT cs.*, sp.plan_code, sp.name
+FROM company_subscriptions cs
+JOIN subscription_plans sp ON sp.plan_id = cs.plan_id
+WHERE cs.company_id = ? AND cs.status = 'active'
+  AND (cs.end_date IS NULL OR cs.end_date >= CURRENT_DATE)
+LIMIT 1;
+
+-- 3) entitled modules (plan)
+SELECT m.module_id, m.module_code, m.module_name, cm.is_active
+FROM plan_modules pm
+JOIN modules m ON m.module_id = pm.module_id
+LEFT JOIN company_modules cm
+  ON cm.company_id = ? AND cm.module_id = m.module_id
+WHERE pm.plan_id = ?;
+
+-- 4) role
+SELECT r.role_id, r.role_code, r.role_name
+FROM user_roles ur
+JOIN roles r ON r.role_id = ur.role_id
+WHERE ur.user_id = ? AND ur.company_id = ? AND ur.is_active = true;
+
+-- 5) permissions
+SELECT m.module_code, p.action
+FROM role_permissions rp
+JOIN permissions p ON p.permission_id = rp.permission_id
+JOIN modules m ON m.module_id = p.module_id
+WHERE rp.role_id = ? AND rp.is_allowed = true;
+
+-- 6) overrides
+SELECT m.module_code, uma.access_type
+FROM user_module_access uma
+JOIN modules m ON m.module_id = uma.module_id
+WHERE uma.user_id = ? AND uma.company_id = ?;
+
+Server merges (3) + (5) + (6) -> final module permission map.
+
+
+================================================================================
+END OF TASK FILE
+================================================================================

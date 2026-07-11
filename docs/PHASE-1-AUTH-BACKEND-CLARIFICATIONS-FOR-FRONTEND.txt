@@ -1,0 +1,467 @@
+================================================================================
+  PHASE 1 AUTH — BACKEND CLARIFICATIONS FOR FRONTEND INTEGRATION
+  Backend answers to frontend questions (LOCKED for integration)
+  Frontend source: docs/PHASE-1-FRONTEND-API-INTEGRATION-GUIDE.txt
+  Backend answered: 2026-07-10
+  Status: ALL P0 ANSWERED — frontend may start API wiring
+================================================================================
+
+
+HOW TO USE
+----------
+  - Each question has ANSWER + STATUS [x] DONE
+  - If behavior changes later, update this file AND integration guide
+  - Backend CORS updated 2026-07-10 (see Q3)
+
+
+================================================================================
+PART A — ALREADY AGREED (CONFIRMED — NO CHANGE)
+================================================================================
+
+  [x] Login: employeeCode + password + companyId OR companyCode
+  [x] Company lookup before login: GET /auth/company?companyCode=
+  [x] API base path: /api/v1/auth/*
+  [x] Response wrapper: { success, message, data, timestamp }
+  [x] refreshToken: httpOnly cookie only (not in JSON body)
+  [x] Cookie name: refresh_token, path: /api/v1/auth
+  [x] axios must use withCredentials: true
+  [x] Login snapshot: activeCompany.modules[] = product modules only
+  [x] Admin/IAM menus: permissions[] from GET /auth/me (not in login response)
+  [x] moduleId = number; userId, companyId, roleId = strings in JSON
+  [x] Module permissions: 5 actions only (view, create, edit, delete, approve)
+  [x] Subscription trial + active both entitle product modules
+  [x] Demo user: DEMO_ACME / EMP-00001 / TestPass1!
+  [x] One role per company (primary = lowest roleId)
+
+
+================================================================================
+PART B — P0 ANSWERS (REQUIRED BEFORE FRONTEND INTEGRATION)
+================================================================================
+
+------------------------------------------------------------------------------
+QUESTION 1 — roleCode CASING (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  Integration guide says roleCode is UPPERCASE e.g. "ADMIN".
+  Frontend mock/selectors use lowercase e.g. "admin".
+
+ANSWER:
+  Choice: B — Backend keeps UPPERCASE as stored in DB (e.g. "ADMIN").
+  Frontend normalizes in hydrate-from-snapshot.js:
+    roleCode: (api.roleCode || '').toLowerCase()
+
+  Backend will NOT change casing in API responses for Phase 1.
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 2 — POST-LOGIN REDIRECT PATH (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  Where should UI redirect after successful login?
+
+ANSWER:
+  Choice: A — /dashboard (frontend PATH_AFTER_LOGIN is fine for Phase 1).
+
+  Backend does NOT return redirectTo for company users (locked Q15).
+  Super admin login only returns redirectTo: "/super-admin/dashboard".
+
+  Optional later: frontend may use /company/{companyId}/dashboard when
+  routing is company-scoped — backend has no preference in Phase 1.
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 3 — CORS + COOKIES (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  Frontend dev on :3001, backend on :3000.
+  refresh_token cookie must work cross-origin with withCredentials.
+
+ANSWER:
+  Backend CORS allows origin http://localhost:3001 ?     YES
+  Backend CORS credentials: true ?                         YES
+  Cookie sameSite value in dev:                            lax
+  Cookie secure flag in dev (localhost):                   false
+
+  Backend .env (ERP-Backend):
+    CORS_ORIGIN=http://localhost:3001
+
+  Frontend .env.local:
+    NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+
+  Implementation: src/main.ts enableCors({ origin, credentials: true })
+  Cookie config: src/modules/iam/authentication/auth.constants.ts
+
+  Production: set CORS_ORIGIN to your frontend domain (e.g. https://app.example.com)
+
+STATUS: [x] DONE (backend updated 2026-07-10)
+
+
+------------------------------------------------------------------------------
+QUESTION 4 — GET /auth/companies RESPONSE SHAPE (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  Is data a direct array? Does each item include employeeCode?
+
+ANSWER:
+  Is data an array (not { companies: [] }) ?               YES
+  Does each item include employeeCode per membership ?     YES
+
+  Full envelope:
+    {
+      "success": true,
+      "data": [
+        {
+          "companyId": "15",
+          "companyCode": "DEMO_ACME",
+          "name": "Demo Acme Corp",
+          "isDefault": true,
+          "status": "trial",
+          "employeeCode": "EMP-00001"
+        }
+      ]
+    }
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 5 — x-company-id HEADER (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  Required on protected routes?
+
+ANSWER:
+  Choice: C — optional but recommended.
+
+  - JWT cid (companyId) is the source of truth for tenant context.
+  - If x-company-id header is sent, it MUST match JWT cid or HTTP 403.
+  - If header omitted, tenant guard uses JWT companyId only.
+
+  Frontend recommendation:
+    Send x-company-id: activeCompanyId on all authenticated API calls
+    (same value as JWT cid after login/switch).
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 6 — ERROR RESPONSE FOR FORM VALIDATION (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  Show field errors on login/signup forms.
+
+ANSWER:
+  Choice: C — Zod validation shape (not simple field/message pairs).
+
+  HTTP 400 example (validation):
+    {
+      "success": false,
+      "message": "Validation failed",
+      "data": null,
+      "errors": [
+        {
+          "code": "invalid_type",
+          "path": ["employeeCode"],
+          "message": "Invalid input: expected string, received undefined",
+          "expected": "string"
+        }
+      ],
+      "timestamp": "2026-07-10T06:00:00.000Z",
+      "path": "/api/v1/auth/login"
+    }
+
+  Frontend mapping:
+    field = error.path.join('.')     // e.g. "employeeCode"
+    message = error.message
+
+  Non-validation 400 (e.g. missing company):
+    {
+      "success": false,
+      "message": "Company not found",
+      "data": null,
+      "timestamp": "...",
+      "path": "/api/v1/auth/login"
+    }
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 7 — ACCOUNT LOCKOUT RESPONSE (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  HTTP status and locked-until field for UI.
+
+ANSWER:
+  HTTP status for lockout:
+    - 403 Forbidden — account locked until timestamp (policy lockout)
+    - 401 Unauthorized — user.is_locked flag or wrong password
+
+  Locked-until field name in response:
+    NOT a separate JSON field in Phase 1.
+    Message string contains ISO timestamp:
+      "Account is locked until 2026-07-10T12:30:00.000Z"
+
+  Example 403 JSON:
+    {
+      "success": false,
+      "message": "Account is locked until 2026-07-10T12:30:00.000Z",
+      "data": null,
+      "timestamp": "...",
+      "path": "/api/v1/auth/login"
+    }
+
+  Example 401 (locked user):
+    {
+      "success": false,
+      "message": "Account is locked",
+      "data": null,
+      ...
+    }
+
+  Frontend: parse ISO from message with regex, or show message as-is.
+  Future improvement: backend may add data.lockedUntil — not in Phase 1.
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 8 — MODULE OBJECT FIELDS IN SNAPSHOT (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  icon, color, sortOrder for sidebar.
+
+ANSWER:
+  icon          NO  (not in API snapshot)
+  color         NO  (not in API snapshot)
+  sortOrder     NO  (not in API snapshot)
+  description   NO  (not in API snapshot)
+
+  Snapshot modules[] fields (ONLY these):
+    moduleId, moduleCode, moduleName, isActive, permissions[]
+
+  Frontend uses static map by moduleCode — OK: YES
+
+  Suggested frontend static map (from backend seed):
+    financials     -> icon: finance,    sortOrder: 10
+    supply-chain   -> icon: supply,     sortOrder: 11
+    hcm            -> icon: people,     sortOrder: 12
+    manufacturing  -> icon: factory,    sortOrder: 13
+    crm            -> icon: crm,        sortOrder: 14
+    projects       -> icon: projects,   sortOrder: 15
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 9 — permissions[] FULL LIST FOR ADMIN SIDEBAR (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  Flat permission codes from GET /auth/me.
+
+ANSWER:
+  Naming convention locked: YES
+    Pattern: {resource}:{action}
+    Examples: users:view, companies:edit, customers:read, financials:view
+
+  Demo DEMO_ACME admin user receives DEFAULT_ADMIN_PERMISSIONS:
+    - All admin/IAM/organization/subscription/shared codes
+    - All product module codes (financials:view, crm:edit, etc.)
+    - Excludes platform-only codes (super_admins:*, platform_companies:*)
+    - Total: 131 permission codes
+
+  Source of truth:
+    src/common/constants/permissions.constant.ts
+    -> DEFAULT_ADMIN_PERMISSIONS array
+
+  GET /auth/me returns:
+    "permissions": [ "companies:view", "users:view", ... ]  // flat string array
+
+  Legacy API route codes still work on server:
+    customers:read -> crm:view (mapped in permission-check.util.ts)
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 10 — POST /auth/refresh RESPONSE (P0)
+------------------------------------------------------------------------------
+WHAT FRONTEND NEEDS:
+  Full snapshot or token-only?
+
+ANSWER:
+  refresh response data = same shape as login (accessToken + user +
+  companies + activeCompany) ?                              YES
+
+  permissions[] included in refresh response?
+    NO — call GET /auth/me after refresh if admin permissions needed,
+    OR rely on cached permissions until next /me.
+
+  refreshToken: new httpOnly cookie set; not in JSON body.
+
+STATUS: [x] DONE
+
+
+================================================================================
+PART C — P1 ANSWERS (DURING INTEGRATION)
+================================================================================
+
+------------------------------------------------------------------------------
+QUESTION 11 — SIGNUP IN PHASE 1 UI (P1)
+------------------------------------------------------------------------------
+ANSWER: B — Login only for Phase 1 UI. Signup API exists but page optional.
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 12 — expiresIn USAGE (P1)
+------------------------------------------------------------------------------
+ANSWER: Refresh on 401 only (simpler). expiresIn is string "15m" — proactive
+        refresh optional in Phase 2.
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 13 — companyCode CASE SENSITIVITY (P1)
+------------------------------------------------------------------------------
+ANSWER: YES — backend normalizes to UPPERCASE on lookup.
+        DEMO_ACME = demo_acme = Demo_Acme (all resolve same company).
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 14 — SWITCH-COMPANY + permissions[] (P1)
+------------------------------------------------------------------------------
+ANSWER: B — Frontend must call GET /auth/me after switch-company
+        (switch response has snapshot but NOT permissions[]).
+
+STATUS: [x] DONE
+
+
+------------------------------------------------------------------------------
+QUESTION 15 — PRODUCTION API URL (P1)
+------------------------------------------------------------------------------
+ANSWER: Pattern TBD per deployment. Example:
+        NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api/v1
+        Backend CORS_ORIGIN=https://app.yourdomain.com
+
+STATUS: [x] DONE (pattern only — env-specific values set at deploy time)
+
+
+================================================================================
+PART D — INTEGRATION GUIDE UPDATES (BACKEND CONFIRMED)
+================================================================================
+
+  [x] Section 0 — validation error JSON (see Q6 above)
+  [x] Section 4.3 — login never includes permissions[]
+  [x] Section 4.5 — companies response is direct array + employeeCode
+  [x] Section 4.7 — refresh returns full snapshot
+  [x] Section 9 — CORS_ORIGIN=http://localhost:3001, credentials=true
+  [x] Section 14 — lockout error examples (see Q7 above)
+  [x] Appendix — permissions: DEFAULT_ADMIN_PERMISSIONS (131 codes)
+  [x] Appendix — module snapshot: no icon/color; use static map (Q8)
+
+  See also: docs/PHASE-1-FRONTEND-API-INTEGRATION-GUIDE.txt (updated)
+
+
+================================================================================
+PART E — FRONTEND WILL DO (NO BACKEND ACTION)
+================================================================================
+
+  FE-1  lib/auth/hydrate-from-snapshot.js (+ normalize roleCode to lowercase)
+  FE-2  getActiveSubscription() include trial
+  FE-3  Login page: company code -> employee code + password
+  FE-4  axios + unwrap + auth-api.js + auth Redux slice
+  FE-5  AuthGuard + sessionStorage + 401 refresh interceptor
+  FE-6  Sidebar: product modules from snapshot + static icon map; admin from permissions[]
+  FE-7  .env.local: NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+  FE-8  Optional: send x-company-id header on API calls
+
+
+================================================================================
+PART F — ANSWER TRACKER (ALL COMPLETE)
+================================================================================
+
+  #   | Topic                         | Priority | Answered?
+  ----|-------------------------------|----------|----------
+  1   | roleCode casing               | P0       | [x]
+  2   | Post-login redirect           | P0       | [x]
+  3   | CORS + cookies                | P0       | [x]
+  4   | GET /companies shape          | P0       | [x]
+  5   | x-company-id header           | P0       | [x]
+  6   | 400 validation errors         | P0       | [x]
+  7   | Account lockout response      | P0       | [x]
+  8   | Module fields (icon/color)    | P0       | [x]
+  9   | Admin permissions[] list      | P0       | [x]
+  10  | Refresh response shape        | P0       | [x]
+  11  | Signup required Phase 1?      | P1       | [x]
+  12  | expiresIn proactive refresh   | P1       | [x]
+  13  | companyCode case insensitive  | P1       | [x]
+  14  | switch-company + permissions  | P1       | [x]
+  15  | Production API URL            | P1       | [x]
+
+  FRONTEND MAY START CODING: YES (all P0 complete)
+
+
+================================================================================
+PART G — BACKEND FILLED REPLY (COPY FOR FRONTEND TEAM)
+================================================================================
+
+  Q1:  B — backend sends "ADMIN"; frontend normalizes to lowercase
+  Q2:  A — redirect /dashboard (no redirectTo from backend for company users)
+  Q3:  CORS_ORIGIN=http://localhost:3001, credentials=true, sameSite=lax,
+       secure=false in dev — backend updated in main.ts
+  Q4:  YES array; YES employeeCode on each item
+  Q5:  C — x-company-id optional; if sent must match JWT cid
+  Q6:  errors[] with { path, message, code } — map path to field name
+  Q7:  403 with message "Account is locked until {ISO}"; no lockedUntil field yet
+  Q8:  NO icon/color in API — frontend static map by moduleCode. OK.
+  Q9:  131 codes via DEFAULT_ADMIN_PERMISSIONS; pattern resource:action
+  Q10: YES full snapshot on refresh; permissions[] only on GET /auth/me
+  Q11: B — login only Phase 1 UI
+  Q12: Refresh on 401 only
+  Q13: YES case-insensitive companyCode
+  Q14: B — call GET /auth/me after switch-company
+  Q15: https://api.{domain}/api/v1 + matching CORS_ORIGIN
+
+
+================================================================================
+APPENDIX A — DEMO ADMIN permission[] SAMPLE (first 30 of 131)
+================================================================================
+
+  companies:view, companies:create, companies:edit, companies:delete,
+  departments:view, departments:create, departments:edit, departments:delete,
+  designations:view, designations:create, designations:edit, designations:delete,
+  branches:view, branches:create, branches:edit, branches:delete,
+  warehouses:view, warehouses:create, warehouses:edit, warehouses:delete,
+  company_security_policies:view, company_security_policies:create,
+  company_security_policies:edit, company_security_policies:delete,
+  users:view, users:create, users:edit, users:delete,
+  roles:view, roles:create, roles:edit, roles:delete
+
+  Full list: ERP-Backend/src/common/constants/permissions.constant.ts
+             export DEFAULT_ADMIN_PERMISSIONS
+
+
+================================================================================
+APPENDIX B — LOGIN FLOW CHECKLIST (FRONTEND)
+================================================================================
+
+  1. User enters companyCode -> GET /auth/company?companyCode=
+  2. User enters employeeCode + password -> POST /auth/login
+  3. Store accessToken + authContext in sessionStorage
+  4. GET /auth/me -> merge permissions[] into Redux
+  5. hydrateFromSnapshot() -> iam slice
+  6. redirect -> /dashboard
+
+
+================================================================================
+END OF BACKEND CLARIFICATIONS
+================================================================================

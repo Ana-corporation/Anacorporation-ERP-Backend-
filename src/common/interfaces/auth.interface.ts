@@ -1,9 +1,13 @@
+import { CompanyAccessModuleSummary } from '@/modules/iam/authentication/interfaces/company-access-context.interface';
+
 export interface JwtPayload {
   sub: string;
   email: string;
-  sessionId: string;
+  cid?: string;
+  sid?: string;
+  role?: string;
   companyId?: string;
-  role?: 'super_admin';
+  sessionId?: string;
 }
 
 export interface AuthenticatedUser {
@@ -11,8 +15,10 @@ export interface AuthenticatedUser {
   email: string;
   sessionId: string;
   companyId?: string;
-  role?: 'super_admin';
+  role?: string;
   permissions: string[];
+  modules: CompanyAccessModuleSummary[];
+  subscriptionStatus: string;
   firstName: string;
   lastName: string;
 }

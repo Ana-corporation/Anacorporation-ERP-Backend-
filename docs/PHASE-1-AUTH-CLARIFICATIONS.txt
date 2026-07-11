@@ -1,0 +1,447 @@
+================================================================================
+  PHASE 1 AUTH — CLARIFICATIONS NEEDED (BACKEND + FRONTEND)
+  ERP Backend — Fill answers one by one before coding
+  File: docs/PHASE-1-AUTH-CLARIFICATIONS.txt
+  Related: docs/PHASE-1-AUTH-TASKS.txt
+  Generated: 2026-07-06
+================================================================================
+
+HOW TO USE THIS FILE
+--------------------
+1. Backend team + Frontend team review each question together.
+2. Write the chosen answer in the "ANSWER:" line under each question.
+3. Mark STATUS: [x] DONE when agreed.
+4. Do NOT start Epic 2 coding until all P0 questions are answered.
+
+
+================================================================================
+PRIORITY LEGEND
+================================================================================
+  P0 = Must answer before coding starts
+  P1 = Can decide during Epic 2/3
+  P2 = Can defer to Phase 2
+
+
+================================================================================
+QUESTION 1 — LOGIN FIELD (P0)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  What does the user type on the login screen to sign in?
+
+OPTIONS (pick one or combine):
+  A) username only          (users.username)
+  B) email only             (users.email)
+  C) username OR email      (single input field — server checks both)
+  D) employee code only     (emp code — see note below)
+  E) employee code OR email
+  F) employee code OR username
+  G) employee code OR username OR email   (single field — any match)
+
+NOTE — EMPLOYEE CODE:
+  Schema location (CONFIRMED for Phase 1):
+    - user_companies.employee_id  (VARCHAR 40) — emp code per user PER company
+
+  Also exists (not used for Phase 1 login):
+    - users.username
+    - users.email
+
+  SaaS NOTE:
+    Multi-login (username / email / emp code) is the LONG-TERM product goal so each
+    tenant company can choose what they expect. Phase 1 starts with emp code only.
+    Future: company-level login policy (e.g. company_security_policies or settings).
+
+FRONTEND LOGIN FORM LABEL:
+  What text shows on UI? (e.g. "Username", "Email", "Employee Code", "Emp ID")
+
+API REQUEST FIELD NAME:
+  What JSON key does frontend send?
+  Examples:
+    { "username": "..." }
+    { "email": "..." }
+    { "login": "..." }        // generic — server resolves type
+    { "employeeCode": "..." }
+
+CURRENT BACKEND (today):
+  POST /api/v1/auth/login
+  { "email": "user@company.com", "password": "...", "companyId": "1" }
+
+ANSWER (AGREED 2026-07-06):
+  Phase 1 NOW:     D) employee code only
+  SaaS FUTURE:     G) employee code OR username OR email (company-configurable)
+
+  Emp code stored: user_companies.employee_id (per company membership)
+
+  API JSON field name (proposed): employeeCode
+  Example request:
+    { "employeeCode": "EMP-00123", "password": "********", "companyId": "1" }
+
+  UI label (proposed): "Employee Code" or "Emp ID"
+
+  OPEN SUB-QUESTION (needs answer for Question 3):
+    Is employee_id unique GLOBALLY across all companies?
+    OR unique only WITHIN one company (then companyId required at login)?
+
+STATUS: [x] ANSWERED — Phase 1 decision locked (emp code only)
+        [ ] OPEN — emp code uniqueness rule (see sub-question above)
+
+
+================================================================================
+QUESTION 2 — PASSWORD FIELD (P0)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  Any special rules for password at login?
+
+OPTIONS:
+  A) Standard password string (current)
+  B) Password + company code on same screen
+  C) OTP / MFA required in Phase 1 (probably NO)
+
+ANSWER:
+  _________________________________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 3 — COMPANY ID AT LOGIN (P0)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  When user has multiple companies, what happens at login?
+
+OPTIONS:
+  A) Frontend always sends companyId (user picks before login)
+  B) Frontend sends companyId optional — if missing and multiple companies:
+       B1) Return HTTP 400 + company list (current backend behavior)
+       B2) Return HTTP 200 + requiresCompanySelection: true + companies[]
+             (no activeCompany, no token)
+  C) Auto-pick is_default company from user_companies.is_default
+
+ANSWER:
+  Choice (A / B1 / B2 / C / combination): __________________________
+
+  If multiple companies — show company picker BEFORE or AFTER login?
+  BEFORE / AFTER: __________________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 4 — RESPONSE FIELD NAMES (P0)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  Exact JSON keys in login response (freeze contract).
+
+USER OBJECT — pick one style:
+  Style A (frontend spec):
+    { "userId": "1", "username": "...", "displayName": "...", "email": "..." }
+  Style B (current backend):
+    { "id": "1", "email": "...", "firstName": "...", "lastName": "..." }
+
+COMPANY OBJECT — pick one style:
+  Style A: { "companyId": "1", "name": "Acme", "isDefault": true }
+  Style B: { "id": "1", "name": "Acme", "companyCode": "ACME" }
+
+ANSWER:
+  User object style (A / B / custom): _______________________________
+  Company object style (A / B / custom): _____________________________
+  Include companyCode in response? YES / NO: ________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 5 — MODULE CODES IN LOGIN SNAPSHOT (P0)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  What module_code values appear in activeCompany.modules[]?
+
+OPTIONS:
+  A) ERP business modules only (financials, crm, inventory, hrms, etc.)
+  B) Current backend modules only (iam, organization, subscription, shared)
+  C) Both — all modules from DB that company is entitled to
+  D) Map ERP UI modules to backend permission modules (custom mapping table)
+
+CURRENT DB MODULE SEEDS (today):
+  - shared
+  - organization
+  - iam
+  - subscription
+
+FRONTEND EXAMPLE USED:
+  - financials
+  - crm
+
+ANSWER:
+  Choice (A / B / C / D): __________________________________________
+
+  List of module codes for Phase 1 (if known):
+  _________________________________________________________________
+  _________________________________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 6 — PERMISSIONS FORMAT IN SNAPSHOT (P0)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  What goes inside modules[].permissions[]?
+
+OPTIONS:
+  A) Actions only:        ["view", "create", "edit", "delete", "approve"]
+  B) Full permission codes: ["users:view", "users:edit", "roles:create"]
+  C) Both: { "actions": [...], "codes": [...] }
+
+DB ALSO HAS EXTRA ACTIONS:
+  export, print, import, manage
+
+ANSWER:
+  Choice (A / B / C): ______________________________________________
+
+  Include export/print/import/manage in Phase 1? YES / NO: _________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 7 — CUSTOM SUBSCRIPTION / isCustom (P1)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  Can a company have custom module bundle (not standard plan)?
+
+CURRENT SCHEMA:
+  company_subscriptions has planId only — no custom module list column.
+
+OPTIONS:
+  A) Phase 1 — plans only (isCustom always false)
+  B) Phase 1 — custom via company_modules table (manually enabled modules)
+  C) Phase 2 — add custom_module_ids column or new table
+
+ANSWER:
+  Choice (A / B / C): ______________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 8 — MULTIPLE ROLES PER USER (P1)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  User can have more than one role in same company (user_roles table).
+
+OPTIONS:
+  A) Merge permissions from ALL active roles
+  B) Use only one "primary" role (how to pick primary?)
+  C) Not allowed — enforce one role per user per company
+
+JWT role claim:
+  Which role_code goes in token if multiple roles?
+
+ANSWER:
+  Choice (A / B / C): ______________________________________________
+
+  Primary role rule (if B): _________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 9 — REFRESH TOKEN DELIVERY (P1)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  How does frontend receive/store refresh token?
+
+OPTIONS:
+  A) JSON response body (current backend) — refreshToken in login response
+  B) httpOnly secure cookie (better XSS protection)
+  C) Both (body for mobile, cookie for web)
+
+ANSWER:
+  Choice (A / B / C): ______________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 10 — COMPANY STATUS AT LOGIN (P0)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  Can user log in when company status is:
+
+  company.status = trial     → Allow login? YES / NO: _______________
+  company.status = active    → Allow login? YES / NO: _______________
+  company.status = suspended → Allow login? YES / NO: _______________
+  company.status = cancelled → Allow login? YES / NO: _______________
+
+MEMBERSHIP STATUS (user_companies.status):
+  status = active    → Allow login? YES / NO: ______________________
+  status = invited   → Allow login? YES / NO: ______________________
+  status = suspended → Allow login? YES / NO: ______________________
+  status = left      → Allow login? YES / NO: ______________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 11 — SUBSCRIPTION STATUS AT LOGIN (P0)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  What happens when company has no active subscription?
+
+OPTIONS:
+  A) Block login completely
+  B) Allow login — return modules: [] (empty list)
+  C) Allow login — show only iam/settings modules
+
+SUBSCRIPTION STATUS VALUES:
+  active    → modules entitled? YES / NO: ___________________________
+  trial     → modules entitled? YES / NO: ___________________________
+  pending   → modules entitled? YES / NO: ___________________________
+  expired   → modules entitled? YES / NO: ___________________________
+  cancelled → modules entitled? YES / NO: ___________________________
+
+ANSWER:
+  No active subscription behavior (A / B / C): _______________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 12 — SUPER ADMIN LOGIN (P2)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  Is super admin part of Phase 1?
+
+OPTIONS:
+  A) Same POST /auth/login — detect super_admins table
+  B) Separate POST /auth/super-admin/login
+  C) Defer to Phase 2 / Epic 7
+
+ANSWER:
+  Choice (A / B / C): ______________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 13 — SESSION STORAGE (P1)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  Source of truth for active sessions?
+
+CURRENT BACKEND:
+  - Redis: session:{sessionId}, refresh:{token}
+  - DB: user_sessions table
+
+OPTIONS:
+  A) Redis primary, DB for audit/history
+  B) DB primary, Redis for cache only
+  C) Both must stay in sync (logout updates both)
+
+ANSWER:
+  Choice (A / B / C): ______________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 14 — API BASE PATH (P0)
+================================================================================
+
+CONFIRM ENDPOINT PATHS:
+
+  Current backend global prefix: /api/v1
+
+  Login:          /api/v1/auth/login          — OK? YES / NO: _______
+  Switch company: /api/v1/auth/switch-company — OK? YES / NO: _______
+  Refresh:        /api/v1/auth/refresh        — OK? YES / NO: _______
+  Logout:         /api/v1/auth/logout         — OK? YES / NO: _______
+  Me:             /api/v1/auth/me             — OK? YES / NO: _______
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+QUESTION 15 — REDIRECT FLAGS (P1)
+================================================================================
+
+WHAT WE NEED TO KNOW:
+  Should backend return redirect hints in login response?
+
+EXAMPLE:
+  {
+    "redirectTo": "/company/1/dashboard",
+    "requiresCompanySelection": false,
+    "showSubscriptionBanner": true
+  }
+
+OPTIONS:
+  A) Backend returns redirectTo + flags
+  B) Frontend decides redirect from response data (no redirectTo field)
+
+ANSWER:
+  Choice (A / B): __________________________________________________
+
+STATUS: [ ] NOT ANSWERED
+
+
+================================================================================
+SUMMARY — ANSWER TRACKER
+================================================================================
+
+  #   | Topic                        | Priority | Answered?
+  ----|------------------------------|----------|----------
+  1   | Login field (username/email/emp code) | P0 | [x] Phase 1 = emp code only
+  2   | Password rules               | P0       | [ ]
+  3   | Company ID at login          | P0       | [ ]
+  4   | Response field names         | P0       | [ ]
+  5   | Module codes in snapshot     | P0       | [ ]
+  6   | Permissions format           | P0       | [ ]
+  7   | Custom subscription          | P1       | [ ]
+  8   | Multiple roles               | P1       | [ ]
+  9   | Refresh token delivery       | P1       | [ ]
+  10  | Company/membership status    | P0       | [ ]
+  11  | Subscription status          | P0       | [ ]
+  12  | Super admin                  | P2       | [ ]
+  13  | Session storage              | P1       | [ ]
+  14  | API base path                | P0       | [ ]
+  15  | Redirect flags               | P1       | [ ]
+
+MINIMUM TO START CODING (Epic 2):
+  Questions 1, 3, 4, 5, 6, 10, 11 must be answered.
+
+
+================================================================================
+QUESTION 1 — RECORDED ANSWER
+================================================================================
+
+  PHASE 1 (build now):
+    - Login with EMPLOYEE CODE only (option D)
+    - Lookup: user_companies.employee_id + password via users / user_authentication
+
+  SAAS FUTURE (later phases):
+    - Support username, email, AND emp code (option G)
+    - Per-company policy: tenant chooses allowed login method(s)
+    - Satisfies different customer expectations in multi-tenant SaaS
+
+  NEXT QUESTION TO ANSWER: Question 3 (companyId + emp code uniqueness)
+
+When ready, proceed to Question 2 and Question 3.
+
+
+================================================================================
+END OF CLARIFICATIONS FILE
+================================================================================

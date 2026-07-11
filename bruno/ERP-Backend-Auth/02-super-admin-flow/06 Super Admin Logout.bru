@@ -1,0 +1,29 @@
+meta {
+  name: 06 Super Admin Logout
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/super-admins/auth/logout
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+  auth.clearSuperAdminAuth();
+}
+
+docs {
+  Clears superAdminAccessToken from environment.
+}

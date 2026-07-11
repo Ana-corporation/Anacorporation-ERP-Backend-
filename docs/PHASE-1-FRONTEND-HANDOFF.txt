@@ -1,0 +1,570 @@
+================================================================================
+  PHASE 1 AUTH — COMPLETE FRONTEND HANDOFF (SINGLE FILE)
+  ERP Backend -> Frontend integration package
+  Includes: API guide + all backend clarifications (answered)
+  Generated: 2026-07-10
+  Status: READY — frontend may start coding
+================================================================================
+
+  THIS IS THE ONLY FILE YOU NEED FROM BACKEND FOR PHASE 1 AUTH.
+  Copy to frontend repo as docs/PHASE-1-AUTH-HANDOFF.txt
+
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+  PART 1   How to use + environment setup
+  PART 2   Backend contract rules (read first)
+  PART 3   Backend clarifications — all answers (P0 + P1)
+  PART 4   Auth APIs — requests, responses, payloads
+  PART 5   Frontend files to build + Redux mapping
+  PART 6   Session storage, axios, guards
+  PART 7   Errors, demo credentials, build order
+  PART 8   Super admin + OAuth (optional)
+  PART 9   Quick reference + code stubs
+  PART 10  Appendices
+
+
+################################################################################
+PART 1 — HOW TO USE + ENVIRONMENT
+################################################################################
+
+BUILD ORDER (summary)
+---------------------
+  1. .env.local + axios (withCredentials: true)
+  2. unwrap.js + auth-api.js
+  3. auth Redux slice + session-storage.js
+  4. hydrate-from-snapshot.js (+ lowercase roleCode)
+  5. Login page: company code -> employee code + password
+  6. login -> /auth/me -> hydrate -> redirect /dashboard
+  7. AuthGuard + 401 refresh interceptor
+  8. Logout + company switcher
+
+BACKEND MUST BE RUNNING
+-----------------------
+  cd ERP-Backend
+  npx prisma migrate deploy
+  npm run seed:erp-modules
+  npm run seed:phase1-login
+  npm run start:dev
+
+  Swagger: http://localhost:3000/docs
+
+FRONTEND .env.local
+-------------------
+  NEXT_PUBLIC_APP_NAME=ERP
+  NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+
+BACKEND .env (for cross-origin cookies)
+---------------------------------------
+  PORT=3000
+  CORS_ORIGIN=http://localhost:3001
+
+RECOMMENDED PORTS
+-----------------
+  Backend:  :3000
+  Frontend: :3001   (next dev -p 3001)
+
+AXIOS (required)
+----------------
+  const api = axios.create({
+    baseURL: process.env.NEXT_PUBLIC_API_URL,
+    withCredentials: true,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+
+################################################################################
+PART 2 — BACKEND CONTRACT RULES (LOCKED)
+################################################################################
+
+  [x] Login: employeeCode + password + companyId OR companyCode
+  [x] NOT username for login (username returned in user object only)
+  [x] Company lookup BEFORE login: GET /auth/company?companyCode=
+  [x] API base: /api/v1/auth/*
+  [x] All responses wrapped: { success, message, data, timestamp }
+  [x] Always use envelope.data for payload
+  [x] refreshToken: httpOnly cookie ONLY (name: refresh_token, path: /api/v1/auth)
+  [x] axios withCredentials: true (mandatory)
+  [x] activeCompany.modules[] = PRODUCT modules only (6 ERP apps)
+  [x] Admin menus: permissions[] from GET /auth/me (NOT in login response)
+  [x] moduleId = number; userId, companyId, roleId = strings
+  [x] Module actions: view, create, edit, delete, approve (5 only)
+  [x] Trial + active subscription both entitle modules
+  [x] roleCode from API: UPPERCASE e.g. "ADMIN" — frontend normalizes to lowercase
+  [x] Post-login redirect: /dashboard (backend does NOT send redirectTo for company users)
+  [x] Demo: DEMO_ACME / EMP-00001 / TestPass1!
+
+
+################################################################################
+PART 3 — BACKEND CLARIFICATIONS (ALL ANSWERED)
+################################################################################
+
+------------------------------------------------------------------------------
+Q1  roleCode casing
+------------------------------------------------------------------------------
+  ANSWER: Backend sends "ADMIN" (uppercase). Frontend normalizes in adapter:
+    roleCode: (api.roleCode || '').toLowerCase()
+
+------------------------------------------------------------------------------
+Q2  Post-login redirect
+------------------------------------------------------------------------------
+  ANSWER: Redirect to /dashboard. No redirectTo in company user login response.
+
+------------------------------------------------------------------------------
+Q3  CORS + cookies
+------------------------------------------------------------------------------
+  ANSWER:
+    CORS_ORIGIN=http://localhost:3001     YES configured
+    credentials: true                    YES
+    Cookie sameSite: lax
+    Cookie secure (dev): false
+    Cookie secure (production): true
+
+------------------------------------------------------------------------------
+Q4  GET /auth/companies shape
+------------------------------------------------------------------------------
+  ANSWER: data is direct ARRAY (not { companies: [] })
+  Each item includes employeeCode: YES
+
+------------------------------------------------------------------------------
+Q5  x-company-id header
+------------------------------------------------------------------------------
+  ANSWER: Optional but recommended on all authenticated calls.
+  If sent, MUST match JWT cid or HTTP 403.
+  JWT cid is source of truth.
+
+------------------------------------------------------------------------------
+Q6  HTTP 400 validation errors
+------------------------------------------------------------------------------
+  ANSWER: errors[] with { path, message, code }
+  Map field: errors[i].path.join('.')
+
+  Example:
+    {
+      "success": false,
+      "message": "Validation failed",
+      "errors": [{ "path": ["employeeCode"], "message": "...", "code": "invalid_type" }]
+    }
+
+------------------------------------------------------------------------------
+Q7  Account lockout
+------------------------------------------------------------------------------
+  ANSWER:
+    Policy lockout: HTTP 403, message "Account is locked until {ISO timestamp}"
+    Wrong password / is_locked: HTTP 401
+    No data.lockedUntil field — parse from message or show as-is
+
+------------------------------------------------------------------------------
+Q8  Module icon/color/sortOrder in API
+------------------------------------------------------------------------------
+  ANSWER: NO — not in snapshot. Frontend static map by moduleCode:
+
+    financials     icon: finance     sortOrder: 10
+    supply-chain   icon: supply      sortOrder: 11
+    hcm            icon: people      sortOrder: 12
+    manufacturing  icon: factory     sortOrder: 13
+    crm            icon: crm         sortOrder: 14
+    projects       icon: projects    sortOrder: 15
+
+  API modules[] fields ONLY:
+    moduleId, moduleCode, moduleName, isActive, permissions[]
+
+------------------------------------------------------------------------------
+Q9  permissions[] for admin sidebar
+------------------------------------------------------------------------------
+  ANSWER: From GET /auth/me only. Pattern: resource:action
+  Demo admin gets 131 codes (DEFAULT_ADMIN_PERMISSIONS).
+  Excludes platform codes (super_admins:*, platform_companies:*).
+
+  Sample: companies:view, users:view, users:create, roles:view,
+          financials:view, crm:edit, customers:read
+
+------------------------------------------------------------------------------
+Q10  POST /auth/refresh response
+------------------------------------------------------------------------------
+  ANSWER: FULL snapshot (same as login). permissions[] NOT included — call /auth/me.
+
+------------------------------------------------------------------------------
+Q11  Signup page Phase 1?
+------------------------------------------------------------------------------
+  ANSWER: B — Login only UI. Signup API exists but optional.
+
+------------------------------------------------------------------------------
+Q12  expiresIn proactive refresh?
+------------------------------------------------------------------------------
+  ANSWER: Refresh on 401 only. expiresIn is string "15m".
+
+------------------------------------------------------------------------------
+Q13  companyCode case sensitive?
+------------------------------------------------------------------------------
+  ANSWER: NO — demo_acme = DEMO_ACME = Demo_Acme
+
+------------------------------------------------------------------------------
+Q14  switch-company + permissions
+------------------------------------------------------------------------------
+  ANSWER: Call GET /auth/me after switch-company.
+
+------------------------------------------------------------------------------
+Q15  Production API URL
+------------------------------------------------------------------------------
+  ANSWER: NEXT_PUBLIC_API_URL=https://api.yourdomain.com/api/v1
+          Backend CORS_ORIGIN=https://app.yourdomain.com
+
+
+################################################################################
+PART 4 — AUTH APIs (FULL DETAIL)
+################################################################################
+
+Base URL: http://localhost:3000/api/v1
+
+UNWRAP HELPER (use everywhere)
+------------------------------
+  export function unwrap(response) {
+    const envelope = response.data;
+    if (!envelope?.success) throw new Error(envelope?.message || 'API failed');
+    return envelope.data;
+  }
+
+------------------------------------------------------------------------------
+4.1  GET /auth/company?companyCode={code}     [PUBLIC]
+------------------------------------------------------------------------------
+  Query: companyCode (required, case-insensitive)
+
+  Response data:
+    {
+      "companyId": "15",
+      "companyCode": "DEMO_ACME",
+      "name": "Demo Acme Corp",
+      "status": "trial"
+    }
+
+------------------------------------------------------------------------------
+4.2  POST /auth/login     [PUBLIC]
+------------------------------------------------------------------------------
+  Request (companyId OR companyCode required):
+    {
+      "employeeCode": "EMP-00001",
+      "password": "TestPass1!",
+      "companyCode": "DEMO_ACME"
+    }
+
+  Response data:
+    {
+      "accessToken": "eyJ...",
+      "expiresIn": "15m",
+      "tokenType": "Bearer",
+      "requiresCompanySelection": false,
+      "user": {
+        "userId": "15",
+        "username": "demo.admin",
+        "displayName": "Demo Admin",
+        "email": "admin@demo-acme.com"
+      },
+      "companies": [
+        {
+          "companyId": "15",
+          "companyCode": "DEMO_ACME",
+          "name": "Demo Acme Corp",
+          "isDefault": true,
+          "status": "trial"
+        }
+      ],
+      "activeCompany": {
+        "companyId": "15",
+        "companyCode": "DEMO_ACME",
+        "name": "Demo Acme Corp",
+        "status": "trial",
+        "role": {
+          "roleId": "15",
+          "roleCode": "ADMIN",
+          "roleName": "Administrator"
+        },
+        "subscription": {
+          "status": "trial",
+          "planCode": "DEMO_STARTER",
+          "planName": "Demo Starter",
+          "endDate": "2027-07-10",
+          "isCustom": false
+        },
+        "modules": [
+          {
+            "moduleId": 6,
+            "moduleCode": "financials",
+            "moduleName": "Financials",
+            "isActive": true,
+            "permissions": ["view","create","edit","delete","approve"]
+          }
+        ]
+      }
+    }
+
+  Cookie set: refresh_token (httpOnly, not in JSON)
+
+  After login frontend MUST:
+    1. sessionStorage accessToken + authContext
+    2. GET /auth/me -> permissions[]
+    3. hydrateFromSnapshot()
+    4. redirect /dashboard
+
+------------------------------------------------------------------------------
+4.3  GET /auth/me     [BEARER]
+------------------------------------------------------------------------------
+  Headers:
+    Authorization: Bearer <token>
+    x-company-id: <companyId>   optional; must match JWT if sent
+
+  Response data: login snapshot PLUS:
+    "permissions": [ "companies:view", "users:view", ... ]  // 131 for demo admin
+
+------------------------------------------------------------------------------
+4.4  GET /auth/companies     [BEARER]
+------------------------------------------------------------------------------
+  Response data: ARRAY
+    [
+      {
+        "companyId": "15",
+        "companyCode": "DEMO_ACME",
+        "name": "Demo Acme Corp",
+        "isDefault": true,
+        "status": "trial",
+        "employeeCode": "EMP-00001"
+      }
+    ]
+
+------------------------------------------------------------------------------
+4.5  POST /auth/switch-company     [BEARER]
+------------------------------------------------------------------------------
+  Request: { "companyId": "16" }
+  Response: same as login (new accessToken + activeCompany)
+  Then: GET /auth/me for permissions[]
+
+------------------------------------------------------------------------------
+4.6  POST /auth/refresh     [COOKIE]
+------------------------------------------------------------------------------
+  Body: empty. Cookie refresh_token sent via withCredentials.
+  Response: FULL login snapshot (not token-only).
+  permissions[]: call /auth/me separately.
+
+------------------------------------------------------------------------------
+4.7  POST /auth/logout     [BEARER + COOKIE]
+------------------------------------------------------------------------------
+  Response data: { "message": "Logged out successfully" }
+  Cookie cleared. Clear sessionStorage.
+
+------------------------------------------------------------------------------
+4.8  POST /auth/signup     [PUBLIC — optional UI]
+------------------------------------------------------------------------------
+  Request:
+    {
+      "email": "owner@mycompany.com",
+      "password": "SecurePass1",
+      "confirmPassword": "SecurePass1",
+      "firstName": "Owner",
+      "lastName": "Name",
+      "companyName": "My Company Ltd"
+    }
+  Password: 8+ chars, upper, lower, digit.
+  Response: same as login.
+
+
+################################################################################
+PART 5 — FRONTEND FILES + REDUX
+################################################################################
+
+FILES TO CREATE
+---------------
+  src/lib/api/axios.js
+  src/lib/api/unwrap.js
+  src/lib/api/auth-api.js
+  src/lib/auth/session-storage.js
+  src/lib/auth/hydrate-from-snapshot.js
+  src/redux/slices/auth.js
+  src/app/auth/login/page.js
+  src/middleware.js
+  src/auth/guard/auth-guard.js
+
+AUTH SLICE STATE
+----------------
+  isAuthenticated, accessToken, user, activeCompanyId, companies, permissions[]
+
+HYDRATE IAM SLICE FROM
+----------------------
+  user -> iam.users[]
+  companies[] -> iam.companies[]
+  activeCompany.role -> iam.roles[] (normalize roleCode to lowercase)
+  activeCompany.subscription -> iam.subscriptions[]
+  activeCompany.modules[] -> iam.modules[], iam.companyModules[]
+  permissions[] (from /me) -> auth slice for admin menus
+
+FE-2 FIX (iam-selectors.js)
+---------------------------
+  ['active', 'trial'].includes(s.status)   // not only 'active'
+
+PRODUCT MODULE CODES (sidebar)
+------------------------------
+  financials, supply-chain, hcm, manufacturing, crm, projects
+
+ADMIN AREAS (NOT in modules[] — use permissions[])
+----------------------------------------------------
+  iam, organization, subscription, shared
+
+
+################################################################################
+PART 6 — SESSION STORAGE + AXIOS + GUARDS
+################################################################################
+
+SESSION STORAGE
+---------------
+  accessToken     JWT string
+  authContext     { user, activeCompanyId, companies, activeCompany }
+  NEVER store refreshToken or password
+
+AXIOS REQUEST INTERCEPTOR
+-------------------------
+  Add Authorization: Bearer <accessToken from sessionStorage>
+  Optional: x-company-id: activeCompanyId
+
+AXIOS 401 INTERCEPTOR
+---------------------
+  POST /auth/refresh -> save new accessToken -> retry request
+  On fail: clear storage -> /auth/login
+
+AUTH GUARD
+----------
+  No token -> /auth/login
+  Token but no state -> GET /auth/me -> hydrate
+
+PUBLIC ROUTES
+-------------
+  /, /auth/login
+
+
+################################################################################
+PART 7 — ERRORS, DEMO, BUILD STEPS
+################################################################################
+
+HTTP ERRORS
+-----------
+  400  Validation — map errors[].path to field
+  401  Bad credentials / expired token
+  403  Suspended company / lockout / x-company-id mismatch
+  404  Company not found
+  409  Email taken (signup)
+  500  Server error
+
+DEMO CREDENTIALS
+----------------
+  companyCode:   DEMO_ACME
+  employeeCode:  EMP-00001
+  password:      TestPass1!
+
+LOGIN FLOW
+----------
+  1. GET  /auth/company?companyCode=DEMO_ACME
+  2. POST /auth/login
+  3. GET  /auth/me
+  4. hydrate + redirect /dashboard
+
+JWT CLAIMS (decode for display only)
+------------------------------------
+  sub=userId, cid=companyId, sid=sessionId, role=ADMIN, email
+
+
+################################################################################
+PART 8 — SUPER ADMIN + OAUTH (OPTIONAL)
+################################################################################
+
+SUPER ADMIN (separate UI /super-admin/*)
+----------------------------------------
+  POST /api/v1/super-admins/auth/login     { email, password }
+  Cookie: super_admin_refresh_token
+  redirectTo: "/super-admin/dashboard" in response
+
+PLATFORM TENANT MGMT (super admin token)
+----------------------------------------
+  GET    /api/v1/super-admin/companies
+  GET    /api/v1/super-admin/companies/:id
+  PATCH  /api/v1/super-admin/companies/:id/status
+         Body: { "status": "trial"|"active"|"suspended"|"cancelled" }
+
+OAUTH (Phase 2 — defer buttons)
+-------------------------------
+  GET  /auth/oauth/google?companyCode=&redirectUri=
+  GET  /auth/oauth/microsoft?companyCode=&redirectUri=
+  Requires backend OAuth env vars
+
+
+################################################################################
+PART 9 — QUICK REFERENCE + auth-api.js STUBS
+################################################################################
+
+  GET    /auth/company           Public
+  POST   /auth/login             Public
+  POST   /auth/signup            Public
+  POST   /auth/refresh           Cookie
+  GET    /auth/me                Bearer
+  GET    /auth/companies         Bearer -> array
+  POST   /auth/switch-company    Bearer
+  POST   /auth/logout            Bearer + cookie
+
+  // auth-api.js
+  import api from './axios';
+  import { unwrap } from './unwrap';
+
+  export const resolveCompany = (code) =>
+    unwrap(api.get('/auth/company', { params: { companyCode: code } }));
+
+  export const login = (body) => unwrap(api.post('/auth/login', body));
+
+  export const getMe = () => unwrap(api.get('/auth/me'));
+
+  export const getCompanies = () => unwrap(api.get('/auth/companies'));
+
+  export const switchCompany = (companyId) =>
+    unwrap(api.post('/auth/switch-company', { companyId }));
+
+  export const refresh = () => unwrap(api.post('/auth/refresh'));
+
+  export const logout = () => unwrap(api.post('/auth/logout'));
+
+
+################################################################################
+PART 10 — APPENDICES
+################################################################################
+
+APPENDIX A — WHAT BACKEND PROVIDES vs FRONTEND OWNS
+----------------------------------------------------
+  BACKEND: accessToken, refresh cookie, snapshot, /me permissions[], API guards
+  FRONTEND: sessionStorage, Redux, login UI, guards, sidebar UX, interceptors
+
+APPENDIX B — DEMO ADMIN permissions[] SAMPLE (30 of 131)
+--------------------------------------------------------
+  companies:view, companies:create, companies:edit, companies:delete,
+  departments:view, departments:create, departments:edit, departments:delete,
+  users:view, users:create, users:edit, users:delete,
+  roles:view, roles:create, roles:edit, roles:delete,
+  financials:view, crm:view, crm:create, customers:read
+
+APPENDIX C — SIDEBAR VISIBILITY (client UX only — server re-checks)
+-------------------------------------------------------------------
+  Product module: module in snapshot + isActive + permissions includes 'view'
+                  + subscription status active or trial
+  Admin menu: permissions.includes('users:view') etc.
+
+APPENDIX D — FRONTEND TASK CHECKLIST
+------------------------------------
+  [ ] FE-1  hydrate-from-snapshot.js (+ lowercase roleCode)
+  [ ] FE-2  getActiveSubscription() trial fix
+  [ ] FE-3  Login: company code + employee code + password
+  [ ] FE-4  axios + unwrap + auth-api + auth slice
+  [ ] FE-5  AuthGuard + 401 refresh
+  [ ] FE-6  Sidebar from modules[] + permissions[]
+  [ ] FE-7  .env.local NEXT_PUBLIC_API_URL
+  [ ] FE-8  Optional x-company-id header
+
+
+================================================================================
+END OF PHASE 1 FRONTEND HANDOFF — SINGLE FILE
+================================================================================

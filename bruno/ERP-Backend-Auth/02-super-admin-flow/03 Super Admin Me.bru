@@ -1,0 +1,20 @@
+meta {
+  name: 03 Super Admin Me
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/super-admins/auth/me
+  body: none
+  auth: none
+}
+
+script:post-response {
+  const auth = require('../../lib/auth.js');
+  auth.assertSuccess(res);
+}
+
+docs {
+  Token auto-attached (superAdminAccessToken).
+}

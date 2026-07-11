@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
-import { RequirePermissions } from '@/common/decorators/auth.decorators';
+import { RequireModulePermission, RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser, OrganizationId } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 
@@ -15,18 +15,21 @@ export class CustomersController {
 
   @Get()
   @RequirePermissions('customers:read')
+  @RequireModulePermission('crm', 'view')
   findAll(@OrganizationId() organizationId: string, @Query() query: PaginationQueryDto) {
     return this.customersService.findAll(organizationId, query);
   }
 
   @Get(':id')
   @RequirePermissions('customers:read')
+  @RequireModulePermission('crm', 'view')
   findOne(@OrganizationId() organizationId: string, @Param('id') id: string) {
     return this.customersService.findOne(organizationId, id);
   }
 
   @Post()
   @RequirePermissions('customers:write')
+  @RequireModulePermission('crm', 'create')
   create(
     @OrganizationId() organizationId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -37,6 +40,7 @@ export class CustomersController {
 
   @Patch(':id')
   @RequirePermissions('customers:write')
+  @RequireModulePermission('crm', 'edit')
   update(
     @OrganizationId() organizationId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -48,6 +52,7 @@ export class CustomersController {
 
   @Delete(':id')
   @RequirePermissions('customers:write')
+  @RequireModulePermission('crm', 'delete')
   remove(
     @OrganizationId() organizationId: string,
     @CurrentUser() user: AuthenticatedUser,

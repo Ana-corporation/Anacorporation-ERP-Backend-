@@ -1,0 +1,18 @@
+// iam | user_oauth_identities
+
+model UserOAuthIdentity {
+  oauthIdentityId BigInt         @id @default(autoincrement()) @map("oauth_identity_id")
+  userId          BigInt         @map("user_id")
+  provider        OAuthProvider
+  providerUserId  String         @map("provider_user_id") @db.VarChar(255)
+  email           String?        @db.VarChar(255)
+  displayName     String?        @map("display_name") @db.VarChar(200)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime?      @map("updated_at")
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("user_oauth_identities")
+}
