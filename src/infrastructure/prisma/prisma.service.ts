@@ -26,7 +26,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await this.$connect();
-        this.logger.log('Database connected');
+        const isNeon = (process.env.DATABASE_URL ?? '').includes('neon.tech');
+        this.logger.log(isNeon ? 'Neon database connected' : 'Database connected');
         return;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';

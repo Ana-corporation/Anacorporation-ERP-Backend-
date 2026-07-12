@@ -1,0 +1,266 @@
+================================================================================
+DEVELOPER SETUP — AFTER GIT PULL (FIX COMMON ERRORS)
+================================================================================
+Last updated: 2026-07-12
+Repos:
+  Frontend: https://github.com/arunkumaranadev1-commits/Anacorporation-ERP-Frontend
+  Backend:  (NestJS project — e.g. anc_be / ERP-Backend)
+
+If you see errors like:
+  - Module '@prisma/client' has no exported member 'ModuleType'
+  - Module '@prisma/client' has no exported member 'UserAuditAction'
+  - Prisma has no exported member 'StringFilter', 'InputJsonValue', etc.
+  - [nodemon] restarting due to changes... (infinite loop)
+
+These are NOT code bugs from git pull. They mean local setup steps were skipped.
+
+
+================================================================================
+PART A — BACKEND ERRORS (Prisma + nodemon loop)
+================================================================================
+
+WHY THIS HAPPENS
+----------------
+After git pull, node_modules and Prisma client are NOT in the repo.
+The backend code imports types from @prisma/client (ModuleType, UserAuditAction,
+ApiKeyStatus, Prisma.StringFilter, etc.). Those types exist ONLY after you run:
+
+  npm install
+  npm run prisma:generate
+
+If Prisma client is missing/outdated:
+  1. TypeScript compilation fails
+  2. nest start crashes
+  3. nodemon keeps restarting in a loop
+
+
+STEP-BY-STEP FIX (BACKEND)
+--------------------------
+
+1) Stop all running Node processes
+   - Close all terminals running npm / nodemon / nest
+   - Windows PowerShell:
+       Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+
+2) Go to backend folder
+       cd D:\Project\project\anc_be
+     (or your backend path, e.g. C:\ERP-Backend)
+
+3) Install dependencies
+       npm install
+
+4) Create .env file (if missing)
+       copy .env.example .env
+     Edit .env and set (Neon cloud — recommended for this team):
+       DATABASE_URL="postgresql://...@ep-xxx-pooler....neon.tech/neondb?sslmode=require"
+       DIRECT_DATABASE_URL="postgresql://...@ep-xxx....neon.tech/neondb?sslmode=require"
+       JWT_SECRET=your-secret-key
+       CORS_ORIGIN=http://localhost:3001
+       PORT=3000
+       USE_MEMORY_SESSION=true
+
+     Neon: DATABASE_URL = pooled (-pooler), DIRECT_DATABASE_URL = direct (no pooler).
+     See NEON_DATABASE_GUIDE.txt. Docker Postgres is optional / not required for Neon.
+
+5) Generate Prisma client  * MOST IMPORTANT STEP *
+       npm run prisma:generate
+
+     OR:
+       npx prisma generate
+
+     This creates node_modules/.prisma/client with all types/enums.
+
+6) Run database migrations (first time or after schema changes)
+       npm run prisma:migrate
+
+     OR production-style:
+       npx prisma migrate deploy
+
+7) (Optional) Seed demo login user
+       npm run seed:phase1-login
+
+     Demo credentials after seed:
+       companyCode:   DEMO_ACME
+       employeeCode:  EMP-00001
+       password:      TestPass1!
+
+8) Clean build output (if still failing)
+       rmdir /s /q dist
+     Then start again.
+
+9) Start backend
+       npm run start:dev
+
+   Expected success log:
+       [NestApplication] Nest application successfully started
+       Listening on port 3000 (or your PORT in .env)
+
+
+VERIFY BACKEND IS OK
+--------------------
+       curl http://localhost:3000/api/v1/auth/company?companyCode=DEMO_ACME
+
+   Should return JSON with companyId, companyCode, name, status.
+
+
+IF DEV SERVER STILL LOOPS / CRASHES
+----------------------------------
+Cause: app crashes on start -> watcher restarts -> crash again.
+
+Do this:
+  1. Stop the server (Ctrl+C)
+  2. Run prisma generate again:
+       npm run prisma:generate
+  3. Test compile manually:
+       npm run build
+  4. If build succeeds, start dev server:
+       npm run start:dev
+
+Also check:
+  - Only ONE backend terminal should run on port 3000
+  - If "EADDRINUSE port 3000", kill old node process:
+       netstat -ano | findstr :3000
+       taskkill /PID <pid> /F
+
+Alternative start:
+       npm run start:dev:nest
+
+
+COMMON BACKEND MISTAKES
+-----------------------
+  [ ] Pulled code but did NOT run npm install
+  [ ] Did NOT run npm run prisma:generate
+  [ ] Missing .env file
+  [ ] Wrong DATABASE_URL (still localhost placeholders while using Neon)
+  [ ] Two dev servers fighting for port 3000
+  [ ] Running frontend command in backend folder (use npm run start:dev, NOT npm run dev)
+
+
+================================================================================
+PART B — FRONTEND SETUP (after git pull)
+================================================================================
+
+Repo:
+  https://github.com/arunkumaranadev1-commits/Anacorporation-ERP-Frontend
+  Branch: development-anc
+
+STEP-BY-STEP FIX (FRONTEND)
+---------------------------
+
+1) Go to frontend folder
+       cd C:\ERP-Frontend
+
+2) Install dependencies
+       npm install
+
+3) Create env file
+       copy .env.local.example .env.local
+
+   .env.local should contain:
+       NEXT_PUBLIC_APP_NAME=ERP
+       NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+
+4) Clear Next.js cache (if ChunkLoadError or weird dev errors)
+       rmdir /s /q .next
+
+5) Start frontend (port 3001)
+       npm run dev
+
+   Open:
+       http://localhost:3001/auth/login
+
+
+VERIFY FRONTEND + BACKEND TOGETHER
+----------------------------------
+  Backend running:  http://localhost:3000/api/v1
+  Frontend running: http://localhost:3001
+
+  Login test:
+    Company code:  DEMO_ACME
+    Employee code: EMP-00001
+    Password:      TestPass1!
+
+
+COMMON FRONTEND MISTAKES
+------------------------
+  [ ] Missing .env.local -> API calls fail / network error
+  [ ] Backend not running on port 3000
+  [ ] Using npm run start:dev in frontend (that is BACKEND only)
+  [ ] Port 3001 busy -> Next.js may use 3002/3003; check terminal output
+  [ ] Corrupt .next cache -> delete .next and restart
+
+
+================================================================================
+PART C — QUICK CHECKLIST (share with new developer)
+================================================================================
+
+BACKEND (do in order):
+  [ ] git pull
+  [ ] npm install
+  [ ] copy .env.example .env  (configure Neon DATABASE_URL + DIRECT_DATABASE_URL)
+  [ ] npm run prisma:generate
+  [ ] npm run prisma:migrate
+  [ ] npm run seed:phase1-login   (optional, for demo login)
+  [ ] npm run start:dev
+
+FRONTEND (do in order):
+  [ ] git pull
+  [ ] npm install
+  [ ] copy .env.local.example .env.local
+  [ ] npm run dev
+
+TEST:
+  [ ] GET  http://localhost:3000/api/v1/auth/company?companyCode=DEMO_ACME
+  [ ] Open http://localhost:3001/auth/login
+  [ ] Login with DEMO_ACME / EMP-00001 / TestPass1!
+
+
+================================================================================
+PART D — ERROR MESSAGE -> FIX MAP
+================================================================================
+
+Error: @prisma/client has no exported member 'ModuleType'
+Fix:   npm run prisma:generate
+
+Error: Prisma has no exported member 'StringFilter'
+Fix:   npm run prisma:generate
+
+Error: @prisma/client has no exported member 'UserAuditAction'
+Fix:   npm run prisma:generate
+
+Error: [nodemon] restarting due to changes... (loop)
+Fix:   Stop server -> npm run prisma:generate -> npm run build -> npm run start:dev
+
+Error: EADDRINUSE :::3000
+Fix:   Kill old node process on port 3000
+
+Error: Network error on login (frontend)
+Fix:   Start backend + check NEXT_PUBLIC_API_URL in .env.local
+
+Error: Cannot connect to database
+Fix:   Fix Neon DATABASE_URL / DIRECT_DATABASE_URL in backend .env (not localhost)
+
+
+================================================================================
+PART E — MINIMUM COMMANDS (copy-paste)
+================================================================================
+
+BACKEND:
+  cd <backend-folder>
+  npm install
+  copy .env.example .env
+  (edit .env — paste Neon pooled + direct URLs)
+  npm run prisma:generate
+  npm run prisma:migrate
+  npm run start:dev
+
+FRONTEND:
+  cd <frontend-folder>
+  npm install
+  copy .env.local.example .env.local
+  npm run dev
+
+
+================================================================================
+END
+================================================================================

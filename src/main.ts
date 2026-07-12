@@ -5,6 +5,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { SimpleLogger } from './common/logger/simple.logger';
+import { requestLogger } from './common/logger/request-logger.middleware';
 import {
   getRedisConnectionOptionsFromEnv,
   probeRedisAvailability,
@@ -36,9 +38,12 @@ async function ensureRedisOrFallback(logger: Logger) {
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   await ensureRedisOrFallback(logger);
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: new SimpleLogger(),
+  });
 
   app.use(cookieParser());
+  app.use(requestLogger);
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('app.port') ?? 3000;
@@ -94,8 +99,8 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   await app.listen(port);
-  logger.log(`Application running on http://localhost:${port}/${apiPrefix}`);
-  logger.log(`Swagger docs at http://localhost:${port}/docs`);
+  logger.log(`Server running  → http://localhost:${port}/${apiPrefix}`);
+  logger.log(`Swagger docs    → http://localhost:${port}/docs`);
 }
 
 bootstrap();

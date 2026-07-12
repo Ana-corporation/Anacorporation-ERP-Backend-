@@ -14,6 +14,7 @@ import { CompanySecurityPolicyService } from './company-security-policy.service'
 import { UserContextCacheService } from './user-context-cache.service';
 import { OAuthController } from './oauth/oauth.controller';
 import { OAuthService } from './oauth/oauth.service';
+import { RoleLoginResponseBuilder } from './role-access/role-login-response.builder';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { OAuthService } from './oauth/oauth.service';
     CompanyAccessContextService,
     CompanySecurityPolicyService,
     UserContextCacheService,
+    RoleLoginResponseBuilder,
     AuthService,
     OAuthService,
     JwtStrategy,

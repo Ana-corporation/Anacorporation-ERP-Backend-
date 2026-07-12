@@ -21,6 +21,7 @@ import { CompanyAccessContextService } from './company-access-context.service';
 import { AuthSessionService } from './auth-session.service';
 import { CompanySecurityPolicyService } from './company-security-policy.service';
 import { UserContextCacheService } from './user-context-cache.service';
+import { RoleLoginResponseBuilder } from './role-access/role-login-response.builder';
 
 export interface AuthClientMeta {
   ipAddress?: string;
@@ -35,6 +36,7 @@ export class AuthService {
     private readonly authSessionService: AuthSessionService,
     private readonly securityPolicyService: CompanySecurityPolicyService,
     private readonly userContextCache: UserContextCacheService,
+    private readonly roleLoginResponseBuilder: RoleLoginResponseBuilder,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly auditService: AuditService,
@@ -285,10 +287,12 @@ export class AuthService {
     );
     const membership = await this.authRepository.findMembershipWithPermissions(userId, companyId);
 
-    return {
-      ...accessContext,
-      permissions: membership?.permissions ?? [],
-    };
+    const snapshot = this.roleLoginResponseBuilder.build({
+      accessContext,
+      rolePermissions: membership?.permissions ?? [],
+    });
+
+    return this.roleLoginResponseBuilder.toMePayload(snapshot);
   }
 
   async getMyCompanies(userId: string) {
@@ -396,6 +400,13 @@ export class AuthService {
       userId,
       companyId,
     );
+    const membership = await this.authRepository.findMembershipWithPermissions(userId, companyId);
+    const rolePermissions = membership?.permissions ?? [];
+
+    const snapshot = this.roleLoginResponseBuilder.build({
+      accessContext,
+      rolePermissions,
+    });
 
     const payload: JwtPayload = {
       sub: userId,
@@ -422,16 +433,12 @@ export class AuthService {
 
     await this.userContextCache.invalidate(userId, companyId);
 
-    return {
+    // FE snapshot is role-shaped; JWT/cache keeps full DB permissions for API guards.
+    return this.roleLoginResponseBuilder.toLoginPayload(snapshot, {
       accessToken,
       refreshToken: session.refreshToken,
       expiresIn,
-      tokenType: 'Bearer',
-      requiresCompanySelection: false,
-      user: accessContext.user,
-      companies: accessContext.companies,
-      activeCompany: accessContext.activeCompany,
-    };
+    });
   }
 
   private parseBrowser(userAgent?: string): string | undefined {
