@@ -44,13 +44,62 @@ const PLATFORM_OWNER_PERMISSION_CODES = [
   { module: 'organization', code: 'companies:create', name: 'Create Companies', action: 'create' },
   { module: 'organization', code: 'companies:edit', name: 'Edit Companies', action: 'edit' },
   { module: 'organization', code: 'companies:delete', name: 'Delete Companies', action: 'delete' },
-  // FE aliases (in addition to backend subscription_* codes)
+  // FE aliases + canonical subscription_* codes (guards accept either)
   { module: 'subscription', code: 'subscription:view', name: 'View Subscription', action: 'view' },
   { module: 'subscription', code: 'subscription:edit', name: 'Edit Subscription', action: 'edit' },
   { module: 'subscription', code: 'modules:view', name: 'View Modules', action: 'view' },
   { module: 'subscription', code: 'modules:edit', name: 'Edit Modules', action: 'edit' },
   { module: 'subscription', code: 'plans:view', name: 'View Plans', action: 'view' },
   { module: 'subscription', code: 'plans:edit', name: 'Edit Plans', action: 'edit' },
+  { module: 'subscription', code: 'subscription_plans:view', name: 'View Subscription Plans', action: 'view' },
+  { module: 'subscription', code: 'subscription_plans:edit', name: 'Edit Subscription Plans', action: 'edit' },
+  { module: 'subscription', code: 'subscription_modules:view', name: 'View ERP Modules', action: 'view' },
+  { module: 'subscription', code: 'subscription_modules:edit', name: 'Edit ERP Modules', action: 'edit' },
+];
+
+/** Company ADMIN — Company Setup screens (users/roles/org + tenant subscription) */
+const COMPANY_ADMIN_PERMISSION_CODES = [
+  { module: 'organization', code: 'companies:view', name: 'View Companies', action: 'view' },
+  { module: 'organization', code: 'companies:edit', name: 'Edit Companies', action: 'edit' },
+  { module: 'organization', code: 'departments:view', name: 'View Departments', action: 'view' },
+  { module: 'organization', code: 'departments:create', name: 'Create Departments', action: 'create' },
+  { module: 'organization', code: 'departments:edit', name: 'Edit Departments', action: 'edit' },
+  { module: 'organization', code: 'departments:delete', name: 'Delete Departments', action: 'delete' },
+  { module: 'organization', code: 'designations:view', name: 'View Designations', action: 'view' },
+  { module: 'organization', code: 'designations:create', name: 'Create Designations', action: 'create' },
+  { module: 'organization', code: 'designations:edit', name: 'Edit Designations', action: 'edit' },
+  { module: 'organization', code: 'designations:delete', name: 'Delete Designations', action: 'delete' },
+  { module: 'organization', code: 'branches:view', name: 'View Branches', action: 'view' },
+  { module: 'organization', code: 'branches:create', name: 'Create Branches', action: 'create' },
+  { module: 'organization', code: 'branches:edit', name: 'Edit Branches', action: 'edit' },
+  { module: 'organization', code: 'branches:delete', name: 'Delete Branches', action: 'delete' },
+  { module: 'organization', code: 'warehouses:view', name: 'View Warehouses', action: 'view' },
+  { module: 'organization', code: 'warehouses:create', name: 'Create Warehouses', action: 'create' },
+  { module: 'organization', code: 'warehouses:edit', name: 'Edit Warehouses', action: 'edit' },
+  { module: 'organization', code: 'warehouses:delete', name: 'Delete Warehouses', action: 'delete' },
+  { module: 'iam', code: 'users:view', name: 'View Users', action: 'view' },
+  { module: 'iam', code: 'users:create', name: 'Create Users', action: 'create' },
+  { module: 'iam', code: 'users:edit', name: 'Edit Users', action: 'edit' },
+  { module: 'iam', code: 'users:delete', name: 'Delete Users', action: 'delete' },
+  { module: 'iam', code: 'roles:view', name: 'View Roles', action: 'view' },
+  { module: 'iam', code: 'roles:create', name: 'Create Roles', action: 'create' },
+  { module: 'iam', code: 'roles:edit', name: 'Edit Roles', action: 'edit' },
+  { module: 'iam', code: 'roles:delete', name: 'Delete Roles', action: 'delete' },
+  { module: 'iam', code: 'user_module_access:view', name: 'View User Module Access', action: 'view' },
+  { module: 'iam', code: 'user_module_access:edit', name: 'Edit User Module Access', action: 'edit' },
+  { module: 'subscription', code: 'company_subscriptions:view', name: 'View Company Subscriptions', action: 'view' },
+  { module: 'subscription', code: 'company_subscriptions:create', name: 'Create Company Subscriptions', action: 'create' },
+  { module: 'subscription', code: 'company_subscriptions:edit', name: 'Edit Company Subscriptions', action: 'edit' },
+  { module: 'subscription', code: 'company_modules:view', name: 'View Company Modules', action: 'view' },
+  { module: 'subscription', code: 'company_modules:create', name: 'Create Company Modules', action: 'create' },
+  { module: 'subscription', code: 'company_modules:edit', name: 'Edit Company Modules', action: 'edit' },
+  { module: 'subscription', code: 'subscription:view', name: 'View Subscription', action: 'view' },
+  { module: 'subscription', code: 'subscription:edit', name: 'Edit Subscription', action: 'edit' },
+  // Read-only global catalogues (company detail subscription picker)
+  { module: 'subscription', code: 'plans:view', name: 'View Plans', action: 'view' },
+  { module: 'subscription', code: 'modules:view', name: 'View Modules', action: 'view' },
+  { module: 'subscription', code: 'subscription_plans:view', name: 'View Subscription Plans', action: 'view' },
+  { module: 'subscription', code: 'subscription_modules:view', name: 'View ERP Modules', action: 'view' },
 ];
 
 const ACCOUNTS = [
@@ -97,7 +146,7 @@ const ACCOUNTS = [
       crm: ['view', 'create', 'edit', 'delete', 'approve'],
       projects: ['view', 'create', 'edit', 'delete', 'approve'],
     },
-    platformPermissionCodes: [],
+    platformPermissionCodes: COMPANY_ADMIN_PERMISSION_CODES.map((p) => p.code),
   },
   {
     level: 'manager',
@@ -233,7 +282,14 @@ async function ensureModules() {
     (await prisma.module.findMany()).map((m) => [m.moduleCode, m]),
   );
 
-  for (const perm of PLATFORM_OWNER_PERMISSION_CODES) {
+  const adminFlatPermissions = [
+    ...PLATFORM_OWNER_PERMISSION_CODES,
+    ...COMPANY_ADMIN_PERMISSION_CODES,
+  ];
+  const seenPermCodes = new Set();
+  for (const perm of adminFlatPermissions) {
+    if (seenPermCodes.has(perm.code)) continue;
+    seenPermCodes.add(perm.code);
     const mod = modulesByCode.get(perm.module);
     if (!mod) continue;
     await prisma.permission.upsert({

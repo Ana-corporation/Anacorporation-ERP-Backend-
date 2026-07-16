@@ -98,6 +98,18 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
 
+  // Free PORT immediately before bind — Nest/Prisma boot can take seconds,
+  // so an earlier free-port at nodemon start is not enough (EADDRINUSE race).
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { freePort } = require('../scripts/free-port.js') as {
+      freePort: (port?: number | string) => { port: string; killed: number };
+    };
+    freePort(port);
+  } catch (err) {
+    logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
+  }
+
   await app.listen(port);
   logger.log(`Server running  → http://localhost:${port}/${apiPrefix}`);
   logger.log(`Swagger docs    → http://localhost:${port}/docs`);

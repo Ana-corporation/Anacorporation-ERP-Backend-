@@ -1,13 +1,18 @@
 ================================================================================
   ERP BACKEND — PHASE 1 FRONTEND INTEGRATION GUIDE
 ================================================================================
-  Status:   ALL 8 TENANT AUTH APIs IMPLEMENTED AND TESTED
-  Updated:  2026-07-10
-  Backend:  http://localhost:3000/api/v1
-  Frontend: http://localhost:3001
-  Swagger:  http://localhost:3000/docs
+  *** SUPERSEDED FOR FRONTEND HANDOFF ***
+  Use the combined file instead:
+    docs/FRONTEND-ADMIN-DASHBOARD-HANDOFF.txt
+  (Auth + Admin Dashboard APIs + LIVE status + payloads in one place)
 
-  Copy this file to your frontend repo (e.g. docs/FRONTEND-INTEGRATION.txt)
+  Status:   ALL 8 TENANT AUTH APIs IMPLEMENTED AND TESTED
+  Updated:  2026-07-10  (legacy; prefer combined handoff dated 2026-07-15)
+  Backend:  http://localhost:3002/api/v1   (was 3000; check .env PORT)
+  Frontend: http://localhost:3001
+  Swagger:  http://localhost:3002/docs
+
+  Copy FRONTEND-ADMIN-DASHBOARD-HANDOFF.txt to your frontend repo.
   For extended Q&A see: docs/PHASE-1-FRONTEND-HANDOFF.txt
 
 

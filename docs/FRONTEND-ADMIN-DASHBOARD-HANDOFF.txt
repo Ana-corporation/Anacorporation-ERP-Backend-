@@ -1,0 +1,567 @@
+================================================================================
+  ERP BACKEND — FRONTEND HANDOFF (Auth + Admin Dashboard)
+================================================================================
+  Updated:      2026-07-15
+  Audience:     Frontend team — copy this ONE file into the FE repo
+  Replaces:     FRONTEND-INTEGRATION.txt + ADMIN-DASHBOARD-API-STATUS.txt
+                + ADMIN-DASHBOARD-BACKEND-APIS-REQUIRED.txt (as the live contract)
+
+  Backend:      http://localhost:3002/api/v1
+  Frontend:     http://localhost:3001
+  Swagger:      http://localhost:3002/docs
+
+  Seed:         npm run seed:client-logins
+  Smoke:        powershell -File scripts/smoke-admin-dashboard.ps1
+
+================================================================================
+0. QUICK START
+================================================================================
+
+DEMO LOGINS
+-----------
+  PLATFORM   / OWNER001  / Owner@123   → platform Companies, Plans, Modules menus
+  DEMO_ACME  / ADMIN001  / Admin@123   → Company Setup (org / roles / users)
+  DEMO_ACME  / MGR001    / Manager@123
+  DEMO_ACME  / STAFF001  / Staff@123
+  DEMO_ACME  / SALES001  / Sales@123
+
+FRONTEND .env.local
+-------------------
+  NEXT_PUBLIC_API_URL=http://localhost:3002/api/v1
+
+BACKEND (local)
+---------------
+  PORT=3002
+  CORS_ORIGIN=http://localhost:3001
+  npm run start:dev     (or: npm run build && node dist/src/main.js)
+
+GLOBAL RULES
+------------
+  - Always read payload from envelope.data  (axios → response.data.data)
+  - JSON camelCase; IDs are strings ("15")
+  - Soft-delete only
+  - withCredentials: true (refresh cookie)
+  - Authorization: Bearer <accessToken>
+  - Optional: x-company-id: <activeCompanyId>
+
+RESPONSE ENVELOPE
+-----------------
+  Success:
+  { "success": true, "message": "...", "data": { ... }, "timestamp": "ISO" }
+
+  Error:
+  { "success": false, "message": "...", "data": null, "timestamp": "...", "path": "..." }
+
+CANONICAL PATHS (answered for FE)
+---------------------------------
+  Platform tenant list:     GET /companies          (PLATFORM_OWNER / companies:view)
+  Also exists (super-admin JWT): /super-admin/companies*
+  Role permissions body:    prefer { "permissionCodes": ["financials:view", ...] }
+                            also accepts permissionIds / { moduleId, action }[]
+  Invite:                   returns temporaryPassword (email send stubbed)
+  Create company:           bootstraps ADMIN role + security policy (no owner user)
+  setup-summary endpoint:   NOT shipped — derive from GET company + tab APIs
+
+
+================================================================================
+1. AXIOS + UNWRAP (required)
+================================================================================
+
+  // src/lib/api/axios.js
+  import axios from 'axios';
+
+  const api = axios.create({
+    baseURL: process.env.NEXT_PUBLIC_API_URL, // http://localhost:3002/api/v1
+    withCredentials: true,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  api.interceptors.request.use((config) => {
+    const token = sessionStorage.getItem('accessToken');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    const companyId = sessionStorage.getItem('activeCompanyId');
+    if (companyId) config.headers['x-company-id'] = companyId;
+    return config;
+  });
+
+  api.interceptors.response.use(
+    (res) => res,
+    async (error) => {
+      const original = error.config;
+      if (error.response?.status === 401 && !original._retry) {
+        original._retry = true;
+        try {
+          const refreshed = await api.post('/auth/refresh');
+          const newToken = refreshed.data.data.accessToken;
+          sessionStorage.setItem('accessToken', newToken);
+          original.headers.Authorization = `Bearer ${newToken}`;
+          return api(original);
+        } catch {
+          sessionStorage.clear();
+          window.location.href = '/auth/login';
+        }
+      }
+      return Promise.reject(error);
+    },
+  );
+
+  export default api;
+
+  // unwrap
+  export function unwrap(promise) {
+    return promise.then((res) => res.data.data);
+  }
+
+
+================================================================================
+2. AUTH APIs (Phase 1 — ALL LIVE)
+================================================================================
+
+  Method  Path                       Auth     Notes
+  ------  -------------------------  -------  --------------------------------
+  GET     /auth/company              Public   ?companyCode=DEMO_ACME
+  POST    /auth/login                Public   companyCode + employeeCode + password
+  POST    /auth/signup               Public   self-serve tenant signup
+  GET     /auth/me                   Bearer   permissions[] for admin nav
+  GET     /auth/companies            Bearer   user's memberships (switcher)
+                                              NOT platform tenant catalogue
+  POST    /auth/switch-company       Bearer   { companyId }
+  POST    /auth/refresh              Cookie   httpOnly refresh_token
+  POST    /auth/logout               Bearer
+
+LOGIN body
+----------
+  {
+    "companyCode": "DEMO_ACME",
+    "employeeCode": "ADMIN001",
+    "password": "Admin@123"
+  }
+
+LOGIN data (no top-level permissions[] — call /auth/me)
+-------------------------------------------------------
+  {
+    "accessToken": "...",
+    "expiresIn": "15m",
+    "tokenType": "Bearer",
+    "requiresCompanySelection": false,
+    "user": { "userId", "username", "displayName", "email" },
+    "companies": [ { "companyId", "companyCode", "name", "isDefault", "status" } ],
+    "activeCompany": {
+      "companyId", "companyCode", "name", "status",
+      "role": { "roleId", "roleCode", "roleName" },
+      "subscription": { "status", "planCode", "planName", "endDate", "isCustom" },
+      "modules": [
+        { "moduleId", "moduleCode", "moduleName", "isActive",
+          "permissions": ["view","create","edit","delete","approve"] }
+      ]
+    }
+  }
+
+  Side effect: sets httpOnly cookie refresh_token (Path /api/v1/auth)
+
+GET /auth/me
+------------
+  Same snapshot shape + permissions[] (platform/admin nav codes when applicable)
+
+  PLATFORM_OWNER permissions include:
+    companies:view|create|edit|delete
+    subscription:view|edit
+    plans:view|edit
+    modules:view|edit
+
+  Product sidebar: activeCompany.modules[] only
+  Admin menus: permissions[]  (companies / subscription / plans / modules)
+
+NAV GATING
+----------
+  Companies menu          -> companies:view
+  Subscription Plans menu -> subscription:view  (or plans:view)
+  Modules menu            -> modules:view
+  Company Setup           -> company ADMIN role on own tenant
+
+
+================================================================================
+3. ADMIN DASHBOARD — STATUS MATRIX (P0–P2 ALL LIVE)
+================================================================================
+
+Screen                     APIs                                              Status
+-------------------------  ------------------------------------------------  ------
+Companies list/detail      /companies CRUD + /status                         LIVE
+Plans catalogue            /plans CRUD                                       LIVE
+Modules catalogue          /modules CRUD                                     LIVE
+Company subscription       /companies/:id/subscription (+ cancel)            LIVE
+Company modules            GET + PATCH .../modules/:moduleId                 LIVE
+Organization               branches|departments|designations|warehouses      LIVE
+Roles                      CRUD + clone + GET/PUT permissions                LIVE
+Users                      invite|profile|role|membership|status|access|del  LIVE
+Auth                       /auth/*                                           LIVE
+setup-summary              GET /companies/:id/setup-summary                  OPTIONAL — not shipped
+Invite email               mailer                                            STUB — temp password in API
+
+
+################################################################################
+# SECTION A — PLATFORM COMPANIES
+# Screen: /dashboard/admin/companies
+# Who: PLATFORM_OWNER / companies:view
+################################################################################
+
+A1. LIST                                            [LIVE]
+  GET /companies?page=1&limit=200&search=&status=
+
+  Item fields include companyId, companyCode, name, legalName, domain, email,
+  phone, city, country, logoUrl, status, plus summary:
+    subscriptionStatus, planCode, planName, subscriptionEndDate,
+    activeModuleCount, entitledModuleCount, userCount
+
+  FE may filter out companyCode === "PLATFORM"
+
+A2. GET BY ID                                       [LIVE]
+  GET /companies/:companyId
+  Same object as list item (+ summaries)
+
+A3. CREATE                                          [LIVE]
+  POST /companies
+  Permission: companies:create
+  Body:
+  {
+    "name": "New Tenant Ltd",
+    "companyCode": "NEW_TENANT",
+    "legalName": "New Tenant Private Limited",
+    "domain": "newtenant.com",
+    "email": "admin@newtenant.com",
+    "phone": "+91-9000000000",
+    "city": "Bengaluru",
+    "country": "IN",
+    "logoUrl": null,
+    "status": "trial"
+  }
+  Bootstraps: security policy + ADMIN role permissions (no login user)
+
+A4. UPDATE                                          [LIVE]
+  PATCH /companies/:companyId
+  Permission: companies:edit
+  Partial: name, legalName, domain, email, phone, city, country, logoUrl, timezone
+
+A5. CHANGE STATUS                                   [LIVE]
+  PATCH /companies/:companyId/status
+  Body: { "status": "suspended" }
+  Values: trial | active | suspended | cancelled
+
+A6. DELETE                                          [LIVE]
+  DELETE /companies/:companyId   (soft-delete)
+
+
+################################################################################
+# SECTION B — PLANS CATALOGUE
+# Screen: /dashboard/admin/plans
+# Path alias: /plans  (also /subscription/plans)
+################################################################################
+
+B1. LIST    GET  /plans?page&limit&search&isActive          [LIVE]
+            limit max = 200 (shared ListQuerySchema)
+B2. CREATE  POST /plans                                     [LIVE]
+B3. UPDATE  PATCH /plans/:planId                            [LIVE]
+B4. DELETE  DELETE /plans/:planId                           [LIVE]
+
+  Create/update body (moduleIds optional — syncs plan_modules):
+  {
+    "planCode": "PRO",
+    "name": "Professional",
+    "description": "Most popular",
+    "price": 2999,
+    "billingCycle": "monthly",
+    "maxUsers": 50,
+    "maxStorageGb": 100,
+    "isActive": true,
+    "moduleIds": ["6", "13", "14"]
+  }
+
+  billingCycle: monthly | quarterly | yearly
+  Permissions: plans:* or subscription:* (aliases accepted)
+
+
+################################################################################
+# SECTION C — MODULES CATALOGUE
+# Screen: /dashboard/admin/modules
+# Path alias: /modules  (also /subscription/modules)
+################################################################################
+
+C1. LIST    GET  /modules?moduleType=product|admin&isActive  [LIVE]
+            moduleType accepted on shared list query; limit max = 200
+            Who: PLATFORM_OWNER (full) + company ADMIN (read catalogues for
+                 subscription picker). Mutations still need modules:edit etc.
+C2. CREATE  POST /modules                                    [LIVE]
+C3. UPDATE  PATCH /modules/:moduleId                         [LIVE]
+            (toggle: { "isActive": false })
+C4. DELETE  DELETE /modules/:moduleId                        [LIVE]
+
+  Body fields: moduleCode, moduleName, description, icon, sortOrder,
+               moduleType (product|admin), isActive
+  NOTE: color / price not in schema — omit or ignore if sent
+
+  Product codes: financials, supply-chain, hcm, manufacturing, crm, projects
+
+
+################################################################################
+# SECTION D — COMPANY SUBSCRIPTION
+# Tab: subscription
+################################################################################
+
+D1. GET CURRENT                                     [LIVE]
+  GET /companies/:companyId/subscription
+  data = subscription object OR null
+
+D2. ASSIGN / REPLACE                                [LIVE]
+  POST /companies/:companyId/subscription
+
+  Stock plan:
+  {
+    "planId": "1",
+    "isCustom": false,
+    "startDate": "2026-07-15",
+    "endDate": "2027-07-15",
+    "billingCycle": "monthly",
+    "amount": 999,
+    "autoRenew": true,
+    "status": "trial"
+  }
+
+  Custom:
+  {
+    "planId": null,
+    "isCustom": true,
+    "moduleIds": ["6", "13", "14"],
+    "startDate": "2026-07-15",
+    "endDate": "2027-07-15",
+    "billingCycle": "yearly",
+    "amount": 5000,
+    "autoRenew": false,
+    "status": "active"
+  }
+
+D3. CANCEL                                          [LIVE]
+  POST /companies/:companyId/subscription/cancel
+  Body (optional): { "reason": "Customer request" }
+
+
+################################################################################
+# SECTION E — COMPANY MODULES
+# Tab: modules
+################################################################################
+
+E1. LIST                                            [LIVE]
+  GET /companies/:companyId/modules
+  Flattened items: companyModuleId, companyId, moduleId, moduleCode,
+                   moduleName, isActive, expiryDate
+
+E2. TOGGLE                                          [LIVE]
+  PATCH /companies/:companyId/modules/:moduleId
+  :moduleId = catalogue moduleId OR companyModuleId
+  Body: { "isActive": false }
+
+
+################################################################################
+# SECTION F — ORGANIZATION (LIVE)
+# Tab: organization
+################################################################################
+
+F1. BRANCHES
+  GET/POST    /companies/:companyId/branches
+  PATCH/DELETE /companies/:companyId/branches/:branchId
+  Body: { branchCode, name, address, city, country, phone, isActive }
+
+F2. DEPARTMENTS
+  GET/POST    /companies/:companyId/departments
+  PATCH/DELETE /companies/:companyId/departments/:departmentId
+  Body: { departmentCode, name, parentDepartmentId, isActive }
+
+F3. DESIGNATIONS
+  GET/POST    /companies/:companyId/designations
+  PATCH/DELETE /companies/:companyId/designations/:designationId
+  Body: { designationCode, name, gradeLevel, isActive }
+
+F4. WAREHOUSES
+  GET/POST    /companies/:companyId/warehouses
+  PATCH/DELETE /companies/:companyId/warehouses/:warehouseId
+  Body: { warehouseCode, name, branchId, address, isActive }
+
+  Permissions: branches:* departments:* designations:* warehouses:*
+
+
+################################################################################
+# SECTION G — ROLES
+# Tab: roles
+################################################################################
+
+G1. LIST     GET    /companies/:companyId/roles              [LIVE]
+G2. CREATE   POST   /companies/:companyId/roles              [LIVE]
+             Body: { roleCode, roleName, description? }
+G3. UPDATE   PATCH  /companies/:companyId/roles/:roleId      [LIVE]
+G4. DELETE   DELETE /companies/:companyId/roles/:roleId      [LIVE]
+             Rejects if isSystem or users still assigned
+G5. CLONE    POST   /companies/:companyId/roles/:roleId/clone [LIVE]
+             Body: { roleCode, roleName }
+G6. PERMS    GET    /companies/:companyId/roles/:roleId/permissions [LIVE]
+             PUT    /companies/:companyId/roles/:roleId/permissions [LIVE]
+
+  PUT preferred body (REPLACE set):
+  {
+    "permissionCodes": [
+      "financials:view",
+      "financials:create",
+      "companies:view",
+      "users:view"
+    ]
+  }
+
+  Also accepted:
+  { "permissionIds": ["1","2"] }
+  { "permissions": [ { "moduleId": "6", "action": "view" } ] }
+
+
+################################################################################
+# SECTION H — COMPANY USERS
+# Tab: users
+################################################################################
+
+H1. LIST     GET  /companies/:companyId/users?search&status&roleId&page&limit  [LIVE]
+
+  Item shape:
+  {
+    "userId": "15",
+    "username": "demo.admin",
+    "displayName": "Demo Admin",
+    "firstName": "Demo",
+    "lastName": "Admin",
+    "email": "admin@demo-acme.com",
+    "mobile": null,
+    "isActive": true,
+    "membership": {
+      "userCompanyId": "1",
+      "employeeId": "ADMIN001",
+      "departmentId": null,
+      "designationId": null,
+      "branchId": null,
+      "warehouseId": null,
+      "status": "active",
+      "isDefault": true
+    },
+    "role": { "roleId": "15", "roleCode": "ADMIN", "roleName": "Administrator" }
+  }
+
+H2. INVITE   POST /companies/:companyId/users/invite        [LIVE]
+  Body:
+  {
+    "firstName": "Priya",
+    "lastName": "Sharma",
+    "email": "priya@demo-acme.com",
+    "mobile": "+91-9888800000",
+    "employeeId": "EMP-00050",
+    "roleId": "16",
+    "sendInviteEmail": true
+  }
+  Response includes temporaryPassword (string) for new users.
+  Existing email → attaches membership; temporaryPassword may be null.
+  Email delivery currently stubbed.
+
+H3. PROFILE  PATCH /companies/:companyId/users/:userId       [LIVE]
+  Body: { firstName, lastName, displayName, mobile }
+
+H4. ROLE     PUT   /companies/:companyId/users/:userId/role  [LIVE]
+  Body: { "roleId": "16" }
+
+H5. MEMBERSHIP  PATCH .../users/:userId/membership           [LIVE]
+  Body: { employeeId, departmentId, designationId, branchId, warehouseId }
+
+H6. STATUS   PATCH .../users/:userId/status                  [LIVE]
+  Body: { "status": "suspended" }   // active | suspended
+
+H7. MODULE ACCESS  PUT .../users/:userId/module-access       [LIVE]
+  Body:
+  {
+    "items": [
+      { "moduleId": "6",  "accessType": "grant" },
+      { "moduleId": "13", "accessType": "deny" }
+    ]
+  }
+
+H8. REMOVE   DELETE /companies/:companyId/users/:userId      [LIVE]
+  Soft-removes membership + company roles + overrides; keeps global user.
+
+
+================================================================================
+4. ONBOARDING CHECKLIST (FE-derived — no setup-summary API yet)
+================================================================================
+
+  1. Profile complete     → company has name + companyCode (+ email)
+  2. Subscription         → GET .../subscription not null (active|trial)
+  3. Organization         → ≥1 branch AND ≥1 department
+  4. Modules enabled      → ≥1 company module isActive
+  5. Roles & users        → ≥1 role AND ≥1 membership
+  6. Go live              → company.status === "active"
+
+
+================================================================================
+5. REDUX HYDRATION HINTS
+================================================================================
+
+  After login:
+    auth.accessToken, auth.user, auth.isAuthenticated
+    iam.companies, iam.activeCompany
+    iam.permissions ← from GET /auth/me only (not login)
+
+  roleCode for UI:
+    (activeCompany.role?.roleCode || '').toLowerCase()
+
+  Usable company statuses for switcher: active | trial
+
+
+================================================================================
+6. HTTP ERRORS
+================================================================================
+
+  400  Validation
+  401  Bad credentials / expired token → try refresh
+  403  Insufficient permissions / suspended / locked
+  404  Not found
+  409  Conflict (duplicate code/email)
+
+
+================================================================================
+7. SUGGESTED FE API WRAPPERS
+================================================================================
+
+  // auth
+  resolveCompany, login, signup, getMe, getCompanies, switchCompany, refresh, logout
+
+  // platform admin
+  listCompanies, getCompany, createCompany, updateCompany, setCompanyStatus, deleteCompany
+  listPlans, createPlan, updatePlan, deletePlan
+  listModules, createModule, updateModule, deleteModule
+
+  // company setup (pass companyId)
+  getSubscription, assignSubscription, cancelSubscription
+  listCompanyModules, toggleCompanyModule
+  branches|departments|designations|warehouses CRUD
+  roles CRUD + cloneRole + getRolePermissions + setRolePermissions
+  listUsers, inviteUser, updateUser, setUserRole, updateMembership,
+  setUserStatus, setModuleAccess, removeUser
+
+
+================================================================================
+8. BUILD CHECKLIST (FE)
+================================================================================
+
+  [ ] NEXT_PUBLIC_API_URL=http://localhost:3002/api/v1
+  [ ] axios withCredentials + Bearer + 401 refresh
+  [ ] Login with companyCode + employeeCode + password
+  [ ] Hydrate from login snapshot; permissions from /auth/me
+  [ ] Companies list uses GET /companies (OWNER001)
+  [ ] Replace MOCK company/plans/modules/users/roles/org with live paths above
+  [ ] Invite UI shows temporaryPassword when returned
+  [ ] permissionCodes used for role matrix PUT
+
+
+================================================================================
+END — single source of truth for FE integration
+================================================================================

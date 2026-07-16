@@ -17,13 +17,20 @@ export class PlansService {
 
   async findAll(query: PaginationQueryDto) {
     const { items, total, page, limit } = await this.repository.findMany(query);
-    return serialize(toPaginatedResult(items, total, page, limit));
+    const mapped = items.map((plan) => ({
+      ...plan,
+      moduleIds: plan.planModules?.map((pm) => pm.moduleId.toString()) ?? [],
+    }));
+    return serialize(toPaginatedResult(mapped, total, page, limit));
   }
 
   async findOne(id: string) {
     const plan = await this.repository.findById(id);
     if (!plan) throw new NotFoundException('Subscription plan');
-    return serialize(plan);
+    return serialize({
+      ...plan,
+      moduleIds: plan.planModules?.map((pm) => pm.moduleId.toString()) ?? [],
+    });
   }
 
   async create(dto: CreateSubscriptionPlanDto, actorId?: string) {
@@ -32,6 +39,7 @@ export class PlansService {
     if (existing) throw new ConflictException('Plan code already exists');
 
     const plan = await this.repository.create({ ...dto, planCode: code }, actorId);
+    if (!plan) throw new ConflictException('Failed to create plan');
 
     await this.auditService.log({
       performedBy: actorId,
@@ -41,7 +49,10 @@ export class PlansService {
       newValue: { planCode: code, name: plan.name },
     });
 
-    return serialize(plan);
+    return serialize({
+      ...plan,
+      moduleIds: plan.planModules?.map((pm) => pm.moduleId.toString()) ?? [],
+    });
   }
 
   async update(id: string, dto: UpdateSubscriptionPlanDto, actorId?: string) {
@@ -49,6 +60,7 @@ export class PlansService {
     if (!existing) throw new NotFoundException('Subscription plan');
 
     const plan = await this.repository.update(id, dto, actorId);
+    if (!plan) throw new NotFoundException('Subscription plan');
 
     await this.auditService.log({
       performedBy: actorId,
@@ -58,7 +70,10 @@ export class PlansService {
       newValue: dto as Record<string, unknown>,
     });
 
-    return serialize(plan);
+    return serialize({
+      ...plan,
+      moduleIds: plan.planModules?.map((pm) => pm.moduleId.toString()) ?? [],
+    });
   }
 
   async remove(id: string, actorId?: string) {

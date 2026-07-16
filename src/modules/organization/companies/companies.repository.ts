@@ -15,6 +15,25 @@ const COMPANIES_LIST_FILTER: ListFilterOptions = {
   defaultSortField: 'createdAt',
 };
 
+const companySummaryInclude = {
+  defaultCurrency: true,
+  subscriptions: {
+    where: { deletedAt: null },
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    include: { plan: true },
+  },
+  companyModules: {
+    where: { deletedAt: null },
+    select: { isActive: true, moduleId: true },
+  },
+  _count: {
+    select: {
+      userCompanies: { where: { deletedAt: null, status: 'active' as const } },
+    },
+  },
+};
+
 @Injectable()
 export class CompaniesRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -29,7 +48,7 @@ export class CompaniesRepository {
         skip,
         take: limit,
         orderBy: resolveOrderBy(query, COMPANIES_LIST_FILTER),
-        include: { defaultCurrency: true },
+        include: companySummaryInclude,
       }),
       this.prisma.company.count({ where }),
     ]).then(([items, total]) => ({ items, total, page, limit }));
@@ -38,7 +57,7 @@ export class CompaniesRepository {
   findById(id: string) {
     return this.prisma.company.findFirst({
       where: { companyId: parseBigIntId(id), deletedAt: null },
-      include: { defaultCurrency: true },
+      include: companySummaryInclude,
     });
   }
 
@@ -48,23 +67,86 @@ export class CompaniesRepository {
     });
   }
 
-  create(dto: CreateCompanyDto, createdBy?: string) {
-    return this.prisma.company.create({
-      data: {
-        companyCode: dto.companyCode.trim().toUpperCase(),
-        name: dto.name.trim(),
-        legalName: dto.legalName,
-        domain: dto.domain,
-        email: dto.email,
-        phone: dto.phone,
-        timezone: dto.timezone ?? 'UTC',
-        defaultCurrencyId: dto.defaultCurrencyId
-          ? parseBigIntId(dto.defaultCurrencyId, 'defaultCurrencyId')
-          : undefined,
-        createdBy: createdBy ? parseBigIntId(createdBy, 'createdBy') : undefined,
-      },
-      include: { defaultCurrency: true },
+  async createWithBootstrap(dto: CreateCompanyDto, createdBy?: string) {
+    const actorId = createdBy ? parseBigIntId(createdBy, 'createdBy') : undefined;
+
+    return this.prisma.$transaction(async (tx) => {
+      const company = await tx.company.create({
+        data: {
+          companyCode: dto.companyCode.trim().toUpperCase(),
+          name: dto.name.trim(),
+          legalName: dto.legalName,
+          domain: dto.domain,
+          email: dto.email,
+          phone: dto.phone,
+          city: dto.city,
+          country: dto.country,
+          logoUrl: dto.logoUrl ?? undefined,
+          timezone: dto.timezone ?? 'UTC',
+          status: dto.status ?? 'trial',
+          defaultCurrencyId: dto.defaultCurrencyId
+            ? parseBigIntId(dto.defaultCurrencyId, 'defaultCurrencyId')
+            : undefined,
+          createdBy: actorId,
+        },
+      });
+
+      await tx.companySecurityPolicy.create({
+        data: {
+          companyId: company.companyId,
+          createdBy: actorId,
+        },
+      });
+
+      const adminRole = await tx.role.create({
+        data: {
+          companyId: company.companyId,
+          roleCode: 'ADMIN',
+          roleName: 'Administrator',
+          description: 'Full company administrator',
+          isSystem: true,
+          createdBy: actorId,
+        },
+      });
+
+      const adminPermissions = await tx.permission.findMany({
+        where: {
+          OR: [
+            { permissionCode: { startsWith: 'companies:' } },
+            { permissionCode: { startsWith: 'users:' } },
+            { permissionCode: { startsWith: 'roles:' } },
+            { permissionCode: { startsWith: 'departments:' } },
+            { permissionCode: { startsWith: 'branches:' } },
+            { permissionCode: { startsWith: 'designations:' } },
+            { permissionCode: { startsWith: 'warehouses:' } },
+            { permissionCode: { startsWith: 'company_subscriptions:' } },
+            { permissionCode: { startsWith: 'company_modules:' } },
+          ],
+        },
+      });
+
+      if (adminPermissions.length > 0) {
+        await tx.rolePermission.createMany({
+          data: adminPermissions.map((p) => ({
+            roleId: adminRole.roleId,
+            moduleId: p.moduleId,
+            permissionId: p.permissionId,
+            isAllowed: true,
+            createdBy: actorId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return tx.company.findFirst({
+        where: { companyId: company.companyId },
+        include: companySummaryInclude,
+      });
     });
+  }
+
+  create(dto: CreateCompanyDto, createdBy?: string) {
+    return this.createWithBootstrap(dto, createdBy);
   }
 
   update(id: string, dto: UpdateCompanyDto, updatedBy?: string) {
@@ -76,15 +158,38 @@ export class CompaniesRepository {
         ...(dto.domain !== undefined ? { domain: dto.domain } : {}),
         ...(dto.email !== undefined ? { email: dto.email } : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
+        ...(dto.city !== undefined ? { city: dto.city } : {}),
+        ...(dto.country !== undefined ? { country: dto.country } : {}),
+        ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
         ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
         ...(dto.defaultCurrencyId !== undefined
-          ? { defaultCurrencyId: parseBigIntId(dto.defaultCurrencyId, 'defaultCurrencyId') }
+          ? {
+              defaultCurrencyId: dto.defaultCurrencyId
+                ? parseBigIntId(dto.defaultCurrencyId, 'defaultCurrencyId')
+                : null,
+            }
           : {}),
         updatedBy: updatedBy ? parseBigIntId(updatedBy, 'updatedBy') : undefined,
         updatedAt: new Date(),
       },
-      include: { defaultCurrency: true },
+      include: companySummaryInclude,
+    });
+  }
+
+  updateStatus(
+    id: string,
+    status: 'trial' | 'active' | 'suspended' | 'cancelled',
+    updatedBy?: string,
+  ) {
+    return this.prisma.company.update({
+      where: { companyId: parseBigIntId(id) },
+      data: {
+        status,
+        updatedBy: updatedBy ? parseBigIntId(updatedBy, 'updatedBy') : undefined,
+        updatedAt: new Date(),
+      },
+      include: companySummaryInclude,
     });
   }
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { bigintIdSchema } from '@/common/zod/common.schemas';
 
 export const billingCycleSchema = z.enum(['monthly', 'yearly', 'quarterly']);
 
@@ -12,6 +13,7 @@ export const CreateSubscriptionPlanSchema = z.object({
   maxUsers: z.coerce.number().int().positive().optional(),
   maxStorageGb: z.coerce.number().int().positive().optional(),
   isActive: z.boolean().optional().default(true),
+  moduleIds: z.array(bigintIdSchema).optional(),
 });
 
 export const UpdateSubscriptionPlanSchema = z.object({
@@ -22,6 +24,7 @@ export const UpdateSubscriptionPlanSchema = z.object({
   maxUsers: z.coerce.number().int().positive().optional().nullable(),
   maxStorageGb: z.coerce.number().int().positive().optional().nullable(),
   isActive: z.boolean().optional(),
+  moduleIds: z.array(bigintIdSchema).optional(),
 });
 
 export class CreateSubscriptionPlanDto extends createZodDto(CreateSubscriptionPlanSchema) {}

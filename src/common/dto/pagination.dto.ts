@@ -5,7 +5,8 @@ import { bigintIdSchema } from '@/common/zod/common.schemas';
 /** Shared list/query filters — every GET list endpoint accepts these (repos use what applies). */
 export const ListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional().default(1),
-  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  // FE admin catalogues use limit=200 (companies / plans / modules / users)
+  limit: z.coerce.number().int().min(1).max(200).optional().default(20),
   search: z.string().optional(),
   sortBy: z.string().optional().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
@@ -33,6 +34,7 @@ export const ListQuerySchema = z.object({
   deviceUuid: z.string().optional(),
   moduleId: bigintIdSchema.optional(),
   planId: bigintIdSchema.optional(),
+  moduleType: z.enum(['product', 'admin']).optional(),
   isTrusted: z.coerce.boolean().optional(),
   isBlocked: z.coerce.boolean().optional(),
   isVerified: z.coerce.boolean().optional(),
@@ -54,8 +56,8 @@ export type ListQuery = z.infer<typeof ListQuerySchema>;
 export type PaginationQuery = ListQuery;
 
 export function getPaginationParams(dto: ListQuery) {
-  const page = dto.page ?? 1;
-  const limit = dto.limit ?? 20;
+  const page = Math.max(1, Number(dto.page) || 1);
+  const limit = Math.min(200, Math.max(1, Number(dto.limit) || 20));
   const skip = (page - 1) * limit;
   return { page, limit, skip };
 }

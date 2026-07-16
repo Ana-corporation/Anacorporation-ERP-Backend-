@@ -1,0 +1,314 @@
+================================================================================
+RBAC — PROMPT REVIEW + DEV SECTION (NestJS ERP Backend)
+================================================================================
+Updated:  2026-07-16
+Audience: Backend / product / FE (planning)
+Status:   FEEDBACK + PLANNED WORK (not a from-scratch rebuild)
+
+Related:
+  docs/FRONTEND-ADMIN-DASHBOARD-HANDOFF.txt
+  docs/ADMIN-DASHBOARD-API-STATUS.txt
+  src/common/guards/permissions.guard.ts
+  src/common/guards/tenant.guard.ts
+  src/common/decorators/auth.decorators.ts
+  src/common/utils/permission-check.util.ts
+  src/common/constants/permissions.constant.ts
+
+
+================================================================================
+1. ORIGINAL PROMPT (SUMMARY)
+================================================================================
+
+Goal: Scalable Role-Based Access Control (RBAC) in NestJS.
+
+Asked for:
+  - JWT auth; extract role, companyId, permissions
+  - Roles: Platform Admin, Company Admin, Manager, Employee
+  - Validate role + module assignment + CRUD before every protected API → 403
+  - Company isolation (non-platform only own company)
+  - DB: Role / Permission (boolean CRUD) / RolePermission / User(roleId, companyId)
+  - Nest Guards + @Roles / @Permissions decorators
+  - Example: Manager GET /users → 403; GET /leads → 200
+  - Modular, TypeScript, Nest best practices
+
+
+================================================================================
+2. VERDICT
+================================================================================
+
+The prompt is a solid RBAC *product* spec for a greenfield app.
+
+For THIS repo it must be treated as:
+  HARDEN + STANDARDIZE existing JWT + @RequirePermissions + tenant isolation
+
+NOT:
+  Rebuild RBAC from zero / replace the permission schema with boolean CRUD columns
+
+
+================================================================================
+3. WHAT ALREADY EXISTS (DO NOT REINVENT)
+================================================================================
+
+  Area                    Current implementation
+  ----------------------  ----------------------------------------------------
+  JWT auth                JwtAuthGuard, /auth/login, refresh cookie
+  User context            role, companyId, permissions[] on AuthenticatedUser
+  Decorators              @RequirePermissions('users:view', ...)
+  Guards                  PermissionsGuard, TenantGuard, ModulePermissionGuard
+  Roles (examples)        PLATFORM_OWNER, ADMIN, MANAGER, STAFF, SALES
+  Permission model        permissionCode rows (e.g. users:view, crm:create)
+  Join tables             RolePermission, UserRole, UserCompany (multi-tenant)
+  Product gate            company_modules.isActive + subscription status
+  User overrides          company user module-access grant/deny APIs
+
+Conclusion: Core RBAC plumbing is live. Gaps are consistency, isolation
+hardening, tests, and clear policy docs — not a missing framework.
+
+
+================================================================================
+4. FEEDBACK — WHAT TO CHANGE IN THE PROMPT
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 Database shape (§5 of original) — DO NOT USE AS-IS
+--------------------------------------------------------------------------------
+
+Original proposed:
+  Permission { moduleName, create, read, update, delete }   // boolean columns
+  User { roleId, companyId }                                // single company/role
+
+Conflicts with live multi-tenant IAM:
+  - Permissions are rows with permissionCode + action
+  - Users ↔ companies via UserCompany (membership)
+  - Users ↔ roles via UserRole (per company)
+  - Single roleId/companyId on User breaks switch-company
+
+KEEP existing Prisma models:
+  Role, Permission, RolePermission, User, UserCompany, UserRole
+  (+ company_modules, user_module_access)
+
+
+--------------------------------------------------------------------------------
+4.2 Role name mapping
+--------------------------------------------------------------------------------
+
+  Prompt name          Use in this codebase
+  -------------------  ----------------------------------
+  Platform Admin       PLATFORM_OWNER  (and/or super_admin JWT)
+  Company Admin        ADMIN
+  Manager              MANAGER
+  Employee             STAFF / SALES / custom company roles
+
+Prefer permission checks over hard-coded role name lists so new roles
+do not require code changes.
+
+
+--------------------------------------------------------------------------------
+4.3 Decorators — prefer permission codes
+--------------------------------------------------------------------------------
+
+Original example:
+  @Roles('PlatformAdmin', 'CompanyAdmin')
+  @Permissions('Users', 'Read')
+
+Canonical for this backend:
+  @RequirePermissions('users:view')
+
+Optional: keep @Roles only for rare platform-only shortcuts.
+Role names change; permission codes stay stable.
+
+
+--------------------------------------------------------------------------------
+4.4 Actions vocabulary
+--------------------------------------------------------------------------------
+
+Original: Create / Read / Update / Delete
+
+This repo (product + admin):
+  view | create | edit | delete | approve
+
+Codes look like:
+  users:view
+  financials:create
+  companies:edit
+  modules:view
+
+
+--------------------------------------------------------------------------------
+4.5 Missing layers the prompt must include
+--------------------------------------------------------------------------------
+
+  1) Subscription / company_modules
+     Role permission alone is not enough for product APIs.
+     Module must be entitled and isActive for the company.
+
+  2) User module overrides
+     grant / deny already exist on company users APIs.
+
+  3) Platform vs tenant company lists
+     GET /companies          → platform catalogue (PLATFORM_OWNER)
+     GET /auth/companies     → memberships (company switcher)
+     Isolation rules differ.
+
+  4) Membership status
+     suspended membership → cannot use that company (403)
+
+
+--------------------------------------------------------------------------------
+4.6 Expected API examples — use real paths
+--------------------------------------------------------------------------------
+
+Original used GET /users and GET /leads (not current contract).
+
+Prefer:
+  GET /companies/:companyId/users
+  Future product e.g. CRM leads when that module ships
+
+Examples:
+  MANAGER without users:view     → 403 on .../users
+  MANAGER with crm:view + module → 200 on CRM route (when live)
+  ADMIN                          → 200 on own-company users
+  PLATFORM_OWNER                 → 200 on platform companies list
+
+
+--------------------------------------------------------------------------------
+4.7 Clarify “Platform can access every module”
+--------------------------------------------------------------------------------
+
+Today PLATFORM_OWNER gets platform/admin permission codes + catalogues.
+Product module entitlement may still apply unless we explicitly document:
+
+  Option A (recommended): Platform bypasses product entitlement for
+                          platform/admin APIs only; product tenant data
+                          still company-scoped when acting in a company.
+  Option B: PLATFORM_OWNER bypasses all product module checks globally.
+
+Pick one in the Dev Section and stick to it.
+
+
+================================================================================
+5. WHAT TO KEEP FROM THE ORIGINAL PROMPT
+================================================================================
+
+  - Clear intent: platform vs company vs limited roles
+  - HTTP 403 on deny
+  - Company isolation for non-platform roles
+  - NestJS Guards + Decorators
+  - Modular / scalable — new modules with minimal code changes
+  - TypeScript + Nest best practices
+
+
+================================================================================
+6. DEV SECTION — PLANNED WORK (NEXT IMPLEMENTATION)
+================================================================================
+
+Goal: Harden and document RBAC without rewriting IAM schema.
+
+--------------------------------------------------------------------------------
+6.1 Inventory (read-only first)
+--------------------------------------------------------------------------------
+
+  [ ] List all @RequirePermissions usages and map to routes
+  [ ] Document seed roles: PLATFORM_OWNER, ADMIN, MANAGER, STAFF, SALES
+  [ ] Document permission code catalogue (permissions.constant.ts)
+  [ ] Document alias map (permission-check.util.ts)
+  [ ] Document TenantGuard + x-company-id behavior
+  [ ] Document subscription + company_modules gate for product modules
+
+
+--------------------------------------------------------------------------------
+6.2 Policy matrix (source of truth)
+--------------------------------------------------------------------------------
+
+  Role              Scope              Admin APIs              Product APIs
+  ----------------  -----------------  ----------------------  ------------------
+  PLATFORM_OWNER    All companies      Full (companies,        Per policy 4.7
+                                       plans, modules, …)
+  ADMIN             Own company only   Company setup IAM/org   Entitled modules
+                                       + subscription assign   full actions if
+                                                               role grants them
+  MANAGER           Own company only   No (or limited)         Only assigned
+                                                               module actions
+  STAFF / SALES     Own company only   No                      Only assigned
+                                                               module actions
+
+  Deny → 403 Insufficient permissions
+
+
+--------------------------------------------------------------------------------
+6.3 Hardening tasks (implementation)
+--------------------------------------------------------------------------------
+
+  P0 — Isolation
+  [ ] Ensure every company-scoped repository filters by companyId
+  [ ] Reject cross-company IDs (IDOR) even if permission codes match
+  [ ] PLATFORM_OWNER may list/mutate across tenants only on platform routes
+  [ ] Suspended membership blocked at auth/context load
+
+  P1 — Permission consistency
+  [ ] Every protected controller uses @RequirePermissions (no silent open routes)
+  [ ] Prefer codes over @Roles hardcoding
+  [ ] Keep FE aliases (plans:view ↔ subscription_plans:view, etc.)
+  [ ] Product routes: permission code AND active company module
+
+  P2 — Extensibility
+  [ ] Adding a module = seed permissions + assign to roles (no guard rewrite)
+  [ ] Adding a role = seed Role + RolePermission rows only
+  [ ] Optional: thin RolesGuard for PLATFORM_OWNER-only endpoints
+
+  P3 — Tests
+  [ ] Matrix tests: OWNER / ADMIN / MANAGER / STAFF
+        - GET /companies/:id/users
+        - GET /plans, GET /modules
+        - sample product route (when available)
+  [ ] Expect 200 vs 403 per matrix
+  [ ] Smoke script extension (scripts/smoke-admin-dashboard.ps1)
+
+
+--------------------------------------------------------------------------------
+6.4 Explicitly OUT OF SCOPE (unless product reopens)
+--------------------------------------------------------------------------------
+
+  - Migrating Permission to boolean create/read/update/delete columns
+  - Moving roleId/companyId onto User as the only tenancy model
+  - Replacing @RequirePermissions with a new decorator system
+  - Rewriting Phase 1 auth (/auth/login, /me, refresh)
+
+
+--------------------------------------------------------------------------------
+6.5 Acceptance criteria
+--------------------------------------------------------------------------------
+
+  [ ] Manager without users:view cannot list company users (403)
+  [ ] Admin can list users for own company only (200)
+  [ ] Platform owner can list platform companies (200)
+  [ ] Cross-company access by Admin/Manager/Staff returns 403 or 404
+  [ ] New permission code can be added via constant + seed without guard changes
+  [ ] Docs updated: this file + FRONTEND-ADMIN-DASHBOARD-HANDOFF permission notes
+
+
+================================================================================
+7. SUGGESTED IMPLEMENTATION ORDER
+================================================================================
+
+  1. Write policy matrix (section 6.2) — product sign-off
+  2. Audit controllers for missing @RequirePermissions / missing companyId filter
+  3. Fix IDOR / tenant gaps
+  4. Align seed roles with matrix (PLATFORM_OWNER, ADMIN, MANAGER, STAFF)
+  5. Add automated permission matrix tests
+  6. Update FE handoff with final role → permission expectations
+
+
+================================================================================
+8. QUICK DECISIONS TO CONFIRM BEFORE CODING
+================================================================================
+
+  D1  Platform product-module bypass?     A = admin APIs only  |  B = global
+  D2  Employee = STAFF only, or STAFF+SALES as separate policies?
+  D3  Company ADMIN may READ global /plans and /modules?  (currently YES)
+  D4  Cross-company leak response:        403 vs 404 (prefer 404 to hide existence?)
+
+
+================================================================================
+END — RBAC prompt review + Dev Section
+================================================================================

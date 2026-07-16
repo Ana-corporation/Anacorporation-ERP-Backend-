@@ -15,16 +15,16 @@ export class CompanyModulesController {
 
   @Get()
   @RequirePermissions('company_modules:view')
-  @ApiOperation({ summary: 'List modules for company' })
+  @ApiOperation({ summary: 'List modules for company (flattened FE shape)' })
   findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
-    return this.companyModulesService.findAll(companyId, query);
+    return this.companyModulesService.findAllFlat(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('company_modules:view')
-  @ApiOperation({ summary: 'Get company module by ID' })
+  @ApiOperation({ summary: 'Get company module by companyModuleId or catalogue moduleId' })
   findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
-    return this.companyModulesService.findOne(id, companyId);
+    return this.companyModulesService.findOneFlexible(id, companyId);
   }
 
   @Post()
@@ -40,14 +40,14 @@ export class CompanyModulesController {
 
   @Patch(':id')
   @RequirePermissions('company_modules:edit')
-  @ApiOperation({ summary: 'Update company module' })
+  @ApiOperation({ summary: 'Update/toggle by companyModuleId or catalogue moduleId' })
   update(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
     @Body() dto: UpdateCompanyModuleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.companyModulesService.update(id, companyId, dto, user.sub);
+    return this.companyModulesService.updateFlexible(id, companyId, dto, user.sub);
   }
 
   @Delete(':id')
@@ -58,6 +58,6 @@ export class CompanyModulesController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.companyModulesService.remove(id, companyId, user.sub);
+    return this.companyModulesService.removeFlexible(id, companyId, user.sub);
   }
 }

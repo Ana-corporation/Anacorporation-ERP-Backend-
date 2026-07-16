@@ -1,0 +1,246 @@
+================================================================================
+BUSINESS PARTNER MODULE — SECTIONS AND FIELDS
+================================================================================
+Source: Business partners Module.pdf
+Pages reviewed: 4
+Scope: Visible sections and field labels only
+
+
+================================================================================
+1. BUSINESS PARTNERS MODULE MENU
+================================================================================
+
+Business Partners
+  - Business Partner Master Data
+  - Activity
+  - Campaign Generation Wizard
+  - Campaign
+  - Internal Reconciliations
+  - Business Partner Reports
+
+
+================================================================================
+2. BUSINESS PARTNER MASTER DATA
+================================================================================
+
+Main / Header Fields
+--------------------
+  - Code
+  - Name
+  - Foreign Name
+  - Group
+  - Currency
+  - Federal Tax ID
+  - BP Currency
+  - Orders
+  - Opportunities
+
+Main Tabs
+---------
+  - General
+  - Payment Terms
+  - Payment Run
+  - Accounting
+  - Remarks
+
+
+================================================================================
+3. GENERAL TAB
+================================================================================
+
+Contact Details
+---------------
+  - Tel 1
+  - Tel 2
+  - Mobile Phone
+  - Fax
+  - E-Mail
+  - Web Site
+
+Business Partner Details
+------------------------
+  - Shipping Type
+  - Password
+  - Factoring Indicator
+  - BP Project
+  - Industry
+  - Business Partner Type
+  - Alias Name
+
+Identification and Contact
+--------------------------
+  - Contact Person
+  - ID No. 2
+  - Unified Federal Tax ID
+  - Remarks
+
+Classification and Location
+---------------------------
+  - BP Channel Code
+  - Territory
+  - Language
+  - GLN
+
+Status and Marketing
+--------------------
+  - Active
+  - Inactive
+  - Advanced
+  - Block Sending Marketing Content
+
+
+================================================================================
+4. PAYMENT TERMS TAB
+================================================================================
+
+Payment Terms
+-------------
+  - Payment Terms
+  - Interest on Arrears %
+  - Price List
+  - Total Discount %
+  - Credit Limit
+  - Commitment Limit
+  - Dunning Term
+  - Automatic Posting
+  - Effective Discount
+
+Credit Card and Payment Details
+-------------------------------
+  - Credit Card Type
+  - Credit Card No.
+  - Expiration Date
+  - ID Number
+  - Average Delay
+  - Priority
+  - Default IBAN
+  - Holidays
+  - Payment Dates
+
+Business Partner Bank
+---------------------
+  - Bank Country
+  - Bank Name
+  - Bank Code
+  - Account
+  - BIC/SWIFT Code
+  - Bank Account Name
+  - Branch
+  - Ctrl Int. ID
+  - IBAN
+  - Mandate ID
+  - Date of Signature
+
+Delivery and Check Options
+--------------------------
+  - Allow Partial Delivery of Sales Order
+  - Allow Partial Delivery per Row
+  - Do Not Apply Discount Groups
+  - Endorsable Checks from This BP
+  - This BP Accepts Endorsed Checks
+
+
+================================================================================
+5. PAYMENT RUN TAB
+================================================================================
+
+House Bank
+----------
+  - Country
+  - Bank
+  - Account
+  - Branch
+  - IBAN
+  - BIC/SWIFT Code
+  - Control No.
+
+Reference and Payment Options
+-----------------------------
+  - Reference Details
+  - Payment Block
+  - Single Payment
+  - Collection Authorization
+  - Bank Charges Allocation Code
+
+
+================================================================================
+6. ACCOUNTING TAB
+================================================================================
+
+Accounting Subsections
+----------------------
+  - General
+  - Tax
+
+
+================================================================================
+7. ACCOUNTING — GENERAL
+================================================================================
+
+Consolidating BP
+----------------
+  - Payment Consolidation
+  - Delivery Consolidation
+
+Accounts Receivable
+-------------------
+  - Accounts Receivable
+  - Down Payment Clearing Account
+  - Down Payment Interim Account
+
+Planning
+--------
+  - Planning Group
+  - Affiliate
+
+
+================================================================================
+8. ACCOUNTING — TAX
+================================================================================
+
+Tax
+---
+  - Tax Status
+  - Tax Group
+
+
+================================================================================
+9. REMARKS TAB
+================================================================================
+
+Remarks
+-------
+  - Remarks / Free Text
+  - Long Text (maximum shown: 256000 characters)
+
+
+================================================================================
+10. ADDITIONAL / SIDE-PANEL FIELDS
+================================================================================
+
+Customer Classification
+-----------------------
+  - Customer Region
+  - Customer sub Industry
+  - Effective Date
+  - Approximate Payment
+  - Customer core-Industry
+
+Email Contacts
+--------------
+  - Invoice Email 1
+  - Invoice Email 2
+  - Commercial Contact Email
+
+Commercial Classification
+-------------------------
+  - Annual Budget 2020
+  - Business Unit
+  - Cust Class2 Global
+  - Sales Support
+  - Procurement Executive
+
+
+================================================================================
+END — BUSINESS PARTNER MODULE SECTIONS AND FIELDS
+================================================================================

@@ -4,7 +4,12 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
-import { CreateRoleDto, SetRolePermissionsDto, UpdateRoleDto } from './dto/role.dto';
+import {
+  CloneRoleDto,
+  CreateRoleDto,
+  SetRolePermissionsDto,
+  UpdateRoleDto,
+} from './dto/role.dto';
 import { RolesService } from './roles.service';
 
 @ApiTags('Roles')
@@ -18,6 +23,13 @@ export class RolesController {
   @ApiOperation({ summary: 'List roles for company' })
   findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
     return this.rolesService.findAll(companyId, query);
+  }
+
+  @Get(':id/permissions')
+  @RequirePermissions('roles:view')
+  @ApiOperation({ summary: 'Get role permissions matrix' })
+  getPermissions(@Param('companyId') companyId: string, @Param('id') id: string) {
+    return this.rolesService.getPermissions(id, companyId);
   }
 
   @Get(':id')
@@ -36,6 +48,18 @@ export class RolesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.rolesService.create(companyId, dto, user.sub);
+  }
+
+  @Post(':id/clone')
+  @RequirePermissions('roles:create')
+  @ApiOperation({ summary: 'Clone role with permissions' })
+  clone(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @Body() dto: CloneRoleDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.rolesService.clone(id, companyId, dto, user.sub);
   }
 
   @Patch(':id')
@@ -63,7 +87,7 @@ export class RolesController {
 
   @Put(':id/permissions')
   @RequirePermissions('roles:edit')
-  @ApiOperation({ summary: 'Replace role permissions' })
+  @ApiOperation({ summary: 'Replace role permissions (ids, codes, or module+action)' })
   setPermissions(
     @Param('companyId') companyId: string,
     @Param('id') id: string,

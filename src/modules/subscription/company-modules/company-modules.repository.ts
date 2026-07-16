@@ -68,13 +68,12 @@ export class CompanyModulesRepository {
   }
 
   findByCompanyAndModule(companyId: string, moduleId: string) {
-    return this.prisma.companyModule.findUnique({
+    return this.prisma.companyModule.findFirst({
       where: {
-        companyId_moduleId: {
-          companyId: parseBigIntId(companyId),
-          moduleId: parseBigIntId(moduleId),
-        },
+        companyId: parseBigIntId(companyId),
+        moduleId: parseBigIntId(moduleId),
       },
+      include: { module: true },
     });
   }
 

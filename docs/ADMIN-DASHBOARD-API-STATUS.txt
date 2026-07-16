@@ -1,0 +1,118 @@
+================================================================================
+ADMIN DASHBOARD API STATUS — Gap Fill (P0 + P1 + P2)
+================================================================================
+*** Prefer the combined FE handoff: docs/FRONTEND-ADMIN-DASHBOARD-HANDOFF.txt ***
+(This file is a short status matrix only.)
+
+Updated: 2026-07-15
+Backend:  http://localhost:3002/api/v1
+Swagger:  http://localhost:3002/docs
+
+Envelope: { success, message, data, timestamp }
+Auth: Bearer access token (+ httpOnly refresh cookie)
+
+Smoke accounts (after `npm run seed:client-logins`):
+  PLATFORM  / OWNER001 / Owner@123  → platform companies, /plans, /modules
+  DEMO_ACME / ADMIN001 / Admin@123  → company setup (users, roles, org)
+
+Optional smoke script: scripts/smoke-admin-dashboard.ps1
+  (server must be running; result 2026-07-15: 13 passed, 0 failed)
+
+
+================================================================================
+STATUS MATRIX
+================================================================================
+
+Legend:
+  LIVE   = already existed, unchanged behavior for FE
+  FIXED  = implemented/aligned in this gap-fill
+  ALIAS  = new FE path; original route still works
+
+
+--- P0 Companies ---
+  FIXED  GET    /companies                     (+ summary: subscriptionStatus, planCode,
+                                                 planName, userCount, activeModuleCount)
+  FIXED  GET    /companies/:id                 (+ same summary fields when cheap)
+  FIXED  POST   /companies                     (city, country, logoUrl, status;
+                                                 bootstraps security policy + ADMIN role)
+  FIXED  PATCH  /companies/:id                 (city, country, logoUrl)
+  FIXED  PATCH  /companies/:id/status          body { status: trial|active|suspended|cancelled }
+  LIVE   DELETE /companies/:id                 (soft-delete)
+  LIVE   GET/PATCH /super-admin/companies*     (kept; platform JWT)
+
+
+--- P1 Company subscription (singular) ---
+  FIXED  GET    /companies/:companyId/subscription           (active/trial or data: null)
+  FIXED  POST   /companies/:companyId/subscription           (assign/replace; isCustom+moduleIds)
+  FIXED  POST   /companies/:companyId/subscription/cancel
+  LIVE   plural /companies/:companyId/subscriptions*         (kept)
+
+
+--- P1 Company modules ---
+  FIXED  GET    /companies/:companyId/modules                (flattened moduleCode/Name/isActive)
+  FIXED  PATCH  /companies/:companyId/modules/:moduleId      (catalogue moduleId OR row id)
+  LIVE   POST/DELETE company modules                         (kept)
+
+
+--- P1 Roles ---
+  LIVE   CRUD   /companies/:companyId/roles
+  FIXED  POST   /companies/:companyId/roles/:id/clone        body { roleCode, roleName }
+  FIXED  GET    /companies/:companyId/roles/:id/permissions
+  FIXED  PUT    /companies/:companyId/roles/:id/permissions  accepts permissionCodes
+                                                                 and/or permissionIds
+
+
+--- P1 Company users ---
+  FIXED  GET    /companies/:companyId/users
+  FIXED  POST   /companies/:companyId/users/invite           returns temporaryPassword
+                                                                 (email send stubbed)
+  FIXED  PATCH  /companies/:companyId/users/:userId
+  FIXED  PUT    /companies/:companyId/users/:userId/role
+  FIXED  PATCH  /companies/:companyId/users/:userId/membership
+  FIXED  PATCH  /companies/:companyId/users/:userId/status
+  FIXED  PUT    /companies/:companyId/users/:userId/module-access
+  FIXED  DELETE /companies/:companyId/users/:userId          (soft-remove membership;
+                                                                 does not delete global user)
+  LIVE   header-scoped /users*                               (kept for compatibility)
+
+
+--- P1 Org CRUD (already done — no gap) ---
+  LIVE   branches / departments / designations / warehouses under company
+
+
+--- P2 Plans / Modules catalogue ---
+  ALIAS  CRUD   /plans                        → PlansService
+  ALIAS  CRUD   /modules                      → ErpModulesService (+ moduleType)
+  LIVE   CRUD   /subscription/plans
+  LIVE   CRUD   /subscription/modules
+  FIXED  Plans create/update accept optional moduleIds[] (sync plan_modules)
+  FIXED  FE permission codes: subscription:*, plans:*, modules:*
+         (+ aliases vs subscription_plans / subscription_modules in guards)
+
+
+================================================================================
+PERMISSIONS NOTES
+================================================================================
+- PLATFORM_OWNER: platform nav codes (companies / subscription / plans / modules)
+- DEMO_ACME ADMIN: product modules full + Company Setup IAM/org/tenant subscription codes
+  (seed: COMPANY_ADMIN_PERMISSION_CODES in seed-client-login-samples.js)
+- New companies from POST /companies bootstrap ADMIN with companies/users/roles/org
+  + company_subscriptions/company_modules prefixes
+
+
+================================================================================
+OUT OF SCOPE (unchanged)
+================================================================================
+- Auth Phase 1: /auth/company|login|signup|me|companies|switch-company|refresh|logout
+- Mailer for invite emails (temp password returned in API response)
+- color/price on modules (not in schema)
+
+
+================================================================================
+QUICK SMOKE (manual)
+================================================================================
+1. Login PLATFORM OWNER001 → GET /companies, GET /plans, GET /modules
+2. Login DEMO_ACME ADMIN001 → GET /companies/15/users, GET .../roles,
+   POST .../users/invite (expect temporaryPassword)
+3. GET /companies/:id/subscription ; PATCH .../modules/:moduleId { isActive }
+4. POST .../roles/:id/clone ; GET/PUT .../permissions with permissionCodes

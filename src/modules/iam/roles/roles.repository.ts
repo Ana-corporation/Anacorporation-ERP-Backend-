@@ -123,4 +123,49 @@ export class RolesRepository {
 
     return this.findById(roleId, role.companyId!.toString());
   }
+
+  findPermissionsByCodes(codes: string[]) {
+    return this.prisma.permission.findMany({
+      where: { permissionCode: { in: codes } },
+    });
+  }
+
+  findPermissionsByModuleActions(items: { moduleId: string; action: string }[]) {
+    return this.prisma.permission.findMany({
+      where: {
+        OR: items.map((item) => ({
+          moduleId: parseBigIntId(item.moduleId),
+          action: item.action as never,
+        })),
+      },
+    });
+  }
+
+  async cloneRole(
+    sourceRoleId: string,
+    companyId: string,
+    dto: CreateRoleDto,
+    createdBy?: string,
+  ) {
+    const source = await this.findById(sourceRoleId, companyId);
+    if (!source) return null;
+
+    const role = await this.create(companyId, dto, createdBy);
+    const permissionIds = source.rolePermissions.map((rp) => rp.permissionId.toString());
+    if (permissionIds.length > 0) {
+      await this.setPermissions(role.roleId.toString(), permissionIds, createdBy);
+    }
+
+    return this.findById(role.roleId.toString(), companyId);
+  }
+
+  countUsersWithRole(roleId: string, companyId: string) {
+    return this.prisma.userRole.count({
+      where: {
+        roleId: parseBigIntId(roleId),
+        companyId: parseBigIntId(companyId),
+        isActive: true,
+      },
+    });
+  }
 }

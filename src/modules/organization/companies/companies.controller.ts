@@ -5,7 +5,11 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { CompaniesService } from './companies.service';
-import { CreateCompanyDto, UpdateCompanyDto } from './dto/company.dto';
+import {
+  CreateCompanyDto,
+  UpdateCompanyDto,
+  UpdateCompanyStatusDto,
+} from './dto/company.dto';
 
 @ApiTags('Companies')
 @ApiBearerAuth()
@@ -15,7 +19,7 @@ export class CompaniesController {
 
   @Get()
   @RequirePermissions('companies:view')
-  @ApiOperation({ summary: 'List companies' })
+  @ApiOperation({ summary: 'List companies (platform tenant catalogue)' })
   findAll(@Query() query: PaginationQueryDto) {
     return this.companiesService.findAll(query);
   }
@@ -33,6 +37,17 @@ export class CompaniesController {
   @ApiOperation({ summary: 'Create company' })
   create(@Body() dto: CreateCompanyDto, @CurrentUser() user: AuthenticatedUser) {
     return this.companiesService.create(dto, user?.sub);
+  }
+
+  @Patch(':id/status')
+  @RequirePermissions('companies:edit')
+  @ApiOperation({ summary: 'Change company status' })
+  updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateCompanyStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.companiesService.updateStatus(id, dto.status, user.sub);
   }
 
   @Patch(':id')
