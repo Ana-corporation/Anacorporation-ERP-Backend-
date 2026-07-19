@@ -1,63 +1,58 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { VendorsService } from './vendors.service';
-import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { RequireModulePermission } from '@/common/decorators/auth.decorators';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
-import { RequireModulePermission, RequirePermissions } from '@/common/decorators/auth.decorators';
-import { CurrentUser, OrganizationId } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
+import { VendorsService } from './vendors.service';
 
 @ApiTags('Vendors')
 @ApiBearerAuth()
-@Controller('vendors')
+@Controller('companies/:companyId/vendors')
 export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
 
   @Get()
-  @RequirePermissions('vendors:read')
   @RequireModulePermission('supply-chain', 'view')
-  findAll(@OrganizationId() organizationId: string, @Query() query: PaginationQueryDto) {
-    return this.vendorsService.findAll(organizationId, query);
+  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+    return this.vendorsService.findAll(companyId, query);
   }
 
   @Get(':id')
-  @RequirePermissions('vendors:read')
   @RequireModulePermission('supply-chain', 'view')
-  findOne(@OrganizationId() organizationId: string, @Param('id') id: string) {
-    return this.vendorsService.findOne(organizationId, id);
+  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+    return this.vendorsService.findOne(id, companyId);
   }
 
   @Post()
-  @RequirePermissions('vendors:write')
   @RequireModulePermission('supply-chain', 'create')
   create(
-    @OrganizationId() organizationId: string,
-    @CurrentUser() user: AuthenticatedUser,
+    @Param('companyId') companyId: string,
     @Body() dto: CreateVendorDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.vendorsService.create(organizationId, dto, user.sub);
+    return this.vendorsService.create(companyId, dto, user.sub);
   }
 
   @Patch(':id')
-  @RequirePermissions('vendors:write')
   @RequireModulePermission('supply-chain', 'edit')
   update(
-    @OrganizationId() organizationId: string,
-    @CurrentUser() user: AuthenticatedUser,
+    @Param('companyId') companyId: string,
     @Param('id') id: string,
     @Body() dto: UpdateVendorDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.vendorsService.update(organizationId, id, dto, user.sub);
+    return this.vendorsService.update(id, companyId, dto, user.sub);
   }
 
   @Delete(':id')
-  @RequirePermissions('vendors:write')
   @RequireModulePermission('supply-chain', 'delete')
   remove(
-    @OrganizationId() organizationId: string,
-    @CurrentUser() user: AuthenticatedUser,
+    @Param('companyId') companyId: string,
     @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.vendorsService.remove(organizationId, id, user.sub);
+    return this.vendorsService.remove(id, companyId, user.sub);
   }
 }

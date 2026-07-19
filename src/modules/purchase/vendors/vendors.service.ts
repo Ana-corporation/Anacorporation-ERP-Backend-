@@ -1,95 +1,82 @@
 import { Injectable } from '@nestjs/common';
-import { Vendor, Prisma, AuditAction } from '@prisma/client';
-import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
-import { BaseTenantRepository } from '@/common/repositories/base-tenant.repository';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
-import { withTenant } from '@/common/utils/prisma.helpers';
-import { NotFoundException, ConflictException } from '@/common/exceptions/business.exception';
+import { ConflictException, NotFoundException } from '@/common/exceptions/business.exception';
+import { serialize } from '@/common/utils/bigint.util';
+import { toPaginatedResult } from '@/common/utils/pagination.util';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
-
-@Injectable()
-export class VendorsRepository extends BaseTenantRepository<
-  Vendor,
-  Prisma.VendorCreateInput,
-  Prisma.VendorUpdateInput
-> {
-  protected readonly modelName = 'vendor' as const;
-
-  constructor(prisma: PrismaService) {
-    super(prisma);
-  }
-}
+import { VendorsRepository } from './vendors.repository';
 
 @Injectable()
 export class VendorsService {
   constructor(
     private readonly repository: VendorsRepository,
-    private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
   ) {}
 
-  findAll(organizationId: string, query: PaginationQueryDto) {
-    return this.repository.findAllPaginated(organizationId, query, ['code', 'name', 'email']);
+  async findAll(companyId: string, query: PaginationQueryDto) {
+    const { items, total, page, limit } = await this.repository.findManyByCompany(companyId, query);
+    return serialize(toPaginatedResult(items, total, page, limit));
   }
 
-  async findOne(organizationId: string, id: string) {
-    const vendor = await this.repository.findById(organizationId, id);
+  async findOne(id: string, companyId: string) {
+    const vendor = await this.repository.findById(id, companyId);
     if (!vendor) throw new NotFoundException('Vendor');
-    return vendor;
+    return serialize(vendor);
   }
 
-  async create(organizationId: string, dto: CreateVendorDto, actorId: string) {
-    const existing = await this.prisma.vendor.findFirst({
-      where: withTenant(organizationId, { code: dto.code }),
-    });
-    if (existing) throw new ConflictException('Vendor code already exists');
+  async create(companyId: string, dto: CreateVendorDto, actorId: string) {
+    const code = dto.code.trim().toUpperCase();
+    if (await this.repository.findByCode(companyId, code)) {
+      throw new ConflictException('Vendor code already exists');
+    }
 
-    const vendor = await this.repository.create(organizationId, {
-      ...dto,
-      metadata: (dto.metadata ?? {}) as Prisma.InputJsonValue,
-    } as Prisma.VendorCreateInput);
+    const vendor = await this.repository.create(companyId, { ...dto, code }, actorId);
 
     await this.auditService.log({
-      organizationId,
-      actorId,
-      action: AuditAction.CREATE,
-      entityType: 'Vendor',
-      entityId: vendor.id,
-      newValues: dto as unknown as Record<string, unknown>,
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.create,
+      entityName: 'Vendor',
+      entityId: vendor.vendorId.toString(),
+      newValue: { vendorCode: code, name: vendor.name },
     });
 
-    return vendor;
+    return serialize(vendor);
   }
 
-  async update(organizationId: string, id: string, dto: UpdateVendorDto, actorId: string) {
-    await this.findOne(organizationId, id);
-    const vendor = await this.repository.update(organizationId, id, {
-      ...dto,
-      metadata: dto.metadata as Prisma.InputJsonValue,
-    });
+  async update(id: string, companyId: string, dto: UpdateVendorDto, actorId: string) {
+    if (!(await this.repository.findById(id, companyId))) {
+      throw new NotFoundException('Vendor');
+    }
+
+    const vendor = await this.repository.update(id, dto, actorId);
 
     await this.auditService.log({
-      organizationId,
-      actorId,
-      action: AuditAction.UPDATE,
-      entityType: 'Vendor',
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.update,
+      entityName: 'Vendor',
       entityId: id,
-      newValues: dto as unknown as Record<string, unknown>,
+      newValue: dto as Record<string, unknown>,
     });
 
-    return vendor;
+    return serialize(vendor);
   }
 
-  async remove(organizationId: string, id: string, actorId: string) {
-    await this.findOne(organizationId, id);
-    await this.repository.softDelete(organizationId, id);
+  async remove(id: string, companyId: string, actorId: string) {
+    if (!(await this.repository.findById(id, companyId))) {
+      throw new NotFoundException('Vendor');
+    }
+
+    await this.repository.softDelete(id, actorId);
 
     await this.auditService.log({
-      organizationId,
-      actorId,
-      action: AuditAction.DELETE,
-      entityType: 'Vendor',
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.delete,
+      entityName: 'Vendor',
       entityId: id,
     });
 

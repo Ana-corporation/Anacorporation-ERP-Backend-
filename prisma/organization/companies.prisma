@@ -35,6 +35,7 @@ model Company {
   departments         Department[]
   designations        Designation[]
   warehouses          Warehouse[]
+  vendors             Vendor[]
   roles               Role[]
   userCompanies       UserCompany[]
   userRoles           UserRole[]

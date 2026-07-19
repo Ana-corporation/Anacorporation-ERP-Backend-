@@ -1,28 +1,46 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 
+/** Match prisma/purchase/vendors.prisma column sizes. */
+const emptyToUndefined = (value: unknown) =>
+  value === '' || value === null ? undefined : value;
+
+const optionalTrimmed = (max: number) =>
+  z.preprocess(
+    emptyToUndefined,
+    z.string().trim().max(max).optional(),
+  );
+
 export const CreateVendorSchema = z.object({
-  code: z.string().min(1),
-  name: z.string().min(1),
-  email: z.string().email().optional(),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  country: z.string().optional(),
-  taxId: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  code: z.string().trim().min(1).max(40),
+  name: z.string().trim().min(1).max(200),
+  email: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().email().max(255).optional(),
+  ),
+  phone: optionalTrimmed(50),
+  address: optionalTrimmed(500),
+  city: optionalTrimmed(100),
+  country: optionalTrimmed(100),
+  taxId: optionalTrimmed(80),
+  isActive: z.boolean().optional(),
+  /** Advanced SAP-style fields live here (payment, bank, accounting, remarks). */
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const UpdateVendorSchema = z.object({
-  name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  country: z.string().optional(),
-  taxId: z.string().optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+  email: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().email().max(255).optional(),
+  ),
+  phone: optionalTrimmed(50),
+  address: optionalTrimmed(500),
+  city: optionalTrimmed(100),
+  country: optionalTrimmed(100),
+  taxId: optionalTrimmed(80),
   isActive: z.boolean().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export class CreateVendorDto extends createZodDto(CreateVendorSchema) {}

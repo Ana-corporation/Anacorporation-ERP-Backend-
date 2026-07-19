@@ -16,6 +16,7 @@ import { SharedModule } from './modules/shared/shared.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { IamModule } from './modules/iam/iam.module';
 import { SubscriptionModule } from './modules/subscription/subscription.module';
+import { PurchaseModule } from './modules/purchase/purchase.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { HealthModule } from './modules/health/health.module';
     OrganizationModule,
     IamModule,
     SubscriptionModule,
+    PurchaseModule,
   ],
   providers: [
     { provide: APP_PIPE, useClass: ZodValidationPipe },
