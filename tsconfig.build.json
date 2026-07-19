@@ -6,7 +6,6 @@
     "dist",
     "**/*spec.ts",
     "src/modules/crm/**",
-    "src/modules/purchase/**",
     "src/modules/inventory/**",
     "src/modules/manufacturing/**",
     "src/modules/assets/**",
