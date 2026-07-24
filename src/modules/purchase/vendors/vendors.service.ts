@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { UserAuditAction } from '@prisma/client';
+import { Prisma, UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
+import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { ConflictException, NotFoundException } from '@/common/exceptions/business.exception';
 import { serialize } from '@/common/utils/bigint.util';
 import { toPaginatedResult } from '@/common/utils/pagination.util';
+import { CustomFieldsValuesService } from '@/modules/shared/custom-fields/custom-fields.service';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
+import { extractCfFilters, VendorListQueryDto } from './dto/vendor-list-query.dto';
 import { VendorsRepository } from './vendors.repository';
 
 @Injectable()
@@ -13,17 +16,54 @@ export class VendorsService {
   constructor(
     private readonly repository: VendorsRepository,
     private readonly auditService: AuditService,
+    private readonly prisma: PrismaService,
+    private readonly customFieldsValuesService: CustomFieldsValuesService,
   ) {}
 
-  async findAll(companyId: string, query: PaginationQueryDto) {
-    const { items, total, page, limit } = await this.repository.findManyByCompany(companyId, query);
-    return serialize(toPaginatedResult(items, total, page, limit));
+  async findAll(companyId: string, query: VendorListQueryDto & Record<string, unknown>) {
+    const cfFilters = extractCfFilters(query);
+    const recordIdFilter = await this.customFieldsValuesService.filterRecordIdsByCustomFields(
+      companyId,
+      'vendor',
+      cfFilters,
+    );
+
+    const { items, total, page, limit } = await this.repository.findManyByCompany(
+      companyId,
+      query,
+      recordIdFilter,
+    );
+
+    if (!query.includeCustomFields) {
+      return serialize(toPaginatedResult(items, total, page, limit));
+    }
+
+    const maps = await this.customFieldsValuesService.loadCustomFieldsMapsForRecords(
+      companyId,
+      'vendor',
+      items.map((v) => v.vendorId),
+    );
+
+    const withCf = items.map((item) => ({
+      ...serialize(item),
+      customFields: maps.get(item.vendorId.toString()) ?? {},
+    }));
+
+    return toPaginatedResult(withCf, total, page, limit);
   }
 
   async findOne(id: string, companyId: string) {
     const vendor = await this.repository.findById(id, companyId);
     if (!vendor) throw new NotFoundException('Vendor');
-    return serialize(vendor);
+
+    const withCustomFields = await this.customFieldsValuesService.mergeEntityWithCustomFields(
+      companyId,
+      'vendor',
+      vendor.vendorId.toString(),
+      serialize(vendor) as Record<string, unknown>,
+    );
+
+    return withCustomFields;
   }
 
   async create(companyId: string, dto: CreateVendorDto, actorId: string) {
@@ -32,7 +72,21 @@ export class VendorsService {
       throw new ConflictException('Vendor code already exists');
     }
 
-    const vendor = await this.repository.create(companyId, { ...dto, code }, actorId);
+    const { customFields, ...vendorDto } = dto;
+
+    const vendor = await this.prisma.$transaction(async (tx) => {
+      const client = tx as Prisma.TransactionClient;
+      const created = await this.repository.create(companyId, vendorDto, actorId, client);
+      await this.customFieldsValuesService.persistCustomFields(
+        companyId,
+        'vendor',
+        created.vendorId.toString(),
+        customFields,
+        'create',
+        client,
+      );
+      return created;
+    });
 
     await this.auditService.log({
       companyId,
@@ -43,7 +97,7 @@ export class VendorsService {
       newValue: { vendorCode: code, name: vendor.name },
     });
 
-    return serialize(vendor);
+    return this.findOne(vendor.vendorId.toString(), companyId);
   }
 
   async update(id: string, companyId: string, dto: UpdateVendorDto, actorId: string) {
@@ -51,7 +105,24 @@ export class VendorsService {
       throw new NotFoundException('Vendor');
     }
 
-    const vendor = await this.repository.update(id, dto, actorId);
+    const { customFields, ...vendorDto } = dto;
+
+    await this.prisma.$transaction(async (tx) => {
+      const client = tx as Prisma.TransactionClient;
+      if (Object.keys(vendorDto).length > 0) {
+        await this.repository.update(id, vendorDto, actorId, client);
+      }
+      if (customFields !== undefined) {
+        await this.customFieldsValuesService.persistCustomFields(
+          companyId,
+          'vendor',
+          id,
+          customFields,
+          'update',
+          client,
+        );
+      }
+    });
 
     await this.auditService.log({
       companyId,
@@ -62,7 +133,7 @@ export class VendorsService {
       newValue: dto as Record<string, unknown>,
     });
 
-    return serialize(vendor);
+    return this.findOne(id, companyId);
   }
 
   async remove(id: string, companyId: string, actorId: string) {

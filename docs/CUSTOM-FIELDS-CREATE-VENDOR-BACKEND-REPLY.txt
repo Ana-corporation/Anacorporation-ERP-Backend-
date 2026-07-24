@@ -1,0 +1,145 @@
+================================================================================
+BACKEND REPLY — CREATE CUSTOM FIELD (Vendor only)
+Date:     2026-07-22
+Status:   IMPLEMENTED for entityType=vendor
+FE can start Create UI: YES
+================================================================================
+
+0. VERDICT
+--------------------------------------------------------------------------------
+Vendor-only Create Custom Field workflow is implemented.
+Other modules (customer, employee, …) stay blocked until you say go.
+
+
+1. CHECKLIST
+--------------------------------------------------------------------------------
+  [x] POST create accepts sectionKey + flags ........ DONE
+  [x] fieldName auto-generated from displayName ..... DONE
+       (optional fieldName still accepted; collisions get _2, _3)
+  [x] Duplicate label/key → 400 ..................... DONE
+  [x] Reserved key collision → 400 .................. DONE (vendor reserved list)
+  [x] Dropdown requires options[] ................... DONE
+  [x] Number min/max stored + enforced on save ...... DONE
+  [x] GET list by entityType ........................ DONE { items, total }
+  [x] GET grouped by section ........................ DONE
+       ?entityType=vendor&groupedBySection=true
+  [x] PATCH update + DELETE soft .................... DONE
+  [x] GET modules + sections catalog ................ DONE
+  [x] Vendor form-schema still works + sectionKey ... DONE
+  [x] form-schema includes isFilterable ............. DONE
+  [x] DEMO seed: vendorTier, paymentTerms off ....... DONE
+  [x] List ?includeCustomFields=true ................ DONE
+  [x] Filter ?cf.vendorTier=preferred ............... DONE (filterable only)
+  [ ] unique validation enforced .................... DEFERRED (ignored if set)
+  [ ] Swagger polish ................................ DEFERRED (light)
+
+
+2. FINAL FIELD NAMES
+--------------------------------------------------------------------------------
+  Keep Phase 1 names:
+    entityType     (not moduleCode)
+    displayName    (admin label)
+    fieldName      (internal key — auto-generated)
+    sectionKey     (NEW)
+    sortOrder
+    customFields   map on Vendor GET/POST/PATCH
+
+  Vendor sectionKey enum:
+    general | contact | address | payment | paymentRun | accounting | remarks | custom
+    Unknown sectionKey → stored/treated as "custom" (no 400)
+
+
+3. NEW / UPDATED APIs
+--------------------------------------------------------------------------------
+
+A) Meta (admin Create form dropdowns)
+  GET /api/v1/custom-fields/meta/modules
+  GET /api/v1/custom-fields/meta/modules/vendor/sections
+      → sections[] + reservedFieldNames[]
+
+B) Create (fieldName optional)
+  POST /api/v1/companies/{companyId}/custom-fields
+  {
+    "entityType": "vendor",
+    "sectionKey": "general",
+    "displayName": "Factory Capacity",
+    "fieldType": "number",
+    "isRequired": false,
+    "sortOrder": 40,
+    "isFilterable": true,
+    "validation": { "min": 0, "max": 100000 },
+    "helpText": "Max units per day"
+  }
+  → generates fieldName "factoryCapacity"
+
+C) List
+  GET .../custom-fields?entityType=vendor
+  GET .../custom-fields?entityType=vendor&groupedBySection=true
+
+D) Form schema (Vendor form)
+  GET .../entities/vendor/form-schema
+  fields[] include: sectionKey, isFilterable, placeholder, helpText, …
+
+E) Vendor list
+  GET .../vendors?includeCustomFields=true
+  GET .../vendors?cf.vendorTier=preferred
+      (only if definition.isFilterable=true)
+
+
+4. SAMPLE CREATE RESPONSE
+--------------------------------------------------------------------------------
+  {
+    "fieldId": "101",
+    "companyId": "15",
+    "entityType": "vendor",
+    "sectionKey": "general",
+    "fieldName": "factoryCapacity",
+    "displayName": "Factory Capacity",
+    "fieldType": "number",
+    "isRequired": false,
+    "validation": { "min": 0, "max": 100000 },
+    "options": null,
+    "sortOrder": 40,
+    "isFilterable": true,
+    "isActive": true,
+    ...
+  }
+
+
+5. RESERVED NAMES (Vendor)
+--------------------------------------------------------------------------------
+  Core: code, vendorCode, vendorId, name, email, phone, address, city, country,
+        taxId, isActive, metadata, customFields, …
+  Metadata SAP keys: paymentTerms, bankName, iban, currency, …
+  Full list: GET .../meta/modules/vendor/sections → reservedFieldNames
+
+
+6. DEMO SEED (after npm run seed:client-logins)
+--------------------------------------------------------------------------------
+  Active:
+    vendorTier (dropdown, required, section=general, filterable)
+    preferredCurrency (text, 3 chars, section=custom)
+    isPreferredVendor (checkbox, section=custom, filterable)
+  Deactivated:
+    paymentTerms (legacy colliding demo)
+
+
+7. WHAT FE SHOULD DO NEXT
+--------------------------------------------------------------------------------
+  1. Restart backend if needed (prisma generate EPERM if server locked DLL)
+  2. Re-login ADMIN001
+  3. Build Create UI using meta modules/sections
+  4. Do NOT send fieldName unless override needed
+  5. Place fields on Vendor tabs using sectionKey from form-schema
+  6. Keep metadata SAP tabs separate from customFields
+
+
+8. OUT OF SCOPE (later modules)
+--------------------------------------------------------------------------------
+  customer | employee | SO | invoice
+  formula | lookup | file | multi_select | Redis | import-export
+
+
+================================================================================
+END
+================================================================================

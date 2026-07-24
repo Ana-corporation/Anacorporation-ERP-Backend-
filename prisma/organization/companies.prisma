@@ -49,6 +49,8 @@ model Company {
   userDelegations     UserDelegation[]
   userConsents        UserConsent[]
   userAudits          UserAudit[]
+  customFieldDefinitions CustomFieldDefinition[]
+  customFieldValues      CustomFieldValue[]
 
   @@map("companies")
 }

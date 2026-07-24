@@ -1,0 +1,75 @@
+================================================================================
+BACKEND ACK — FE REMAINING EXPECTATIONS (VENDOR ONLY)
+Date:     2026-07-22
+About:    FE → BACKEND remaining expectations
+Status:   ACKNOWLEDGED — Vendor APIs locked; bugfix only
+================================================================================
+
+0. SCOPE
+--------------------------------------------------------------------------------
+  AGREED: entityType = vendor ONLY
+  Will NOT add customer/employee/other modules until FE sends a new handoff.
+
+
+1. EXPECT-V-01  API STABILITY  → CONFIRMED
+--------------------------------------------------------------------------------
+  Locked field names (no rename while FE builds):
+    entityType, displayName, fieldName, sectionKey, sortOrder,
+    fieldType, isRequired, defaultValue, validation, options,
+    isFilterable, isActive, customFields (map)
+
+  Locked Vendor sectionKey enum:
+    general | contact | address | payment | paymentRun |
+    accounting | remarks | custom
+
+  Unknown sectionKey → treated as "custom"
+
+
+2. EXPECT-V-02  CURLS  → CONFIRMED AVAILABLE
+--------------------------------------------------------------------------------
+  A) GET /api/v1/custom-fields/meta/modules
+     GET /api/v1/custom-fields/meta/modules/vendor/sections
+         → sections[] + reservedFieldNames[]
+
+  B) POST /api/v1/companies/{companyId}/custom-fields
+         displayName required; fieldName optional → generated
+
+  C) GET .../custom-fields?entityType=vendor
+     GET .../custom-fields?entityType=vendor&groupedBySection=true
+
+  D) GET .../entities/vendor/form-schema
+         fields[] include sectionKey, isFilterable, placeholder, helpText
+
+  E) GET/POST/PATCH .../vendors
+         customFields remains MAP { "factoryCapacity": 250 }
+
+
+3. EXPECT-V-03  BUGFIX ONLY  → AGREED
+--------------------------------------------------------------------------------
+  If FE reports Vendor issues (400/403/500, missing sectionKey,
+  paymentTerms still active, cf.* filter, etc.), BE will fix Vendor only.
+
+
+4. EXPECT-V-04 / V-05  → ACCEPTED DEFERRED
+--------------------------------------------------------------------------------
+  unique validation  = deferred
+  Swagger polish     = deferred
+  Not blockers for FE Create UI.
+
+
+5. BE STANCE WHILE FE BUILDS
+--------------------------------------------------------------------------------
+  - Stay on Vendor support
+  - No new entityTypes
+  - No breaking contract changes
+  - Reply quickly on Vendor bugs
+
+
+6. FE CAN START
+--------------------------------------------------------------------------------
+  YES — build Vendor Create Custom Field UI now.
+
+
+================================================================================
+END
+================================================================================

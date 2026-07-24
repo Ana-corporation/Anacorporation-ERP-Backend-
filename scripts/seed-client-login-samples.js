@@ -38,6 +38,13 @@ const PRODUCT_MODULE_CODES = [
 
 const PHASE1_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'];
 
+const CUSTOM_FIELDS_PERMISSION_CODES = [
+  { module: 'shared', code: 'custom_fields:view', name: 'View Custom Fields', action: 'view' },
+  { module: 'shared', code: 'custom_fields:create', name: 'Create Custom Fields', action: 'create' },
+  { module: 'shared', code: 'custom_fields:edit', name: 'Edit Custom Fields', action: 'edit' },
+  { module: 'shared', code: 'custom_fields:delete', name: 'Delete Custom Fields', action: 'delete' },
+];
+
 /** Platform owner flat permissions expected by frontend Administration nav */
 const PLATFORM_OWNER_PERMISSION_CODES = [
   { module: 'organization', code: 'companies:view', name: 'View Companies', action: 'view' },
@@ -51,6 +58,7 @@ const PLATFORM_OWNER_PERMISSION_CODES = [
   { module: 'subscription', code: 'modules:edit', name: 'Edit Modules', action: 'edit' },
   { module: 'subscription', code: 'plans:view', name: 'View Plans', action: 'view' },
   { module: 'subscription', code: 'plans:edit', name: 'Edit Plans', action: 'edit' },
+  ...CUSTOM_FIELDS_PERMISSION_CODES,
 ];
 
 const ACCOUNTS = [
@@ -97,7 +105,7 @@ const ACCOUNTS = [
       crm: ['view', 'create', 'edit', 'delete', 'approve'],
       projects: ['view', 'create', 'edit', 'delete', 'approve'],
     },
-    platformPermissionCodes: [],
+    platformPermissionCodes: CUSTOM_FIELDS_PERMISSION_CODES.map((p) => p.code),
   },
   {
     level: 'manager',
@@ -233,7 +241,7 @@ async function ensureModules() {
     (await prisma.module.findMany()).map((m) => [m.moduleCode, m]),
   );
 
-  for (const perm of PLATFORM_OWNER_PERMISSION_CODES) {
+  for (const perm of [...PLATFORM_OWNER_PERMISSION_CODES, ...CUSTOM_FIELDS_PERMISSION_CODES]) {
     const mod = modulesByCode.get(perm.module);
     if (!mod) continue;
     await prisma.permission.upsert({
@@ -629,6 +637,107 @@ async function seedAccount(account, modulesByCode) {
   );
 }
 
+async function ensureVendorCustomFieldSamples() {
+  const company = await prisma.company.findUnique({ where: { companyCode: 'DEMO_ACME' } });
+  if (!company) return;
+
+  // Deactivate colliding legacy demo field (paymentTerms overlaps SAP metadata tab)
+  await prisma.customFieldDefinition.updateMany({
+    where: {
+      companyId: company.companyId,
+      entityType: 'vendor',
+      fieldName: 'paymentTerms',
+      deletedAt: null,
+    },
+    data: {
+      isActive: false,
+      deletedAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+
+  const samples = [
+    {
+      fieldName: 'vendorTier',
+      displayName: 'Vendor tier',
+      fieldType: 'dropdown',
+      sectionKey: 'general',
+      isRequired: true,
+      isFilterable: true,
+      sortOrder: 10,
+      options: [
+        { value: 'strategic', label: 'Strategic partner' },
+        { value: 'preferred', label: 'Preferred supplier' },
+        { value: 'spot', label: 'Spot / one-time vendor' },
+      ],
+      defaultValue: 'preferred',
+    },
+    {
+      fieldName: 'preferredCurrency',
+      displayName: 'Billing currency (custom)',
+      fieldType: 'text',
+      sectionKey: 'custom',
+      isRequired: false,
+      isFilterable: false,
+      sortOrder: 20,
+      validation: { maxLength: 3, minLength: 3 },
+    },
+    {
+      fieldName: 'isPreferredVendor',
+      displayName: 'Mark as preferred vendor',
+      fieldType: 'checkbox',
+      sectionKey: 'custom',
+      isRequired: false,
+      isFilterable: true,
+      sortOrder: 30,
+      defaultValue: false,
+    },
+  ];
+
+  for (const sample of samples) {
+    await prisma.customFieldDefinition.upsert({
+      where: {
+        companyId_entityType_fieldName: {
+          companyId: company.companyId,
+          entityType: 'vendor',
+          fieldName: sample.fieldName,
+        },
+      },
+      update: {
+        displayName: sample.displayName,
+        fieldType: sample.fieldType,
+        sectionKey: sample.sectionKey,
+        isRequired: sample.isRequired,
+        isFilterable: sample.isFilterable,
+        sortOrder: sample.sortOrder,
+        options: sample.options ?? undefined,
+        validation: sample.validation ?? undefined,
+        defaultValue: sample.defaultValue ?? undefined,
+        isActive: true,
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+      create: {
+        companyId: company.companyId,
+        entityType: 'vendor',
+        fieldName: sample.fieldName,
+        displayName: sample.displayName,
+        fieldType: sample.fieldType,
+        sectionKey: sample.sectionKey,
+        isRequired: sample.isRequired,
+        isFilterable: sample.isFilterable,
+        sortOrder: sample.sortOrder,
+        options: sample.options ?? undefined,
+        validation: sample.validation ?? undefined,
+        defaultValue: sample.defaultValue ?? undefined,
+        isActive: true,
+      },
+    });
+  }
+
+  console.log('Vendor custom field samples ready for DEMO_ACME (paymentTerms deactivated).');
+}
+
 async function main() {
   console.log('Seeding client login sample accounts...\n');
 
@@ -638,6 +747,8 @@ async function main() {
 
   const modulesByCode = await ensureModules();
   console.log('Modules + permissions ready.\n');
+
+  await ensureVendorCustomFieldSamples();
 
   const results = [];
   for (const account of ACCOUNTS) {

@@ -1,0 +1,259 @@
+================================================================================
+VENDOR CUSTOM FIELDS — IMPLEMENTATION PLAN (PHASE 1)
+Scope      : First entity = Vendor; others added one-by-one after this is stable
+Date       : 2026-07-21
+Status     : Ready to implement (Vendor pilot)
+================================================================================
+
+1. REFERENCE DOCUMENTS (READ THESE FIRST)
+--------------------------------------------------------------------------------
+Primary — custom fields design
+  docs/DYNAMIC-CUSTOM-FIELDS-BACKEND-ANALYSIS.txt
+    - Core architecture: definitions + values (no ALTER TABLE per tenant)
+    - Draft Prisma models (CustomFieldDefinition, CustomFieldValue)
+    - API contract (`customFields` map on create/update/get)
+    - Validation rules, hybrid storage, risks
+    - Section 6: decisions Q1–Q10 (defaults recommended)
+
+  docs/CUSTOM-FIELDS-INDUSTRY-PARITY-AND-PERMISSIONS.txt
+    - SAP B1 / Odoo / Dynamics / Zoho / Salesforce parity
+    - 3 permission layers (definition admin | field security | entity CRUD)
+    - Recommended permission codes: custom_fields:view|create|edit|delete
+    - form-schema endpoint pattern (for FE dynamic forms)
+    - Section 8: D1–D10 decisions (defaults recommended)
+
+This file (implementation plan)
+  docs/VENDOR-CUSTOM-FIELDS-IMPLEMENTATION-PLAN.txt
+    - Vendor-first build order, files to touch, rollout to other entities
+
+Supporting — existing backend (not custom-fields-specific but needed)
+  docs/API-URL-INDEX.txt
+    - Current vendor routes under /companies/:companyId/vendors
+
+  docs/PHASE-1-AUTH-IMPLEMENTATION-STATUS.txt
+    - Auth/RBAC/guards already wired for vendors (supply-chain module)
+
+  docs/FRONTEND-INTEGRATION.txt / docs/PHASE-1-FRONTEND-HANDOFF.txt
+    - General FE integration patterns (auth, companyId, permissions)
+
+Note: Earlier chat also produced BUSINESS-PARTNER and RBAC review TXT files;
+those are NOT in the repo today. Vendor field ideas can be taken from the
+Business partners PDF when we extend standard Vendor columns — custom fields
+are for company-specific extras on top of standard fields.
+
+
+2. AGREED APPROACH (DEFAULTS FROM ANALYSIS DOCS)
+--------------------------------------------------------------------------------
+  entityType for Vendor     : "vendor"
+  v1 field types            : text, number, decimal, date, email, phone,
+                              dropdown, checkbox
+  storage                   : custom_field_definitions + custom_field_values
+                              (optional Vendor.metadata snapshot later)
+  API key in JSON           : customFields (not metadata for new UDFs)
+  strict unknown keys       : YES — reject keys not in active definitions
+  who manages definitions   : PLATFORM_OWNER + Company ADMIN
+  field-level security (FLS): Phase 2 (not v1)
+  rollout order             : Vendor → Customer → Product → others
+
+
+3. CURRENT VENDOR CODE (BASELINE)
+--------------------------------------------------------------------------------
+Routes (already exist):
+  GET    /api/v1/companies/:companyId/vendors
+  GET    /api/v1/companies/:companyId/vendors/:id
+  POST   /api/v1/companies/:companyId/vendors
+  PATCH  /api/v1/companies/:companyId/vendors/:id
+  DELETE /api/v1/companies/:companyId/vendors/:id
+
+Files:
+  src/modules/purchase/vendors/vendors.controller.ts
+  src/modules/purchase/vendors/vendors.service.ts
+  src/modules/purchase/vendors/vendors.repository.ts
+  src/modules/purchase/vendors/dto/vendor.dto.ts
+  prisma/purchase/vendors.prisma
+
+Permission today:
+  @RequireModulePermission('supply-chain', 'view|create|edit|delete')
+
+Gap today:
+  - metadata is untyped z.record(...) — no definition-driven validation
+  - no custom_field_definitions / custom_field_values tables
+  - no admin APIs to define UDFs per company
+
+
+4. IMPLEMENTATION PHASES — VENDOR ONLY
+--------------------------------------------------------------------------------
+
+PHASE V1-A — Database + shared module
+-------------------------------------
+  [ ] Add prisma/shared/custom-fields.prisma (or similar)
+      - CustomFieldDefinition
+      - CustomFieldValue
+      - entityType = 'vendor' for pilot
+  [ ] Migration on Neon
+  [ ] npx prisma generate
+
+  [ ] New Nest module: src/modules/shared/custom-fields/
+      - custom-fields.module.ts
+      - custom-fields.repository.ts
+      - custom-fields-definitions.service.ts  (admin CRUD)
+      - custom-fields-values.service.ts       (validate + upsert + read)
+      - custom-fields-validation.service.ts   (build Zod from definitions)
+      - dto/custom-field-definition.dto.ts
+
+  [ ] Add permissions to permissions.constant.ts + seed:
+      custom_fields:view | create | edit | delete
+      Grant to PLATFORM_OWNER + Company ADMIN
+
+
+PHASE V1-B — Admin definition APIs
+----------------------------------
+  Base path: /api/v1/companies/:companyId/custom-fields
+
+  GET    ?entityType=vendor              custom_fields:view
+  GET    :fieldId                        custom_fields:view
+  POST   (body includes entityType=vendor) custom_fields:create
+  PATCH  :fieldId                        custom_fields:edit
+  DELETE :fieldId (soft deactivate)      custom_fields:delete
+
+  Definition body (see DYNAMIC-CUSTOM-FIELDS-BACKEND-ANALYSIS.txt §8):
+    fieldName, displayName, fieldType, isRequired, defaultValue,
+    validation, options, sortOrder, isActive, isFilterable
+
+
+PHASE V1-C — Form schema endpoint (FE dynamic form)
+-----------------------------------------------------
+  GET /api/v1/companies/:companyId/entities/vendor/form-schema
+
+  Auth:
+    - supply-chain:view (same as vendor list/read)
+    - NO custom_fields:view required
+
+  Returns:
+    Active definitions for entityType=vendor, ordered by sortOrder
+    (types, options, required, defaultValue — no admin-only internals)
+
+
+PHASE V1-D — Wire Vendor CRUD
+-------------------------------
+  Update CreateVendorDto / UpdateVendorDto:
+    - Add customFields: z.record(z.string(), z.unknown()).optional()
+    - Keep metadata for backward compat short-term OR deprecate in docs
+
+  vendors.service.ts create/update/get:
+    1. Load active definitions for (companyId, 'vendor')
+    2. Validate customFields (strict — unknown keys = 400)
+    3. Transaction:
+         a. Save vendor row
+         b. Upsert custom_field_values by vendorId
+    4. GET merges standard fields + customFields map
+
+  Response shape example:
+    {
+      "vendorId": "1",
+      "code": "V-100",
+      "name": "Acme",
+      ...
+      "customFields": {
+        "paymentTerms": "Net30",
+        "preferredCurrency": "USD"
+      }
+    }
+
+
+PHASE V1-E — Seed + smoke test
+------------------------------
+  [ ] Seed 2–3 sample definitions for DEMO company (paymentTerms dropdown, etc.)
+  [ ] Smoke: ADMIN creates definition → creates vendor with customFields → GET
+  [ ] Smoke: unknown customFields key → 400
+  [ ] Smoke: Employee without custom_fields:create cannot POST definitions
+
+
+PHASE V1-F — FE handoff doc (create when V1-D done)
+---------------------------------------------------
+  docs/VENDOR-CUSTOM-FIELDS-FRONTEND-HANDOFF.txt
+    - form-schema response
+    - customFields on vendor POST/PATCH/GET
+    - admin custom-fields CRUD
+    - permission matrix
+
+
+5. AFTER VENDOR — ONE-BY-ONE ROLLOUT
+--------------------------------------------------------------------------------
+Entity        entityType   Prerequisite              Reuse from Vendor
+------------  -----------  ------------------------  ---------------------
+Customer      customer     Prisma Customer model     Same custom-fields module
+Product       product      Prisma Product model      Same services; entityType param
+Employee      employee     Employee module exists    Same pattern
+Business      business_    May overlap Customer/BP   Decide entity split first
+Partner       partner      PDF fields vs UDF
+
+For each new entity:
+  1. Confirm base CRUD + companyId isolation works
+  2. Add entityType to enum/docs
+  3. Wire customFields in that module’s service (copy Vendor pattern)
+  4. Add form-schema alias or same endpoint with entityType
+  5. No new tables — only definitions filtered by entityType
+
+
+6. PERMISSION MATRIX (VENDOR v1)
+--------------------------------------------------------------------------------
+Action                              Permission required
+----------------------------------  ------------------------------------------
+Admin: list/create/edit UDF defs    custom_fields:*
+User: load vendor form fields       supply-chain:view (+ form-schema)
+User: read vendor + customFields    supply-chain:view
+User: write vendor customFields     supply-chain:create | edit
+Field-level hide/read-only          Phase 2 (custom_field_permissions)
+
+
+7. FILES TO CREATE / MODIFY (CHECKLIST)
+--------------------------------------------------------------------------------
+New:
+  prisma/shared/custom-fields.prisma
+  prisma/migrations/<timestamp>_custom_fields/
+  src/modules/shared/custom-fields/**
+  src/modules/shared/custom-fields/custom-fields-definitions.controller.ts
+  src/modules/shared/custom-fields/form-schema.controller.ts
+
+Modify:
+  src/app.module.ts                          (import CustomFieldsModule)
+  src/common/constants/permissions.constant.ts
+  scripts/seed-client-login-samples.js       (custom_fields perms + sample defs)
+  src/modules/purchase/vendors/dto/vendor.dto.ts
+  src/modules/purchase/vendors/vendors.service.ts
+  src/modules/purchase/vendors/vendors.repository.ts (optional metadata sync)
+  src/modules/purchase/vendors/vendors.module.ts   (import CustomFieldsModule)
+
+
+8. WHAT NOT TO DO IN V1
+--------------------------------------------------------------------------------
+  - Do not ALTER vendors table per company
+  - Do not implement formula / lookup / file field types yet
+  - Do not implement per-field FLS yet
+  - Do not add custom fields to Customer/Product until base models are stable
+  - Do not replace metadata in one shot — migrate FE to customFields gradually
+
+
+9. DECISIONS LOCKED FOR VENDOR PILOT (unless you change them)
+--------------------------------------------------------------------------------
+  D1  UI name: Custom Fields / UDF
+  D2  v1 entity: Vendor only
+  D3  Admins manage definitions
+  D4  form-schema for all users with supply-chain:view
+  D5  No FLS in v1
+  D6  Hybrid-ready: EAV values table (metadata snapshot optional)
+  D7  8 field types listed in §2
+  D8  Strict unknown keys
+  D9  custom_fields:view|create|edit|delete
+  D10 Deactivate definitions; keep historical values
+
+
+10. NEXT ACTION
+--------------------------------------------------------------------------------
+When you say proceed, start with PHASE V1-A (Prisma models + migration +
+CustomFieldsModule skeleton), then V1-B admin APIs, then V1-D Vendor wiring.
+
+================================================================================
+END
+================================================================================

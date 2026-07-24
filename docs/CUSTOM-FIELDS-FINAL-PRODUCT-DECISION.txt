@@ -1,0 +1,465 @@
+================================================================================
+CUSTOM FIELD SYSTEM
+FINAL PRODUCT DECISION & ROADMAP
+================================================================================
+
+STATUS
+================================================================================
+
+After reviewing the current backend architecture and comparing it with modern
+ERP systems (SAP Business One, Microsoft Dynamics 365, Oracle NetSuite,
+Salesforce, Odoo and ERPNext), we have decided to KEEP the current
+architecture.
+
+The current implementation already follows a metadata-driven architecture and
+is suitable for an Enterprise SaaS ERP.
+
+There is NO requirement to redesign the backend.
+
+================================================================================
+LOCKED ARCHITECTURE (CURRENT RELEASE)
+================================================================================
+
+The following architecture is FINAL and should not be redesigned.
+
+✓ custom_field_definitions
+
+Stores metadata about custom fields.
+
+✓ custom_field_values
+
+Stores actual values entered by users.
+
+✓ entityType
+
+Current
+
+vendor
+
+Future
+
+customer
+
+employee
+
+inventory
+
+sales
+
+purchase
+
+hr
+
+crm
+
+The same architecture will be reused for every ERP module.
+
+✓ sectionKey
+
+Continue using sectionKey to determine where custom fields appear.
+
+No changes required.
+
+✓ fieldName
+
+Continue using camelCase field names.
+
+Examples
+
+factoryCapacity
+
+vendorTier
+
+gstNumber
+
+✓ Typed Value Columns
+
+Continue using
+
+valueText
+
+valueNumber
+
+valueBoolean
+
+valueDate
+
+valueJson
+
+Do NOT replace these with a single generic value column.
+
+Typed value columns provide better searching, filtering,
+sorting and reporting.
+
+✓ Dropdown Options
+
+Continue storing dropdown options as JSON.
+
+Do NOT introduce a separate custom_field_options table in the current release.
+
+================================================================================
+CURRENT SCOPE
+================================================================================
+
+Current implementation supports only
+
+Vendor Module
+
+Future modules
+
+Customer
+
+Employee
+
+Inventory
+
+Sales
+
+Purchase
+
+HR
+
+CRM
+
+will reuse exactly the same metadata architecture.
+
+================================================================================
+NO BACKEND REDESIGN
+================================================================================
+
+Frontend must continue using the existing APIs.
+
+Metadata APIs
+
+↓
+
+Custom Field CRUD APIs
+
+↓
+
+Vendor Form Schema APIs
+
+↓
+
+Vendor Create / Update APIs
+
+↓
+
+customFields object
+
+No database redesign is required.
+
+No API redesign is required.
+
+================================================================================
+FUTURE ENHANCEMENTS
+================================================================================
+
+These enhancements are NOT required for the current release.
+
+They should be implemented only when there is a real business requirement.
+
+================================================================================
+HIGH PRIORITY
+================================================================================
+
+1. Automatic Display Order
+
+The backend should automatically assign
+
+10
+
+20
+
+30
+
+40
+
+Administrators should never manually enter display order.
+
+Future enhancement
+
+Support Drag & Drop ordering.
+
+------------------------------------------------------------
+
+2. Dynamic Form Designer
+
+Navigation
+
+Settings
+
+↓
+
+Customization
+
+↓
+
+Dynamic Form Designer
+
+Administrators can visually arrange custom fields without manually
+changing display order.
+
+------------------------------------------------------------
+
+3. Field Groups
+
+Allow administrators to organize related custom fields into logical
+groups inside a section.
+
+Example
+
+Vendor
+
+↓
+
+General
+
+↓
+
+Production Details
+
+Factory Capacity
+
+Machine Count
+
+Monthly Output
+
+Benefits
+
+• Cleaner forms
+
+• Better readability
+
+• Easier maintenance
+
+------------------------------------------------------------
+
+4. Duplicate Custom Field
+
+Allow administrators to duplicate an existing custom field together
+with its configuration.
+
+Example
+
+Factory Capacity
+
+↓
+
+Duplicate
+
+↓
+
+Factory Capacity Copy
+
+Administrator edits the copied field instead of creating everything
+again.
+
+------------------------------------------------------------
+
+5. Dropdown Options Management
+
+Current Release
+
+Dropdown values remain stored as JSON.
+
+Future
+
+If dropdown management becomes complex,
+
+introduce
+
+custom_field_options
+
+table
+
+Columns
+
+id
+
+field_id
+
+label
+
+value
+
+display_order
+
+is_active
+
+This should only be introduced if required.
+
+================================================================================
+MEDIUM PRIORITY
+================================================================================
+
+Role Based Field Visibility
+
+Example
+
+Managers
+
+Can view
+
+Factory Capacity
+
+Employees
+
+Cannot view
+
+Factory Capacity
+
+------------------------------------------------------------
+
+Import / Export Custom Field Definitions
+
+Allow administrators to
+
+Import
+
+CSV
+
+Excel
+
+Export
+
+Custom Field Definitions
+
+Useful during ERP implementation.
+
+------------------------------------------------------------
+
+Field Status
+
+Support three states
+
+ACTIVE
+
+Field is available.
+
+INACTIVE
+
+Field is temporarily hidden.
+
+ARCHIVED
+
+Field is no longer available for new records but historical
+records continue working correctly.
+
+================================================================================
+LONG TERM ENHANCEMENTS
+================================================================================
+
+Computed Fields
+
+Example
+
+Purchase Price
+
++
+
+GST
+
+=
+
+Total Cost
+
+------------------------------------------------------------
+
+Lookup Relationships
+
+------------------------------------------------------------
+
+Workflow Integration
+
+------------------------------------------------------------
+
+Conditional Field Visibility
+
+Example
+
+Vendor Type = Manufacturer
+
+↓
+
+Show
+
+Factory Capacity
+
+Otherwise
+
+Hide
+
+------------------------------------------------------------
+
+Multi-language Labels
+
+Support multiple display labels based on system language.
+
+================================================================================
+NOT INCLUDED
+================================================================================
+
+The following features are intentionally excluded.
+
+✗ Approval Workflow
+
+Reason
+
+Modern ERP systems such as SAP Business One,
+Microsoft Dynamics 365,
+Oracle NetSuite,
+Odoo and ERPNext
+
+allow administrators with the correct permissions
+to create, edit and delete custom fields directly.
+
+Permission-based access control is sufficient.
+
+No approval workflow is required.
+
+------------------------------------------------------------
+
+✗ AI Assisted Form Designer
+
+------------------------------------------------------------
+
+✗ Custom SQL
+
+------------------------------------------------------------
+
+✗ Dynamic Script Engine
+
+================================================================================
+FINAL DECISION
+================================================================================
+
+The current Custom Field architecture is APPROVED.
+
+No backend redesign is required.
+
+The Vendor Module will continue using the existing
+metadata-driven architecture.
+
+Future ERP modules will reuse the same architecture.
+
+Every future enhancement must remain backward compatible.
+
+No future feature should require redesigning
+
+custom_field_definitions
+
+or
+
+custom_field_values
+
+The metadata architecture is the foundation of the ERP platform and
+must remain reusable across all future modules.
+
+The priority is to complete a stable Vendor Custom Field system first,
+then progressively extend the same architecture to Customer,
+Employee, Inventory, Sales, Purchase, HR and CRM.
+
+================================================================================
+END OF FINAL PRODUCT DECISION
+================================================================================

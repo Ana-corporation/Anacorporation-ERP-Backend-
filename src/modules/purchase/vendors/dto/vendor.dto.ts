@@ -26,6 +26,8 @@ export const CreateVendorSchema = z.object({
   isActive: z.boolean().optional(),
   /** Advanced SAP-style fields live here (payment, bank, accounting, remarks). */
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Company-defined custom fields (UDF) — validated against definitions. */
+  customFields: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const UpdateVendorSchema = z.object({
@@ -41,6 +43,7 @@ export const UpdateVendorSchema = z.object({
   taxId: optionalTrimmed(80),
   isActive: z.boolean().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
 });
 
 export class CreateVendorDto extends createZodDto(CreateVendorSchema) {}
