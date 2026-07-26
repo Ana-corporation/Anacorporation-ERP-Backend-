@@ -1,0 +1,410 @@
+================================================================================
+ERP DYNAMIC CUSTOM FIELDS — BACKEND ANALYSIS & RECOMMENDATIONS
+Source PDF : ERP_Dynamic_Custom_Fields_Architecture_Guide.pdf
+Audience   : Backend / NestJS + Prisma (this ERP-Backend repo)
+Date       : 2026-07-20
+Related    : docs/CUSTOM-FIELDS-INDUSTRY-PARITY-AND-PERMISSIONS.txt
+             (SAP B1 / Odoo / Dynamics / Zoho / Salesforce parity + permissions)
+================================================================================
+
+1. ONE-LINE VERDICT
+--------------------------------------------------------------------------------
+The PDF’s core idea is correct for SaaS ERP: do NOT ALTER module tables when
+customers add fields. Store field DEFINITIONS + VALUES as metadata, keep
+standard columns on Vendor / Customer / Employee / etc.
+
+This backend is NOT ready for that yet. Today we only have a loose Vendor
+`metadata Json?` bag (and incomplete Customer/Product DTO stubs). There is no
+definition table, no typed validation, no custom-field APIs, and no search on
+custom values.
+
+
+2. WHAT THE PDF PROPOSES (SUMMARY)
+--------------------------------------------------------------------------------
+Core principle
+  - Module tables keep only standard columns.
+  - User-defined fields live outside those tables as metadata + values.
+
+Tables
+  - Module tables (Employee, Vendor, Customer, …)
+  - custom_field_definitions
+  - custom_field_values
+  - optional: custom_field_permissions, audit logs
+
+Definition fields (proposed)
+  companyId, moduleName, fieldName, displayName, fieldType, required,
+  defaultValue, validation(JSON), options(JSON), order, active, createdBy
+
+Value fields (proposed)
+  companyId, moduleName, recordId, fieldId, value
+  Indexes: (companyId, moduleName, recordId), (companyId, fieldId, value)
+
+Frontend flow
+  Load definitions → render controls → submit `customFields` with normal payload
+
+Backend flow
+  Save module record → get recordId → upsert custom values
+  Read = join definitions + values
+  Search = query indexed custom values
+
+Types
+  text, textarea, number, decimal, currency, date, datetime, email, phone,
+  dropdown, multiselect, checkbox, radio, file, image, URL, color, lookup,
+  formula, auto-number
+
+Advanced
+  Conditional visibility, field groups, formulas, role-based field permissions,
+  unique validation, versioning, audit, import/export mapping, API-first
+
+Security / performance
+  Tenant isolation via companyId, RBAC, audit, cache definitions, pagination,
+  indexed lookups, no schema migrations per customer
+
+Roadmap (PDF)
+  1 Metadata tables
+  2 Dynamic form renderer (FE)
+  3 CRUD APIs
+  4 Search/filter
+  5 Permissions
+  6 Conditional rules
+  7 Import/export
+  8 Formula engine
+  9 Audit/versioning
+  10 SDK / API docs
+
+
+3. HOW WE SHOULD HANDLE THIS IN THIS BACKEND
+--------------------------------------------------------------------------------
+Stack fit: NestJS + Prisma + PostgreSQL/Neon + company multi-tenancy + JWT/RBAC.
+
+Recommended architecture (aligns with PDF, adapted to this repo):
+
+A) TWO-LAYER STORAGE (hybrid — recommended)
+   Layer 1 — DEFINITIONS (relational, company-scoped)
+     custom_field_definitions
+       - Stable schema for admin UI, permissions, caching, validation rules
+
+   Layer 2 — VALUES (prefer EAV rows for search; optional JSON snapshot)
+     Option H1 (PDF style — preferred for search/filter):
+       custom_field_values (one row per field per record)
+     Option H2 (simpler first ship):
+       Keep entity.metadata JSONB as a denormalized snapshot for read APIs,
+       AND sync into custom_field_values when filters/search are needed
+
+   Do NOT rely only on unstructured `metadata Json` long-term — cannot enforce
+   types, required rules, uniqueness, or efficient “find vendors where
+   custom.region = X”.
+
+B) MODULE / ENTITY KEY
+   PDF uses `moduleName` string. Prefer a controlled enum/code instead, e.g.:
+     entityType: 'vendor' | 'customer' | 'product' | 'employee' | ...
+   Map to existing product modules (supply-chain, crm, …) for
+   @RequireModulePermission, but store entityType on definitions so one CRM
+   module can own Customer + Contact + Lead later.
+
+C) API SHAPE (NestJS)
+   Admin (definitions) — company-scoped, config permissions
+     GET    /companies/:companyId/custom-fields?entityType=vendor
+     POST   /companies/:companyId/custom-fields
+     PATCH  /companies/:companyId/custom-fields/:fieldId
+     DELETE /companies/:companyId/custom-fields/:fieldId   (soft deactivate)
+
+   Entity CRUD — merge into existing module APIs (Vendor first)
+     Create/Update body:
+       { ...standardFields, customFields: { paymentTerms: "Net30", ... } }
+     Response:
+       { ...standardFields, customFields: { ... } }
+
+   Internal service flow (transaction):
+     1. Validate customFields against active definitions for (companyId, entityType)
+     2. Save module row (Vendor / Customer / …)
+     3. Upsert custom_field_values for that recordId
+     4. Optionally write metadata JSON snapshot for fast GET
+     5. Audit log field-level changes if enabled
+
+D) VALIDATION (must be backend-owned)
+   Build a Zod (or Ajv) schema AT RUNTIME from definitions:
+     - type checks (number/date/email/…)
+     - required / defaultValue
+     - options for dropdown/multiselect
+     - validation JSON (min/max/regex/unique)
+   Reject unknown keys in strict mode (or strip + warn in soft mode).
+   Never trust FE-only validation.
+
+E) TENANT + SECURITY (reuse existing patterns)
+   - Every definition/value row has companyId
+   - Repository always filters companyId + deletedAt/active
+   - TenantGuard + @CompanyId() on routes
+   - New permission codes, e.g.:
+       custom_fields:view | custom_fields:create | custom_fields:edit | custom_fields:delete
+     Entity write still requires entity permission (vendors:edit, etc.)
+   - Optional field-level RBAC later (custom_field_permissions) — P2
+
+F) PERFORMANCE
+   - Cache definitions per (companyId, entityType) in Redis / in-memory TTL
+   - Invalidate cache on definition create/update/deactivate
+   - Index values for filter endpoints
+   - Paginate list APIs; do not load all custom values for unrelated entities
+   - Neon: keep connection/retry behavior already added in PrismaService
+
+G) FIRST SHIP TARGET IN THIS REPO
+   Start with Vendor (already has metadata Json + company-scoped CRUD):
+     Phase 0  — Design schema + permissions + FE contract
+     Phase 1  — definitions table + admin CRUD APIs
+     Phase 2  — validate + persist customFields on Vendor create/update/get
+     Phase 3  — list/filter by 1–2 custom fields
+     Phase 4  — Customer/Product after those Prisma models are real
+     Phase 5+ — permissions per field, conditions, formula, import/export
+
+
+4. CURRENT BACKEND GAP (AS OF THIS ANALYSIS)
+--------------------------------------------------------------------------------
+Already present
+  - Vendor.metadata Json? (untyped bag) — prisma/purchase/vendors.prisma
+  - Vendor DTO accepts metadata as z.record(...) — no schema rules
+  - Company-scoped routes + TenantGuard + soft-delete patterns
+  - Module permission guard on vendors (supply-chain)
+  - Admin config API patterns (branches, roles, security policies)
+
+Missing
+  - custom_field_definitions / custom_field_values models + migrations
+  - Runtime validation of values against definitions
+  - Admin custom-field APIs + permission codes
+  - Merge of customFields into Vendor (and later Customer/Product) APIs
+  - Indexed search on custom values
+  - Field-level RBAC, formulas, versioning, import/export
+  - Customer/Product Prisma models are incomplete vs DTO stubs — do not build
+    custom fields on them until base entity tables exist
+
+
+5. IMPROVEMENTS OVER THE PDF (BACKEND VIEW)
+--------------------------------------------------------------------------------
+The PDF is a good product outline. For production NestJS/Prisma, tighten these:
+
+(1) entityType instead of free-text moduleName
+    Controlled enum prevents typos and joins cleanly to permissions.
+
+(2) Separate storage of typed value columns (optional but strong)
+    Instead of a single opaque `value` column only, consider:
+      value_text, value_number, value_date, value_bool, value_json
+    Search/sort on the typed column; keep value_json for multiselect/objects.
+    PDF’s single `value` works if always JSONB + GIN / expression indexes,
+    but typed columns are clearer for Prisma and reporting.
+
+(3) Soft delete + immutable fieldName
+    Deactivate fields; never hard-delete if historical values exist.
+    fieldName (API key) immutable after create; displayName editable.
+
+(4) recordId type
+    This repo uses BigInt IDs. Store recordId as BigInt (or string consistently).
+    Document that recordId is the module PK (vendorId, customerId, …).
+
+(5) Transactions
+    PDF “save then upsert” must be one DB transaction so you never get a Vendor
+    without its custom values (or orphan values without a parent).
+
+(6) Definition versioning (careful)
+    Full versioning early is expensive. Prefer:
+      - active flag + updatedAt
+      - optional schemaVersion only when breaking validation changes
+    Defer full history tables until audit requirements are real.
+
+(7) Formula / lookup / file types — defer
+    Formula engine and lookup-to-other-entities are large subsystems.
+    Ship text/number/date/dropdown/checkbox/email first.
+    File/image should reuse existing storage module, store fileId in value.
+
+(8) Conditional visibility
+    Store rules in definitions.validation or a separate rules JSON.
+    Evaluate on FE for UX; RE-VALIDATE on BE on write (security).
+
+(9) Unique validation
+    Unique custom fields need a unique index strategy, e.g. partial unique on
+    (companyId, fieldId, value_text) WHERE active — plan this before allowing
+    “unique: true” in admin UI.
+
+(10) API contract naming
+    Prefer `customFields` (camelCase) in JSON APIs to match Nest/FE style.
+    Keep DB columns snake_case via Prisma @map.
+
+(11) Do not use ALTER TABLE / Prisma migrate per tenant
+    Agree with PDF. Never generate per-company columns.
+
+(12) Align metadata bag vs EAV
+    If Vendor.metadata already exists, treat it as:
+      short-term: pass-through bag
+      mid-term: snapshot populated FROM custom_field_values
+      long-term: either keep snapshot for GET speed OR drop it once joins are fine
+    Avoid two sources of truth without a sync rule.
+
+
+6. SUGGESTIONS / DECISIONS NEEDED FROM PRODUCT + FE
+--------------------------------------------------------------------------------
+Please confirm before implementation:
+
+Q1  Which entities in v1?
+    Recommend: Vendor only → then Customer → Product.
+
+Q2  Storage model for v1?
+    A) EAV custom_field_values only
+    B) metadata JSON only (fast, weak search)
+    C) Hybrid (recommended): JSON snapshot + EAV for filterable fields
+
+Q3  Strict vs soft unknown keys?
+    Strict reject unknown customFields keys? (recommended for ERP)
+
+Q4  Who can manage definitions?
+    Company ADMIN only? Or also Manager? Platform Owner cross-company?
+
+Q5  Field-level permissions in v1?
+    Recommend: NO in v1 — entity permission is enough; field RBAC in P2.
+
+Q6  Search requirements in v1?
+    Exact match on dropdown/text? Range on number/date? Full-text?
+
+Q7  Multiselect / lookup / file / formula in v1?
+    Recommend: text, number, decimal, date, email, phone, dropdown, checkbox only.
+
+Q8  Soft-delete of definitions with existing values?
+    Hide from forms but keep values readable in history/export?
+
+Q9  Import/export
+    Needed in MVP or later? Affects mapping table design.
+
+Q10 FE handoff
+    FE needs: list definitions by entityType, fieldType enum, options shape,
+    validation shape, order, required, and request/response `customFields` map.
+
+
+7. SUGGESTED PRISMA SHAPE (DRAFT — NOT IMPLEMENTED)
+--------------------------------------------------------------------------------
+model CustomFieldDefinition {
+  fieldId       BigInt    @id @default(autoincrement()) @map("field_id")
+  companyId     BigInt    @map("company_id")
+  entityType    String    @map("entity_type") @db.VarChar(40)   // vendor|customer|...
+  fieldName     String    @map("field_name") @db.VarChar(80)    // api key, immutable
+  displayName   String    @map("display_name") @db.VarChar(120)
+  fieldType     String    @map("field_type") @db.VarChar(40)
+  isRequired    Boolean   @default(false) @map("is_required")
+  defaultValue  Json?     @map("default_value")
+  validation    Json?                                          // min/max/regex/unique/...
+  options       Json?                                          // dropdown options
+  sortOrder     Int       @default(0) @map("sort_order")
+  isActive      Boolean   @default(true) @map("is_active")
+  isFilterable  Boolean   @default(false) @map("is_filterable")
+  createdBy     BigInt?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedBy     BigInt?   @map("updated_by")
+  updatedAt     DateTime? @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  company Company @relation(...)
+  values  CustomFieldValue[]
+
+  @@unique([companyId, entityType, fieldName])
+  @@index([companyId, entityType, isActive])
+  @@map("custom_field_definitions")
+}
+
+model CustomFieldValue {
+  valueId     BigInt    @id @default(autoincrement()) @map("value_id")
+  companyId   BigInt    @map("company_id")
+  entityType  String    @map("entity_type") @db.VarChar(40)
+  recordId    BigInt    @map("record_id")
+  fieldId     BigInt    @map("field_id")
+  valueText   String?   @map("value_text")
+  valueNumber Decimal?  @map("value_number") @db.Decimal(18, 6)
+  valueDate   DateTime? @map("value_date")
+  valueBool   Boolean?  @map("value_bool")
+  valueJson   Json?     @map("value_json")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime? @map("updated_at")
+
+  field CustomFieldDefinition @relation(...)
+
+  @@unique([fieldId, recordId])
+  @@index([companyId, entityType, recordId])
+  @@index([companyId, fieldId, valueText])
+  @@index([companyId, fieldId, valueNumber])
+  @@map("custom_field_values")
+}
+
+
+8. SUGGESTED API CONTRACT (DRAFT)
+--------------------------------------------------------------------------------
+Definition (admin)
+  {
+    "fieldId": "12",
+    "entityType": "vendor",
+    "fieldName": "paymentTerms",
+    "displayName": "Payment Terms",
+    "fieldType": "dropdown",
+    "isRequired": true,
+    "options": [{ "value": "Net30", "label": "Net 30" }],
+    "validation": null,
+    "sortOrder": 10,
+    "isActive": true,
+    "isFilterable": true
+  }
+
+Entity write (Vendor create/update)
+  {
+    "vendorCode": "V-100",
+    "name": "Acme Supplies",
+    "email": "ap@acme.com",
+    "customFields": {
+      "paymentTerms": "Net30",
+      "preferredCurrency": "USD"
+    }
+  }
+
+Entity read
+  Same shape: standard columns + customFields map (only active definitions).
+
+
+9. RISK NOTES
+--------------------------------------------------------------------------------
+- Dual write (metadata JSON + EAV) without sync = data drift. Pick a source of truth.
+- Formula fields without a sandbox = security/perf risk. Defer.
+- Allowing unlimited fields per entity without limits = wide rows / slow forms.
+  Suggest soft cap (e.g. 50 active fields per entityType per company) in v1.
+- Searching many EAV rows without indexes will hurt Neon. Mark filterable fields
+  explicitly; only index those.
+- Customer/Product code currently assumes metadata but models may be missing —
+  do not start custom fields there until base CRUD is solid.
+
+
+10. RECOMMENDED BACKEND STANCE
+--------------------------------------------------------------------------------
+AGREE with the PDF’s core principle and high-level roadmap.
+
+IMPROVE for this codebase by:
+  - Using entityType + typed value columns + transactions
+  - Shipping a small type set first
+  - Hybrid storage with clear source of truth
+  - Reusing company isolation + permission patterns
+  - Starting on Vendor, then expanding
+
+NEXT STEP (when you say go):
+  1) Confirm answers to Q1–Q10 above
+  2) Add Prisma models + migration
+  3) Implement definitions admin APIs
+  4) Wire Vendor create/update/get with customFields validation
+  5) Publish a short FE handoff TXT (definitions + customFields contract)
+
+
+11. RELATED CODE TODAY (REFERENCE)
+--------------------------------------------------------------------------------
+  prisma/purchase/vendors.prisma
+  src/modules/purchase/vendors/dto/vendor.dto.ts
+  src/modules/purchase/vendors/vendors.repository.ts
+  src/modules/purchase/vendors/vendors.service.ts
+  src/common/guards/tenant.guard.ts
+  src/common/guards/module-permission.guard.ts
+  src/common/constants/permissions.constant.ts
+  src/infrastructure/prisma/prisma.service.ts
+
+
+================================================================================
+END OF ANALYSIS
+================================================================================

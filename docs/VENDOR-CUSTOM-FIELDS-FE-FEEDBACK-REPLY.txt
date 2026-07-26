@@ -1,0 +1,223 @@
+================================================================================
+BACKEND → FRONTEND REPLY
+Vendor Custom Fields handoff feedback
+Date: 2026-07-22
+About: FE feedback on docs/VENDOR-CUSTOM-FIELDS-FRONTEND-HANDOFF.txt
+Verdict: FE can start — YES
+================================================================================
+
+0. VERDICT
+--------------------------------------------------------------------------------
+FE can start: YES
+
+Contract clarifications below. Small BE fixes applied for FE preferences:
+  - PATCH null (or "") clears non-required custom field values
+  - Validation errors now include errors[{ field, message }]
+  - Admin list returns { items, total } (not bare array)
+  - Handoff corrected: response uses vendorCode (not code)
+
+
+1. MUST-1 … MUST-5
+--------------------------------------------------------------------------------
+
+MUST-1  Response field name: code vs vendorCode
+  CONFIRMED / FIXED in docs
+  Request create body:  "code"
+  Response always:      vendorCode  (Prisma serialize)
+  GET/POST/PATCH detail shape:
+    vendorId, companyId, vendorCode, name, email, phone, address,
+    city, country, taxId, isActive, metadata?, customFields?,
+    createdAt, updatedAt, …
+
+MUST-2  metadata vs customFields coexistence
+  CONFIRMED: A) Both remain supported side-by-side
+  - metadata     = FE hardcoded SAP-style tabs (unchanged)
+  - customFields = dynamic UDFs from form-schema
+  Do NOT put the same key in both namespaces.
+  No BE rejection of semantic overlap today — FE owns separation.
+
+MUST-3  List vendors does not include customFields
+  CONFIRMED
+  - Edit drawer MUST call GET /vendors/{id}
+  - List Phase 1: no UDF columns
+  - Later optional: ?includeCustomFields=true (NICE-1)
+
+MUST-4  form-schema permission hardcoded supply-chain
+  CONFIRMED for Phase 1
+  vendor form-schema → supply-chain:view only
+  Future: entityType → module map (ENTITY_TYPE_MODULE_MAP already drafted)
+
+MUST-5  Re-seed + re-login
+  CONFIRMED
+  npm run seed:client-logins creates on DEMO_ACME only:
+    paymentTerms (dropdown, required, default Net30)
+    preferredCurrency (text)
+    isPreferredVendor (checkbox, default false)
+  NOT on PLATFORM company.
+  Re-login ADMIN001 / PLATFORM_OWNER for custom_fields:* in JWT.
+
+
+2. SHOULD (confirmed + fixed where needed)
+--------------------------------------------------------------------------------
+
+SHOULD-1  Clear values on PATCH
+  FIXED to FE preferred:
+    omit key     → leave existing
+    key: null    → clear (delete value row) if not required
+    key: ""      → clear text-like fields if not required
+    checkbox false → store false
+    clear required field → 400
+
+SHOULD-2  Required on UPDATE when key omitted
+  CONFIRMED: yes — omitted keys are NOT re-validated on update.
+  Only included keys are upserted/cleared.
+  Required check applies on create, or when a required key is sent empty.
+
+SHOULD-3  defaultValue types
+  CONFIRMED:
+    text/textarea/email/phone/date/dropdown → string | null
+    number/decimal → number | null
+    checkbox → boolean | null (treat null as false in FE)
+
+SHOULD-4  Error payload shape
+  FIXED — now includes errors[] with field paths.
+  Example 400 (unknown key):
+
+  {
+    "success": false,
+    "message": "Unknown custom field: fooBar",
+    "data": null,
+    "errors": [
+      { "field": "customFields.fooBar", "message": "Unknown custom field: fooBar" }
+    ],
+    "timestamp": "2026-07-22T...",
+    "path": "/api/v1/companies/2/vendors"
+  }
+
+  Example 400 (required):
+
+  {
+    "success": false,
+    "message": "Custom field \"Payment Terms\" is required",
+    "data": null,
+    "errors": [
+      {
+        "field": "customFields.paymentTerms",
+        "message": "Custom field \"Payment Terms\" is required"
+      }
+    ],
+    "timestamp": "...",
+    "path": "..."
+  }
+
+SHOULD-5  Admin list envelope
+  FIXED: GET /custom-fields?entityType=vendor returns
+    { "items": [ ...definitions ], "total": N }
+  (not page/limit yet — full list for company entity)
+
+SHOULD-6  form-schema active only
+  CONFIRMED: active definitions only.
+  isFilterable / isActive omitted from form-schema (admin list has them).
+
+SHOULD-7  Create/PATCH response includes customFields
+  CONFIRMED: create/update return findOne() → full customFields map.
+
+
+3. Q1–Q8 ANSWERS
+--------------------------------------------------------------------------------
+
+Q1  metadata alongside customFields forever?
+    → [x] Yes forever (for now; SAP tabs stay on metadata)
+
+Q2  Overlapping keys (e.g. paymentTerms in metadata + UDF)?
+    → [x] Keep both separate namespaces forever
+    FE should not send the same semantic key in both.
+    Seeded UDFs are company-defined; FE SAP metadata config is separate.
+
+Q3  PATCH null clears value?
+    → [x] Yes
+
+Q4  Exact response key for vendor code?
+    → [x] vendorCode
+
+Q5  Admin list envelope?
+    → [x] { items, total }   (not full page/limit yet)
+
+Q6  PLATFORM_OWNER manage ANY tenant companyId?
+    → [x] No (only company ADMIN of that tenant)
+    TenantGuard requires JWT companyId match.
+    PLATFORM_OWNER can manage definitions only for their PLATFORM company.
+    DEMO_ACME UDFs are managed by DEMO ADMIN001.
+
+Q7  After DELETE definition, GET vendor still returns old fieldName?
+    → [x] No (stripped)
+    Values kept in DB historically; response only includes active definitions.
+
+Q8  customFields: {} on create when no UDFs / with defaults?
+    → [x] Yes (accepted)
+    Empty object OK. Required fields with defaultValue are auto-applied.
+    If a required field has no default → 400.
+
+
+4. SAMPLE ERROR JSON (copy for FE)
+--------------------------------------------------------------------------------
+See SHOULD-4 above.
+
+
+5. FE CAN START
+--------------------------------------------------------------------------------
+  YES
+
+Keep:
+  - Core columns as today
+  - metadata SAP tabs as today
+  - ADD Custom Fields section from form-schema → customFields
+
+Always:
+  - Edit/view via GET /vendors/{id} (not list row)
+  - Re-login after seed
+
+
+6. QUICK CURL TRANSCRIPT (DEMO_ACME)
+--------------------------------------------------------------------------------
+# 1) Login
+POST /api/v1/auth/login
+{ "companyCode":"DEMO_ACME", "employeeCode":"ADMIN001", "password":"Admin@123" }
+
+# 2) Form schema
+GET /api/v1/companies/{companyId}/entities/vendor/form-schema
+Authorization: Bearer <token>
+
+# 3) Create vendor
+POST /api/v1/companies/{companyId}/vendors
+{
+  "code": "V-CF-01",
+  "name": "Custom Fields Test Vendor",
+  "customFields": {
+    "paymentTerms": "Net30",
+    "preferredCurrency": "USD",
+    "isPreferredVendor": true
+  }
+}
+
+# 4) Get by id → expect vendorCode + customFields
+GET /api/v1/companies/{companyId}/vendors/{vendorId}
+
+
+7. BE CHANGES IN THIS REPLY
+--------------------------------------------------------------------------------
+  - null/"" clear on PATCH for non-required custom fields
+  - errors: [{ field: "customFields.x", message }] on validation failures
+  - GET /custom-fields → { items, total }
+  - GlobalExceptionFilter keeps message string when errors are objects
+
+
+8. UPDATED FE HANDOFF
+--------------------------------------------------------------------------------
+  Re-read: docs/VENDOR-CUSTOM-FIELDS-FRONTEND-HANDOFF.txt
+  (will be patched for vendorCode + clear rules + errors[] + list envelope)
+
+
+================================================================================
+END — Backend reply
+================================================================================

@@ -402,11 +402,46 @@ AUTH HEADER (protected routes):
 ================================================================================
   Controller: src/modules/purchase/vendors/vendors.controller.ts
 
-  GET    /api/v1/vendors
-  GET    /api/v1/vendors/:id
-  POST   /api/v1/vendors
-  PATCH  /api/v1/vendors/:id
-  DELETE /api/v1/vendors/:id
+  GET    /api/v1/companies/:companyId/vendors
+  GET    /api/v1/companies/:companyId/vendors/:id
+  POST   /api/v1/companies/:companyId/vendors
+  PATCH  /api/v1/companies/:companyId/vendors/:id
+  DELETE /api/v1/companies/:companyId/vendors/:id
+
+  Query (list):
+    ?includeCustomFields=true
+    ?cf.<fieldName>=<value>     (filterable custom fields only)
+
+
+================================================================================
+33b. SHARED — CUSTOM FIELDS (Vendor admin — NO approval queue)
+================================================================================
+  Controllers:
+    src/modules/shared/custom-fields/custom-fields-definitions.controller.ts
+    src/modules/shared/custom-fields/custom-fields-meta.controller.ts
+    src/modules/shared/custom-fields/form-schema.controller.ts
+
+  Model: Admin creates definitions directly (custom_fields:create).
+         No request/approve workflow.
+
+  Meta:
+  GET    /api/v1/custom-fields/meta/modules
+  GET    /api/v1/custom-fields/meta/modules/:entityType/sections
+
+  Definitions (company-scoped):
+  GET    /api/v1/companies/:companyId/custom-fields?entityType=vendor
+  GET    /api/v1/companies/:companyId/custom-fields?entityType=vendor&groupedBySection=true
+  GET    /api/v1/companies/:companyId/custom-fields/:fieldId
+  POST   /api/v1/companies/:companyId/custom-fields
+  PATCH  /api/v1/companies/:companyId/custom-fields/:fieldId
+  DELETE /api/v1/companies/:companyId/custom-fields/:fieldId
+
+  Form schema (Vendor form — supply-chain:view):
+  GET    /api/v1/companies/:companyId/entities/vendor/form-schema
+
+  Permissions:
+    custom_fields:view | create | edit | delete
+    (ADMIN has all after seed)
 
 
 ================================================================================
@@ -473,6 +508,7 @@ MODULE FOLDER MAP (src/modules/)
     company-modules/   → Company enabled modules
   shared/
     currencies/        → Currencies
+    custom-fields/     → Custom field definitions + form-schema (Vendor)
   crm/
     customers/         → Customers
   purchase/

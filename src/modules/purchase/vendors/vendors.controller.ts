@@ -2,9 +2,9 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { RequireModulePermission } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
+import { VendorListQueryDto } from './dto/vendor-list-query.dto';
 import { VendorsService } from './vendors.service';
 
 @ApiTags('Vendors')
@@ -15,7 +15,7 @@ export class VendorsController {
 
   @Get()
   @RequireModulePermission('supply-chain', 'view')
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(@Param('companyId') companyId: string, @Query() query: VendorListQueryDto) {
     return this.vendorsService.findAll(companyId, query);
   }
 

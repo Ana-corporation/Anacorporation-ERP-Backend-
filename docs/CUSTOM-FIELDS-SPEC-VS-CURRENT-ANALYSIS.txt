@@ -1,0 +1,323 @@
+================================================================================
+VENDOR CUSTOM FIELDS — SPEC vs CURRENT BACKEND
+Deep difference analysis
+Date:       2026-07-23
+Spec file:  Vendor Module Custom Field Database Design v1.0 (product)
+Live code:  prisma/shared/custom-fields.prisma + Nest custom-fields module
+================================================================================
+
+
+0. ONE-LINE VERDICT
+--------------------------------------------------------------------------------
+  Same architecture idea (definitions + values, Vendor-only v1, admin create).
+  Naming and some columns differ. Spec adds tab/section split and a separate
+  options table; current BE uses one sectionKey + options JSON + typed value
+  columns. Do NOT rebuild — map FE labels to current API names.
+
+
+1. WHAT MATCHES (ALREADY ALIGNED)
+--------------------------------------------------------------------------------
+
+  Concept                         Spec                    Current BE
+  ------------------------------  ----------------------  ----------------------
+  Vendor only for v1              Yes                     Yes (entityType=vendor)
+  Reusable later for modules      Yes                     Yes (entityType ready)
+  Definitions table               Yes                     custom_field_definitions
+  Values table                    Yes                     custom_field_values
+  Company scoped                  company_id              company_id
+  Admin create → save definition  Yes                     POST /custom-fields
+  No ALTER vendors table          Implied                 Yes
+  Label for users                 field_label             displayName
+  Internal key immutable          field_key               fieldName
+  Types: text/number/dropdown…    Yes                     Partial (see §4)
+  required / default / help       Yes                     Yes
+  filterable / searchable         Yes                     Yes (flags exist)
+  read only / visible             Yes                     isReadOnly / isHidden
+  display order                   display_order           sortOrder
+  validation bag                  validation_json         validation (Json)
+  Soft off                        status INACTIVE         isActive + deletedAt
+  Form loads new field            Yes                     GET form-schema
+
+
+2. NAMING MAP (SPEC → CURRENT API / DB)
+--------------------------------------------------------------------------------
+
+  Spec (product)          Current API (JSON)     Current DB column
+  ----------------------  ---------------------  ----------------------
+  id (UUID)               fieldId (string)       field_id (BIGSERIAL)
+  company_id              companyId              company_id
+  module = "Vendor"       entityType = "vendor"  entity_type
+  tab                     (not separate)         — see §3
+  section                 sectionKey             section_key
+  field_key               fieldName              field_name
+  field_label             displayName            display_name
+  field_type              fieldType              field_type
+  placeholder             placeholder            placeholder
+  help_text               helpText               help_text
+  description             description            description
+  default_value           defaultValue           default_value
+  is_required             isRequired             is_required
+  is_unique               validation.unique*     not enforced yet
+  is_filterable           isFilterable           is_filterable
+  is_searchable           isSearchable           is_searchable
+  is_visible              !isHidden              is_hidden (inverted)
+  is_read_only            isReadOnly             is_read_only
+  display_order           sortOrder              sort_order
+  validation_json         validation             validation
+  status ACTIVE/INACTIVE  isActive true/false    is_active
+  created_by / updated_by createdBy / updatedBy  created_by / updated_by
+  created_at / updated_at createdAt / updatedAt  created_at / updated_at
+
+  * Spec wants is_unique column; BE stores unique inside validation JSON
+    but does NOT enforce uniqueness on Vendor save yet (deferred).
+
+
+3. BIGGEST STRUCTURAL DIFFERENCES
+--------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+3.1  TAB + SECTION vs ONE sectionKey
+------------------------------------------------------------------------------
+  SPEC:
+    tab     = General | Payment Terms | Accounting | Remarks
+    section = Identity | Contact | Address | Tax | Bank …
+
+  CURRENT BE:
+    ONE field: sectionKey
+    Values today:
+      general | contact | address | payment | paymentRun |
+      accounting | remarks | custom
+    These mix “tab-like” and “section-like” labels into one key.
+
+  IMPACT:
+    Spec’s two-level placement (Tab → Section) is NOT in DB yet.
+    FE either:
+      A) Maps tab+section → one sectionKey (current), OR
+      B) Asks BE to add tabKey + sectionKey later.
+
+  RECOMMENDATION:
+    Keep one sectionKey for Vendor v1 (already live).
+    If FE needs Identity under General, use sectionKey values like
+    "general" or add "identity" to the catalog — don’t require a new table.
+
+
+------------------------------------------------------------------------------
+3.2  OPTIONS: separate table vs JSON
+------------------------------------------------------------------------------
+  SPEC:
+    Table custom_field_options
+      id, field_id, label, value, display_order, is_active, …
+
+  CURRENT BE:
+    No options table.
+    options Json? on custom_field_definitions
+    Example: [{ "value": "preferred", "label": "Preferred supplier" }]
+
+  IMPACT:
+    Same UX for dropdowns. Spec’s table is nicer for admin CRUD of options
+    later; JSON is enough for v1 and already working.
+
+  RECOMMENDATION:
+    Keep JSON for now. Add custom_field_options table only if FE needs
+    heavy option management / soft-delete per option.
+
+
+------------------------------------------------------------------------------
+3.3  VALUES: single value column vs typed columns
+------------------------------------------------------------------------------
+  SPEC:
+    custom_field_values.value  (one column for everything)
+
+  CURRENT BE:
+    value_text | value_number | value_date | value_bool | value_json
+    Plus: entity_type + record_id (generic, not vendor_id column name)
+
+  IMPACT:
+    Spec: simpler mental model, weaker typing/search.
+    Current: better filters/sort for numbers/dates; API still returns a MAP
+      customFields: { factoryCapacity: 250 }
+
+  Spec says vendor_id; BE uses record_id + entity_type='vendor'
+  (same meaning, ready for Customer later without renaming).
+
+  RECOMMENDATION:
+    Keep typed columns + record_id (current). Better for SaaS.
+
+
+------------------------------------------------------------------------------
+3.4  PRIMARY KEY type
+------------------------------------------------------------------------------
+  SPEC: UUID
+  CURRENT: BIGSERIAL (bigint) exposed as string in JSON ("101")
+
+  IMPACT: FE must treat fieldId as string. No need to migrate to UUID now.
+
+
+------------------------------------------------------------------------------
+3.5  field_key style
+------------------------------------------------------------------------------
+  SPEC examples: factory_capacity (snake_case)
+  CURRENT: factoryCapacity (camelCase), auto from displayName
+
+  IMPACT: Align FE docs to camelCase. Do not regenerate keys as snake_case
+  or existing values break.
+
+
+------------------------------------------------------------------------------
+3.6  display_order auto-only
+------------------------------------------------------------------------------
+  SPEC: Admin should NOT enter display_order; system auto 10,20,30…
+  CURRENT: sortOrder accepted on create (default 0); FE/admin can set it.
+
+  IMPACT: Minor. Can auto-assign next sortOrder on create later if needed.
+
+
+------------------------------------------------------------------------------
+3.7  Module default "Vendor"
+------------------------------------------------------------------------------
+  SPEC: module column default Vendor
+  CURRENT: entityType required = "vendor" (lowercase code)
+
+  IMPACT: API uses entityType:"vendor", not module:"Vendor".
+
+
+4. FIELD TYPES — SPEC vs CURRENT
+--------------------------------------------------------------------------------
+
+  Spec lists                    Current BE
+  ----------------------------  --------------------------------
+  Text                          ✅ text
+  Textarea                      ✅ textarea
+  Number                        ✅ number
+  Decimal                       ✅ decimal
+  Date                          ✅ date
+  DateTime                      ❌ deferred (400 if sent)
+  Checkbox                      ✅ checkbox
+  Dropdown                      ✅ dropdown
+  Email                         ✅ email
+  Phone                         ✅ phone
+  Currency                      ❌ deferred
+  URL                           ❌ deferred
+  File Upload                   ❌ deferred
+  Image Upload                  ❌ deferred
+
+  Extra on BE not in this DB spec as primary:
+  (none critical)
+
+  Extra flags on BE beyond this DB spec:
+  isSortable, isExportable, isPrintable — already in DB, optional for FE.
+
+
+5. SIDE-BY-SIDE TABLE PICTURE
+--------------------------------------------------------------------------------
+
+  SPEC TABLE LAYOUT
+  -----------------
+  custom_field_definitions
+    + tab, section (two placement fields)
+    + is_unique, is_visible, status enum
+    + options → child table custom_field_options
+
+  custom_field_values
+    + vendor_id
+    + value (single)
+
+  CURRENT LIVE LAYOUT
+  -------------------
+  custom_field_definitions
+    + entity_type
+    + section_key (one placement field)
+    + options (JSON)
+    + is_active / is_hidden / is_filterable / …
+
+  custom_field_values
+    + entity_type + record_id
+    + typed value_* columns
+
+  NO custom_field_options table
+
+
+6. WORKFLOW — SAME INTENT
+--------------------------------------------------------------------------------
+
+  Spec:
+    Settings → Customization → Custom Fields → Create
+    → Save → definitions → Vendor form loads field
+
+  Current:
+    Same (admin direct create — no approval)
+    POST /custom-fields → GET form-schema → Vendor POST customFields
+
+  Difference: naming only (entityType / sectionKey / displayName / fieldName).
+
+
+7. GAP LIST (SPEC WANTS, BE DOES NOT HAVE YET)
+--------------------------------------------------------------------------------
+
+  Gap                         Severity   Suggestion
+  --------------------------  ---------  --------------------------------
+  Separate tab + section      Medium     Keep sectionKey; extend catalog
+  custom_field_options table  Low        Keep JSON options for v1
+  is_unique enforced          Medium     Deferred (flag only / validation.unique)
+  UUID ids                    Low        Keep bigint string ids
+  snake_case field_key        Low        Keep camelCase
+  Auto display_order only     Low        Optional polish
+  DateTime / Currency / File / URL Low–High  Later phases
+  vendor_id column name       Low        record_id is fine (document it)
+  Single value column         Low        Keep typed columns
+
+
+8. WHAT FE SHOULD DO
+--------------------------------------------------------------------------------
+
+  1. Use CURRENT API names (entityType, sectionKey, displayName, fieldName).
+  2. Treat “Module / Tab / Section” UI as:
+       Module  → entityType = vendor
+       Tab/Section → map to sectionKey from
+         GET /custom-fields/meta/modules/vendor/sections
+  3. Do not expect custom_field_options REST resource — send options[] on create.
+  4. Do not expect UUID — use fieldId string from API.
+  5. Treat this DB design doc as PRODUCT TARGET; live BE is the SOURCE OF TRUTH.
+
+
+9. WHAT BACKEND SHOULD DO (IF ANYTHING)
+--------------------------------------------------------------------------------
+
+  Do NOT rebuild tables to match the spec blindly.
+
+  Optional small upgrades later (only if FE asks):
+    A) Add tabKey column alongside sectionKey (two-level placement)
+    B) Auto-increment sortOrder by 10 on create
+    C) Enforce isUnique / validation.unique on vendor save
+    D) Extra section keys: identity, tax, bank (if FE needs finer placement)
+
+  Keep: options JSON, typed values, entityType, camelCase fieldName.
+
+
+10. CONCLUSION
+--------------------------------------------------------------------------------
+
+  The product DB design and the current backend are ~70–80% the same idea.
+
+  Main differences:
+    1) Naming (module/tab/section/field_label vs entityType/sectionKey/displayName)
+    2) Spec wants tab+section; BE has sectionKey only
+    3) Spec wants options table + single value; BE has JSON options + typed values
+    4) Spec lists more field types than BE enforces today
+
+  Current backend is already production-usable for Vendor custom fields.
+  Prefer mapping the new design doc TO current APIs, not the other way around.
+
+
+11. QUICK REFERENCE — CURRENT LIVE SCHEMA
+--------------------------------------------------------------------------------
+
+  Table: custom_field_definitions
+  Table: custom_field_values
+  Prisma: prisma/shared/custom-fields.prisma
+  APIs:   docs/CUSTOM-FIELDS-FINAL-CONCLUSIONS.txt
+
+
+================================================================================
+END OF ANALYSIS
+================================================================================

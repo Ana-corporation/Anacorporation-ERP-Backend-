@@ -46,7 +46,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     response.status(status).json({
       success: false,
-      message: Array.isArray(errors) ? errors.join(', ') : message,
+      message:
+        Array.isArray(errors) && errors.length > 0 && typeof errors[0] === 'string'
+          ? errors.join(', ')
+          : message,
       data: null,
       errors: Array.isArray(errors) ? errors : undefined,
       ...extra,

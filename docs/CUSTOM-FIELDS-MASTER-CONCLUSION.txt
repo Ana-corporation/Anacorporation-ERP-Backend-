@@ -1,0 +1,247 @@
+================================================================================
+ERP CUSTOM FIELDS + MULTI-TENANT — MASTER CONCLUSION (FEED THIS FILE)
+Date:       2026-07-23
+Audience:   Frontend / Product / Backend
+Purpose:    Single source of truth for decisions, APIs, and what to build next
+Scope now:  Vendor module ONLY
+================================================================================
+
+
+0. FINAL PRODUCT DECISIONS (LOCKED)
+================================================================================
+
+  1. MULTI-TENANT MODEL
+     - Shared Postgres/Neon database (NOT one DB per company)
+     - Every tenant row uses company_id
+     - Login: companyCode + employeeCode → JWT with companyId
+     - APIs: /api/v1/companies/{companyId}/...
+
+  2. CUSTOM FIELDS STORAGE
+     - Do NOT ALTER vendors table for new fields
+     - Definitions → table: custom_field_definitions
+     - Values     → table: custom_field_values
+     - Vendor also has metadata JSON for SAP-style hardcoded tabs
+     - Dynamic UDFs use customFields map (NOT metadata)
+
+  3. ADMIN CREATES FIELDS DIRECTLY
+     - NO request / approve / reject workflow (skipped for now)
+     - Company ADMIN creates field → ACTIVE immediately
+     - Normal users only fill values on Vendor form
+     - Approval workflow may be added later as optional enterprise feature
+
+  4. MODULE SCOPE
+     - entityType = vendor ONLY right now
+     - Customer / Employee / other modules = later (separate handoff)
+
+  5. FORM UX GOAL
+     - Place custom fields into existing Vendor tabs via sectionKey
+     - End user should see one form (standard + custom mixed by section)
+     - Not a separate forever-only "Custom Fields" dump tab (use sectionKey)
+
+
+1. WHAT IS ALREADY BUILT (BACKEND)
+================================================================================
+
+  Database
+    - custom_field_definitions  (field setup)
+    - custom_field_values       (answers per vendor)
+
+  Permissions
+    - custom_fields:view
+    - custom_fields:create
+    - custom_fields:edit
+    - custom_fields:delete
+    - Seeded on PLATFORM_OWNER + DEMO_ACME ADMIN
+
+  Admin APIs (direct create — no PENDING)
+    GET  /api/v1/custom-fields/meta/modules
+    GET  /api/v1/custom-fields/meta/modules/vendor/sections
+         → sections[] + reservedFieldNames[]
+
+    GET  /api/v1/companies/{companyId}/custom-fields?entityType=vendor
+    GET  ...?entityType=vendor&groupedBySection=true
+    GET  .../custom-fields/{fieldId}
+    POST .../custom-fields          (creates ACTIVE definition now)
+    PATCH .../custom-fields/{fieldId}
+    DELETE .../custom-fields/{fieldId}   (soft deactivate)
+
+  Vendor form / values
+    GET  /api/v1/companies/{companyId}/entities/vendor/form-schema
+         → fields with sectionKey, isFilterable, validation, options, …
+    GET/POST/PATCH /api/v1/companies/{companyId}/vendors
+         → customFields: { "vendorTier": "preferred", ... }
+    GET  .../vendors?includeCustomFields=true
+    GET  .../vendors?cf.vendorTier=preferred   (filterable only)
+
+  Create behavior
+    - displayName required
+    - fieldName optional → auto from displayName (factoryCapacity)
+    - sectionKey optional → default/normalize to custom if unknown
+    - Reserved names rejected (paymentTerms, email, name, …)
+    - Duplicate label/key → 400
+    - Dropdown requires options[]
+    - Unsupported types (lookup/file/formula…) → 400 not implemented
+
+
+2. VENDOR SECTION KEYS (LOCKED)
+================================================================================
+
+  general | contact | address | payment | paymentRun |
+  accounting | remarks | custom
+
+  Unknown sectionKey → treated as "custom"
+
+
+3. API FIELD NAMES (LOCKED — DO NOT RENAME)
+================================================================================
+
+  entityType      (= "vendor")
+  displayName     (admin label)
+  fieldName       (internal key)
+  sectionKey
+  fieldType
+  isRequired
+  defaultValue
+  validation
+  options
+  sortOrder
+  isFilterable
+  isActive
+  customFields    (map on Vendor payloads/responses)
+
+  Vendor response code field = vendorCode
+  Vendor create request code field = code
+
+
+4. PERMISSIONS MATRIX
+================================================================================
+
+  Action                              Permission
+  ----------------------------------  --------------------------------
+  Admin list/create/edit CF defs      custom_fields:view|create|edit|delete
+  Load Vendor form-schema             supply-chain:view
+  Create/edit Vendor + customFields   supply-chain:create|edit
+
+  NOT used (skipped):
+    custom_fields:request
+    custom_fields:approve
+
+
+5. metadata vs customFields
+================================================================================
+
+  metadata       = FE hardcoded SAP-style tabs (payment, bank, …)
+  customFields   = dynamic admin-defined UDFs from form-schema
+
+  Keep BOTH. Do not put same key in both namespaces.
+  Legacy demo CF paymentTerms is deactivated (collides with metadata).
+
+
+6. DEMO SEED (DEMO_ACME)
+================================================================================
+
+  Login:
+    companyCode:  DEMO_ACME
+    employeeCode: ADMIN001
+    password:     Admin@123
+
+  Active sample fields:
+    vendorTier           dropdown  required  section=general  filterable
+    preferredCurrency     text      3 chars   section=custom
+    isPreferredVendor     checkbox            section=custom  filterable
+
+  Re-seed after pull:
+    npm run seed:client-logins
+    then re-login (new JWT)
+
+
+7. LOCAL RUN
+================================================================================
+
+  npx prisma migrate deploy
+  npx prisma generate
+  npm run seed:client-logins
+  npm run start:dev
+
+  Base URL: http://localhost:3002/api/v1  (or PORT from .env)
+  FE often proxies :3001 → :3002
+
+
+8. BOOTSTRAP FLOW (ASCII)
+================================================================================
+
+  migrate + seed
+       ↓
+  Company + ADMIN + custom_fields:* permissions
+       ↓
+  Admin login
+       ↓
+  GET meta modules/sections
+       ↓
+  POST /custom-fields   ← creates ACTIVE definition (no approval)
+       ↓
+  GET form-schema on Vendor form
+       ↓
+  POST/PATCH vendor with customFields map
+       ↓
+  Values in custom_field_values | core in vendors
+
+
+9. WHAT FRONTEND SHOULD BUILD NOW
+================================================================================
+
+  A) Settings → Customization → Custom Fields (Vendor)
+     - List definitions
+     - Create / edit / deactivate (admin)
+     - Use meta sections + reservedFieldNames
+     - Do NOT build request/approve UI
+
+  B) Vendor Create / Edit / View
+     - Load form-schema
+     - Render fields into tabs by sectionKey
+     - Submit customFields map
+     - Keep existing metadata SAP tabs as-is
+     - Edit/view must GET vendor by id (list may omit customFields)
+
+  C) Optional list polish
+     - ?includeCustomFields=true
+     - ?cf.<fieldName>= for filterable columns
+
+
+10. WHAT IS OUT OF SCOPE / DEFERRED
+================================================================================
+
+  - Customer / Employee / other modules
+  - Request → Approve workflow
+  - Form Designer (drag-drop, hide standard fields, conditions)
+  - Lookup / file / formula / multi_select types
+  - unique validation enforcement
+  - Redis cache / import-export
+  - Database-per-company tenancy
+
+
+11. RELATED DOCS (DETAIL)
+================================================================================
+
+  docs/CUSTOM-FIELDS-ADMIN-DIRECT-BOOTSTRAP.txt     ← bootstrap + diagrams
+  docs/CUSTOM-FIELDS-CREATE-VENDOR-BACKEND-REPLY.txt
+  docs/CUSTOM-FIELDS-VENDOR-FE-EXPECTATIONS-ACK.txt
+  docs/VENDOR-CUSTOM-FIELDS-FRONTEND-HANDOFF.txt
+  docs/VENDOR-CUSTOM-FIELDS-FE-FEEDBACK-REPLY.txt
+  docs/VENDOR-CUSTOM-FIELDS-IMPLEMENTATION-PLAN.txt
+  docs/DYNAMIC-CUSTOM-FIELDS-BACKEND-ANALYSIS.txt
+  docs/CUSTOM-FIELDS-INDUSTRY-PARITY-AND-PERMISSIONS.txt
+  docs/CURRENT-MULTI-TENANT-FLOW.txt
+  docs/API-URL-INDEX.txt                           ← section 33 / 33b
+
+
+12. ONE-LINE CONCLUSION
+================================================================================
+
+  Shared-DB multi-tenant ERP; Vendor custom fields live in definitions+values;
+  Company Admin creates fields directly (no approval); FE builds admin Create UI
+  + Vendor form section placement using form-schema; other modules later.
+
+================================================================================
+END — MASTER CONCLUSION
+================================================================================

@@ -1,0 +1,340 @@
+================================================================================
+CUSTOM FIELDS — FINAL CONCLUSIONS (SINGLE HANDOFF)
+Feed this ONE file to Frontend / Product / QA
+Date:       2026-07-23
+Scope:      Vendor only (entityType = vendor)
+Status:     LOCKED decisions + live backend APIs
+Source:     Backend (pasted into FE repo for alignment)
+================================================================================
+
+
+1. PRODUCT DECISIONS (LOCKED)
+--------------------------------------------------------------------------------
+
+  D1  Storage model
+      Shared Neon DB + companyId (NOT database-per-company).
+      Definitions in custom_field_definitions.
+      Values in custom_field_values (NOT new columns on vendors).
+
+  D2  Who creates fields
+      Company ADMIN creates fields DIRECTLY.
+      NO request / pending / approve / reject workflow (skipped).
+
+  D3  Module scope now
+      Vendor ONLY.
+      Customer / Employee / Sales / … later — separate handoff.
+
+  D4  Form UX goal
+      Fields appear inside existing Vendor tabs/sections (sectionKey).
+      Prefer one form feel — not a separate “Custom Fields” ghetto tab
+      when sectionKey is set (e.g. general). Fallback section = custom.
+
+  D5  metadata vs customFields
+      Both supported forever (for now):
+        metadata     = FE hardcoded SAP-style tabs
+        customFields = dynamic admin-defined UDFs
+      Do NOT put the same key in both.
+
+  D6  Approval / Form Designer / Formula / Lookup / File
+      Deferred. Not in current scope.
+
+
+2. PERMISSIONS (LOCKED)
+--------------------------------------------------------------------------------
+
+  Admin (definitions):
+    custom_fields:view
+    custom_fields:create     ← create ACTIVE immediately
+    custom_fields:edit
+    custom_fields:delete     ← soft deactivate
+
+  Vendor form users:
+    supply-chain:view        ← form-schema + read vendor
+    supply-chain:create|edit ← save customFields on vendor
+
+  NOT used (skipped):
+    custom_fields:request
+    custom_fields:approve
+    custom_fields:manage     (use create/edit/delete instead)
+
+  Seed: ADMIN001 + PLATFORM_OWNER get custom_fields:*
+
+
+3. DATABASE TABLES
+--------------------------------------------------------------------------------
+
+  vendors
+    Core columns + metadata JSON
+    Table: vendors
+
+  custom_field_definitions
+    Field setup per company + entityType
+    Columns include: field_name, display_name, field_type, section_key,
+                     validation, options, is_required, is_filterable, …
+
+  custom_field_values
+    Answers per vendor record
+    record_id = vendor_id
+    Typed columns: value_text / value_number / value_date / value_bool / value_json
+
+  NOT created:
+    custom_field_requests
+    custom_field_options (options stored as JSON on definition for v1)
+
+
+4. API CONTRACT (VENDOR — STABLE)
+--------------------------------------------------------------------------------
+
+  Base: /api/v1
+  Auth: Authorization: Bearer <accessToken>
+  Tenant path: /companies/{companyId}/...
+
+  --- Meta (Create UI dropdowns) ---
+  GET  /custom-fields/meta/modules
+  GET  /custom-fields/meta/modules/vendor/sections
+       → { sections[], reservedFieldNames[], reservedDisplayNames[] }
+
+  --- Definitions (Admin) ---
+  GET    /companies/{companyId}/custom-fields?entityType=vendor
+  GET    /companies/{companyId}/custom-fields?entityType=vendor&groupedBySection=true
+  GET    /companies/{companyId}/custom-fields/{fieldId}
+  POST   /companies/{companyId}/custom-fields
+  PATCH  /companies/{companyId}/custom-fields/{fieldId}
+  DELETE /companies/{companyId}/custom-fields/{fieldId}
+
+  Create body (fieldName OPTIONAL — auto from displayName;
+               sectionKey REQUIRED — catalog key from meta/sections):
+  {
+    "entityType": "vendor",
+    "sectionKey": "general",
+    "displayName": "Factory Capacity",
+    "fieldType": "number",
+    "isRequired": false,
+    "sortOrder": 40,
+    "isFilterable": true,
+    "validation": { "min": 0, "max": 100000 },
+    "options": null,
+    "helpText": "optional"
+  }
+
+  Dropdown must include options: [{ "value", "label" }, ...]
+
+  --- Vendor form ---
+  GET  /companies/{companyId}/entities/vendor/form-schema
+       fields[] include: fieldName, displayName, fieldType, sectionKey,
+                         isRequired, defaultValue, validation, options,
+                         isFilterable, placeholder, helpText, sortOrder
+
+  GET    /companies/{companyId}/vendors/{id}
+         → vendorCode + metadata? + customFields{...}
+  POST   /companies/{companyId}/vendors
+  PATCH  /companies/{companyId}/vendors/{id}
+  GET    /companies/{companyId}/vendors?includeCustomFields=true
+  GET    /companies/{companyId}/vendors?cf.vendorTier=preferred
+
+  Create vendor request uses "code"; response uses "vendorCode".
+
+
+5. SECTION KEYS (VENDOR)
+--------------------------------------------------------------------------------
+
+  general | contact | address | payment | paymentRun |
+  accounting | remarks | custom
+
+  Create/update: sectionKey REQUIRED and must be a catalog key → else 400.
+  Meta also returns reservedDisplayNames[] for FE.
+
+
+6. FIELD TYPES (SUPPORTED NOW)
+--------------------------------------------------------------------------------
+
+  text | textarea | number | decimal | date | email | phone |
+  dropdown | checkbox
+
+  Not implemented yet (400 if sent):
+  currency | percentage | datetime | lookup | file | formula | multi_select | …
+
+
+7. VALIDATION / ERRORS
+--------------------------------------------------------------------------------
+
+  Unknown customFields key → 400
+  Required missing → 400
+  Reserved fieldName OR displayName (Vendor Name, GST Number, …) → 400
+  Duplicate displayName/fieldName → 400 (reject; no auto-rename)
+  Invalid sectionKey / missing sectionKey → 400
+  Invalid defaultValue / validation rules → 400
+  Dropdown invalid option → 400
+  Soft-delete keeps values; Vendor GET still returns historical customFields
+  Details: docs/CUSTOM-FIELDS-BACKEND-VALIDATION-ENHANCEMENTS.txt
+
+  Error shape:
+  {
+    "success": false,
+    "message": "...",
+    "errors": [{ "field": "customFields.vendorTier", "message": "..." }],
+    "data": null
+  }
+
+  PATCH customFields clear rules:
+    omit key  → leave
+    null / "" → clear (if not required)
+    checkbox false → store false
+
+
+8. DEMO SEED (DEMO_ACME)
+--------------------------------------------------------------------------------
+
+  Active:
+    vendorTier            dropdown  required  section=general  filterable
+    preferredCurrency      text      3 chars   section=custom
+    isPreferredVendor      checkbox            section=custom  filterable
+
+  Deactivated (do not use):
+    paymentTerms   (collided with SAP metadata tab)
+
+  Login:
+    companyCode:  DEMO_ACME
+    employeeCode: ADMIN001
+    password:     Admin@123
+
+  After seed: RE-LOGIN for fresh JWT permissions.
+
+
+9. BOOTSTRAP FLOW (HOW THE SYSTEM STARTS)
+--------------------------------------------------------------------------------
+
+  Shared DB
+      → prisma migrate + generate
+      → npm run seed:client-logins
+      → npm run start:dev
+      → Login ADMIN001
+      → Ready
+
+  Admin create field:
+      GET meta modules/sections
+      → POST /custom-fields  (ACTIVE now)
+      → GET form-schema on Vendor
+      → POST/PATCH vendor with customFields
+
+
+10. ASCII BOOTSTRAP DIAGRAM
+--------------------------------------------------------------------------------
+
+  [migrate + seed]
+         |
+         v
+  Company + ADMIN + custom_fields:* permissions
+         |
+         v
+  Optional demo definitions (vendorTier, …)
+         |
+         v
+  +---------------------------+
+  | ADMIN: Settings →         |
+  | Customization →           |
+  | Custom Fields → Create    |
+  | POST /custom-fields       |
+  +-------------+-------------+
+                |
+                v
+  custom_field_definitions (ACTIVE)
+                |
+                v
+  +---------------------------+
+  | USER: Vendor Create/Edit  |
+  | GET form-schema           |
+  | POST vendor + customFields|
+  +-------------+-------------+
+                |
+        +-------+-------+
+        v               v
+     vendors      custom_field_values
+
+
+11. FE BUILD CHECKLIST
+--------------------------------------------------------------------------------
+
+  [x] Settings → Custom Fields (admin)
+        list / create / edit / deactivate
+        use meta modules + sections
+        do NOT build request/approve UI
+        NOTE: Nav label is Settings → Custom Fields (no extra
+        "Customization" crumb in current FE)
+
+  [x] Vendor Create/Edit
+        GET form-schema
+        render by sectionKey into tabs
+        submit customFields map
+        keep metadata SAP tabs separate
+
+  [x] Optional list
+        includeCustomFields=true
+        cf.* filters for isFilterable fields
+
+  [ ] Re-login after seed (manual / environment)
+  [x] Never send reserved keys as fieldName
+        (FE omits fieldName on create — BE auto-generates)
+
+
+12. OUT OF SCOPE (DO NOT ASK BACKEND YET)
+--------------------------------------------------------------------------------
+
+  - Request / approval workflow
+  - Form Designer drag-drop
+  - Customer / Employee / other entityTypes
+  - Lookup / file / formula / multi_select
+  - unique validation enforcement
+  - Database-per-company tenancy
+  - Redis cache / Excel import-export
+
+
+13. RELATED DOCS (OPTIONAL DETAIL)
+--------------------------------------------------------------------------------
+
+  This file = single source of truth for conclusions.
+
+  Extra detail if needed:
+    docs/CUSTOM-FIELDS-ADMIN-DIRECT-BOOTSTRAP.txt
+    docs/CUSTOM-FIELDS-CREATE-VENDOR-BACKEND-REPLY.txt
+    docs/VENDOR-CUSTOM-FIELDS-FRONTEND-HANDOFF.txt
+    docs/CUSTOM-FIELDS-BACKEND-VALIDATION-ENHANCEMENTS.txt
+    docs/CUSTOM-FIELDS-FINAL-PRODUCT-DECISION.txt
+    docs/CURRENT-MULTI-TENANT-FLOW.txt
+    docs/API-URL-INDEX.txt  (section 33 + 33b)
+
+
+14. ONE-LINE CONCLUSION
+--------------------------------------------------------------------------------
+
+  Admin creates Vendor custom fields directly (no approval);
+  fields live in definitions/values tables; Vendor forms load them via
+  form-schema and save values in customFields — Vendor only for now.
+
+
+15. FE ALIGNMENT NOTES (added 2026-07-23)
+--------------------------------------------------------------------------------
+
+  Matches locked BE:
+    D1–D6 product decisions understood and followed in FE
+    No request/approve UI
+    Vendor-only; sectionKey placement; metadata ≠ customFields
+    Soft-delete + Active toggle; create without sending fieldName
+    Live API smoke + unit tests green against DEMO_ACME
+
+  Demo UX note (D4):
+    preferredCurrency + isPreferredVendor are seeded with section=custom
+    → Vendor modal shows a "Custom Fields" tab.
+    Fields with section=general (e.g. vendorTier) appear on General.
+    Product preference: prefer existing tabs; custom = fallback only.
+    To hide Custom tab: move those seed fields off section=custom (BE seed)
+    or create new fields under general/payment/… only.
+
+  Optional FE follow-ups (not blocking):
+    - Surface reservedDisplayNames from meta in Create dialog (BE now returns)
+    - Nav path "Customization → Custom Fields" if Product wants that crumb
+
+
+================================================================================
+END — Feed this file to Frontend / Product / QA
+================================================================================

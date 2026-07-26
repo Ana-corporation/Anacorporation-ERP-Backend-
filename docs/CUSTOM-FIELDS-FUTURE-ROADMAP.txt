@@ -1,0 +1,313 @@
+================================================================================
+CUSTOM FIELD SYSTEM
+FUTURE ROADMAP (NOT FOR VERSION 1)
+================================================================================
+
+STATUS
+
+The current implementation is approved.
+
+There is NO need to redesign the backend.
+
+Version 1 should continue using the existing architecture.
+
+Current Architecture
+
+✓ custom_field_definitions
+
+✓ custom_field_values
+
+✓ entityType
+
+✓ sectionKey
+
+✓ fieldName (camelCase)
+
+✓ typed value columns
+
+✓ options stored as JSON
+
+This architecture is considered LOCKED for Version 1.
+
+================================================================================
+VERSION 2 IMPROVEMENTS
+================================================================================
+
+The following features may be implemented in future releases without changing
+the overall architecture.
+
+--------------------------------------------------------------------------------
+1. TAB SUPPORT
+--------------------------------------------------------------------------------
+
+Current
+
+sectionKey
+
+Future
+
+tabKey
+
+sectionKey
+
+Example
+
+Vendor
+
+General
+
+Identity
+
+General
+
+Contact
+
+Accounting
+
+Bank Details
+
+Reason
+
+Provides better control over field placement.
+
+Priority
+
+Medium
+
+--------------------------------------------------------------------------------
+2. AUTOMATIC DISPLAY ORDER
+--------------------------------------------------------------------------------
+
+Current
+
+Manual sort order.
+
+Future
+
+Backend automatically assigns
+
+10
+
+20
+
+30
+
+40
+
+Administrators can later reorder fields using Drag & Drop.
+
+Priority
+
+High
+
+--------------------------------------------------------------------------------
+3. DRAG & DROP FORM DESIGNER
+--------------------------------------------------------------------------------
+
+Current
+
+Display order controlled internally.
+
+Future
+
+Settings
+
+↓
+
+Customization
+
+↓
+
+Form Designer
+
+↓
+
+Drag & Drop
+
+Administrators can rearrange fields visually.
+
+Priority
+
+Medium
+
+--------------------------------------------------------------------------------
+4. DROPDOWN OPTIONS TABLE
+--------------------------------------------------------------------------------
+
+Current
+
+Dropdown values stored inside options JSON.
+
+Future
+
+Create
+
+custom_field_options
+
+Table
+
+Columns
+
+id
+
+field_id
+
+label
+
+value
+
+display_order
+
+is_active
+
+Reason
+
+Better management of large dropdown lists.
+
+Priority
+
+Medium
+
+================================================================================
+VERSION 3 IMPROVEMENTS
+================================================================================
+
+--------------------------------------------------------------------------------
+5. ROLE BASED FIELD VISIBILITY
+--------------------------------------------------------------------------------
+
+Example
+
+Managers
+
+Can view
+
+Factory Capacity
+
+Employees
+
+Cannot view
+
+Factory Capacity
+
+--------------------------------------------------------------------------------
+6. CONDITIONAL FIELDS
+--------------------------------------------------------------------------------
+
+Example
+
+Vendor Type = Manufacturer
+
+↓
+
+Show
+
+Factory Capacity
+
+Otherwise
+
+Hide
+
+--------------------------------------------------------------------------------
+7. APPROVAL WORKFLOW
+--------------------------------------------------------------------------------
+
+User requests a new custom field.
+
+↓
+
+Admin reviews.
+
+↓
+
+Approve
+
+Reject
+
+↓
+
+Create definition.
+
+--------------------------------------------------------------------------------
+8. IMPORT / EXPORT
+--------------------------------------------------------------------------------
+
+Import
+
+CSV
+
+Excel
+
+Export
+
+Field Definitions
+
+Useful for large ERP implementations.
+
+--------------------------------------------------------------------------------
+9. FIELD VERSION HISTORY
+--------------------------------------------------------------------------------
+
+Track changes made to custom field definitions.
+
+--------------------------------------------------------------------------------
+10. AUDIT LOG
+--------------------------------------------------------------------------------
+
+Track
+
+Created
+
+Updated
+
+Deleted
+
+Enabled
+
+Disabled
+
+================================================================================
+VERSION 4 IMPROVEMENTS
+================================================================================
+
+Future enterprise capabilities.
+
+• Formula Fields
+
+• Lookup Relationships
+
+• Dynamic Expressions
+
+• API Exposure
+
+• Workflow Integration
+
+• Reporting Integration
+
+• Cross Module References
+
+• Localization
+
+• Multi Language Labels
+
+• AI Assisted Form Designer
+
+================================================================================
+FINAL DECISION
+================================================================================
+
+The current backend architecture remains unchanged.
+
+No redesign is required.
+
+Future enhancements will be implemented incrementally while maintaining
+backward compatibility.
+
+All future features must build on top of the existing architecture rather than
+replace it.
+
+This ensures stability, scalability and compatibility with future ERP modules.
+
+================================================================================
+END
+================================================================================

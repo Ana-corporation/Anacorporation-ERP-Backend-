@@ -1,0 +1,306 @@
+================================================================================
+CURRENT ERP MULTI-TENANT FLOW (WHAT WE FOLLOW TODAY)
+Date:       2026-07-23
+Audience:   Product / Backend / Frontend
+Status:     THIS IS THE LIVE MODEL — shared database + companyId
+NOT:        Database-per-company (that is a future option, not current)
+================================================================================
+
+
+0. ONE-LINE SUMMARY
+--------------------------------------------------------------------------------
+  One shared Postgres/Neon database.
+  Every company is a ROW in `companies`.
+  Every business record (vendor, role, custom field, …) has `company_id`.
+  Login picks a company → JWT carries companyId → APIs filter by that company.
+
+
+1. HIGH-LEVEL FLOW (ASCII)
+--------------------------------------------------------------------------------
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │  SHARED DATABASE (Neon / PostgreSQL)                        │
+  │                                                             │
+  │  Platform + Tenant data live together:                      │
+  │    companies | users | roles | permissions | plans |        │
+  │    subscriptions | vendors | custom_field_* | …             │
+  │                                                             │
+  │  Isolation = company_id on every tenant row + guards        │
+  └─────────────────────────────────────────────────────────────┘
+
+  Company created (signup OR seed OR admin create)
+           │
+           ▼
+  Bootstrap for that company (signup path):
+    - Company row
+    - ADMIN role
+    - Role permissions
+    - Membership (employeeId)
+    - UserRole
+    - CompanySecurityPolicy
+           │
+           ▼
+  User logs in with:
+    companyCode + employeeCode + password
+           │
+           ▼
+  JWT issued with companyId (cid)
+           │
+           ▼
+  API calls:
+    /api/v1/companies/{companyId}/...
+    Authorization: Bearer <token>
+           │
+           ▼
+  Guards check JWT + permissions/modules
+  Repositories always filter by companyId
+           │
+           ▼
+  Ready to use (Vendor, Custom Fields, Admin, …)
+
+
+2. DATABASE MODEL (CURRENT)
+--------------------------------------------------------------------------------
+
+  NOT created per company:
+    ✗ ANA_ERP_DB per tenant
+    ✗ Separate migrate per tenant
+
+  YES — shared tables, tenant column:
+
+    companies
+      company_id (PK)
+      company_code (unique)   e.g. DEMO_ACME, PLATFORM
+      name, status, …
+
+    user_companies
+      user_id + company_id
+      employee_id             e.g. ADMIN001  (login code)
+
+    roles / role_permissions
+      scoped by company_id
+
+    company_subscriptions / company_modules
+      which plan/modules this company has
+
+    vendors
+      company_id + vendor_code
+
+    custom_field_definitions
+      company_id + entity_type + field_name
+
+    custom_field_values
+      company_id + entity_type + record_id + field_id
+
+
+3. HOW A COMPANY GETS CREATED
+--------------------------------------------------------------------------------
+
+  PATH A — Public Signup (main bootstrap)
+  ----------------------------------------
+  POST /api/v1/auth/signup
+
+  Automatically creates:
+    1. User + password hash
+    2. Company (status = trial, companyCode from company name)
+    3. System role ADMIN
+    4. Role permissions (DEFAULT_ADMIN_PERMISSIONS)
+    5. UserCompany membership (employeeId like EMP-00001)
+    6. UserRole → ADMIN
+    7. CompanySecurityPolicy (defaults)
+    8. Login session / JWT
+
+  Note: Signup does NOT always attach a subscription plan
+        (seeds do attach plan + modules).
+
+
+  PATH B — Admin create company
+  ----------------------------------------
+  POST /api/v1/companies
+
+  Creates company ROW only (+ audit).
+  Does NOT auto-create admin user / roles / subscription
+  (use seed or manual invite after).
+
+
+  PATH C — Seed (local/demo)
+  ----------------------------------------
+  npm run seed:client-logins
+
+  Creates ready companies:
+
+    PLATFORM  / OWNER001 / Owner@123  → PLATFORM_OWNER
+    DEMO_ACME / ADMIN001 / Admin@123  → ADMIN (full modules)
+    DEMO_ACME / MGR001   / Manager@123
+    DEMO_ACME / STAFF001 / Staff@123
+    DEMO_ACME / SALES001 / Sales@123
+
+  Also seeds:
+    - Plan + CompanySubscription
+    - Role permissions
+    - Vendor custom field samples (DEMO_ACME)
+
+
+4. LOGIN FLOW
+--------------------------------------------------------------------------------
+
+  1) Resolve company
+       GET  /api/v1/auth/company?companyCode=DEMO_ACME
+       or send companyCode on login
+
+  2) Login
+       POST /api/v1/auth/login
+       {
+         "companyCode": "DEMO_ACME",
+         "employeeCode": "ADMIN001",
+         "password": "Admin@123"
+       }
+
+  3) Backend checks
+       - Company exists / not suspended / not cancelled
+       - Membership: employeeCode under that company
+       - Password + security policy (lockout)
+       - Load role permissions + subscribed modules
+
+  4) Response
+       - accessToken (JWT) with companyId
+       - user / companies / activeCompany snapshot for FE
+
+  5) Later calls
+       Authorization: Bearer <accessToken>
+       Path: /api/v1/companies/{companyId}/vendors
+       Optional header: x-company-id (must match JWT company)
+
+
+5. REQUEST FLOW AFTER LOGIN (GUARDS)
+--------------------------------------------------------------------------------
+
+  Request
+    → JwtAuthGuard          (valid token?)
+    → TenantGuard           (company context? header match?)
+    → PermissionsGuard      (custom_fields:*, companies:*, …)
+    → ModulePermissionGuard (supply-chain:view, …)
+    → Controller
+    → Service / Repository  (WHERE company_id = ?)
+
+
+6. SUBSCRIPTION + MODULES FLOW
+--------------------------------------------------------------------------------
+
+  SubscriptionPlan
+       │
+       ▼
+  CompanySubscription   (this company is on which plan)
+       │
+       ▼
+  CompanyModule / PlanModule
+       │
+       ▼
+  At login: modules[] with actions (view/create/edit/…)
+       │
+       ▼
+  Product APIs gated by @RequireModulePermission
+    e.g. Vendors → supply-chain:view|create|edit|delete
+
+  Admin APIs gated by @RequirePermissions
+    e.g. custom_fields:create
+
+
+7. VENDOR + CUSTOM FIELDS FLOW (CURRENT FEATURE)
+--------------------------------------------------------------------------------
+
+  Admin defines fields (company-scoped):
+    POST /companies/{companyId}/custom-fields
+      entityType = vendor
+      sectionKey = general | payment | custom | …
+      displayName → auto fieldName
+    Stored in: custom_field_definitions
+
+  Vendor form loads schema:
+    GET /companies/{companyId}/entities/vendor/form-schema
+
+  User saves vendor:
+    POST /companies/{companyId}/vendors
+    {
+      "code": "V-1",
+      "name": "...",
+      "metadata": { ... SAP tabs ... },
+      "customFields": { "vendorTier": "preferred" }
+    }
+
+  Storage:
+    Standard columns + metadata  → table `vendors`
+    customFields values          → table `custom_field_values`
+                                   (record_id = vendor_id)
+
+  List (optional):
+    GET /vendors?includeCustomFields=true
+    GET /vendors?cf.vendorTier=preferred
+
+
+8. COMPARED TO “DB PER COMPANY” IDEA
+--------------------------------------------------------------------------------
+
+  Proposed (NOT current):
+    Platform DB → create company → new ANA_ERP_DB → migrate → seed
+
+  Current (WHAT WE FOLLOW):
+    Shared DB → insert company row → bootstrap roles/perms in same DB
+    → login with companyCode → filter by company_id
+
+  We stay on CURRENT model for now.
+
+
+9. KEY FILES
+--------------------------------------------------------------------------------
+
+  Prisma / DB
+    prisma/schema.prisma
+    prisma/organization/companies.prisma
+    prisma/purchase/vendors.prisma
+    prisma/shared/custom-fields.prisma
+
+  Auth / signup / login
+    src/modules/iam/authentication/auth.controller.ts
+    src/modules/iam/authentication/auth.service.ts
+    src/modules/iam/authentication/auth.repository.ts
+    src/modules/iam/authentication/strategies/jwt.strategy.ts
+
+  Tenant isolation
+    src/common/guards/tenant.guard.ts
+    src/app.module.ts
+
+  Permissions
+    src/common/constants/permissions.constant.ts
+    src/common/guards/permissions.guard.ts
+    src/common/guards/module-permission.guard.ts
+
+  Companies
+    src/modules/organization/companies/
+
+  Vendors + Custom Fields
+    src/modules/purchase/vendors/
+    src/modules/shared/custom-fields/
+
+  Seed
+    scripts/seed-client-login-samples.js
+    scripts/seed-erp-product-modules.js
+
+
+10. QUICK LOCAL RUN
+--------------------------------------------------------------------------------
+
+  npx prisma migrate deploy
+  npx prisma generate
+  npm run seed:client-logins
+  npm run start:dev
+
+  Login:
+    companyCode:  DEMO_ACME
+    employeeCode: ADMIN001
+    password:     Admin@123
+
+
+================================================================================
+END — Current flow documentation
+================================================================================

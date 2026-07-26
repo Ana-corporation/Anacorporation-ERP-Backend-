@@ -1,0 +1,443 @@
+================================================================================
+VENDOR CUSTOM FIELDS — FRONTEND INTEGRATION HANDOFF
+Feed this file to the frontend team for Vendor section integration
+Date       : 2026-07-22
+Base URL   : /api/v1  (proxied from FE :3001 → BE :3002)
+Auth       : Authorization: Bearer <accessToken>
+Tenant     : companyId in path + JWT company context
+================================================================================
+
+1. WHAT TO BUILD IN FRONTEND (2 SCREENS)
+--------------------------------------------------------------------------------
+A) Vendor Create / Edit / View form
+   - Load dynamic field definitions
+   - Render controls based on fieldType
+   - Submit values inside `customFields` on Vendor POST/PATCH
+   - Show values from Vendor GET `customFields`
+
+B) Admin → Custom Fields settings (company admin only)
+   - List / create / edit / deactivate definitions for entityType=vendor
+
+
+2. PERMISSIONS
+--------------------------------------------------------------------------------
+Action                              Required
+----------------------------------  ------------------------------------------
+Render Vendor form + custom fields  supply-chain:view
+Create/Edit Vendor with values      supply-chain:create / supply-chain:edit
+Admin manage field definitions      custom_fields:view|create|edit|delete
+
+Notes:
+  - ADMIN001 and PLATFORM_OWNER have custom_fields:* after seed
+  - Re-login after seed so JWT has new permissions
+  - End users do NOT need custom_fields:view to fill Vendor forms
+    → use form-schema endpoint instead
+
+
+3. API 1 — FORM SCHEMA (USE THIS ON VENDOR FORM)
+--------------------------------------------------------------------------------
+Purpose: Tell FE which custom fields to render on Vendor create/edit.
+
+GET /api/v1/companies/{companyId}/entities/vendor/form-schema
+Permission: supply-chain:view
+
+Success response (envelope):
+{
+  "success": true,
+  "data": {
+    "entityType": "vendor",
+    "fields": [
+      {
+        "fieldId": "1",
+        "fieldName": "paymentTerms",
+        "displayName": "Payment Terms",
+        "fieldType": "dropdown",
+        "isRequired": true,
+        "defaultValue": "Net30",
+        "validation": null,
+        "options": [
+          { "value": "Net30", "label": "Net 30" },
+          { "value": "Net60", "label": "Net 60" },
+          { "value": "COD", "label": "Cash on Delivery" }
+        ],
+        "sortOrder": 10
+      },
+      {
+        "fieldId": "2",
+        "fieldName": "preferredCurrency",
+        "displayName": "Preferred Currency",
+        "fieldType": "text",
+        "isRequired": false,
+        "defaultValue": null,
+        "validation": { "minLength": 3, "maxLength": 3 },
+        "options": null,
+        "sortOrder": 20
+      },
+      {
+        "fieldId": "3",
+        "fieldName": "isPreferredVendor",
+        "displayName": "Preferred Vendor",
+        "fieldType": "checkbox",
+        "isRequired": false,
+        "defaultValue": false,
+        "validation": null,
+        "options": null,
+        "sortOrder": 30
+      }
+    ]
+  }
+}
+
+FE logic:
+  1. On Vendor Create/Edit mount → call form-schema
+  2. Sort by sortOrder
+  3. For each field, render control by fieldType
+  4. On Create: prefill defaultValue when present
+  5. On Edit: prefill from vendor.customFields[fieldName]
+  6. Keep form state as:
+       customFields: Record<fieldName, value>
+
+
+4. API 2 — VENDOR CRUD WITH customFields
+--------------------------------------------------------------------------------
+Routes (already exist):
+  GET    /api/v1/companies/{companyId}/vendors
+  GET    /api/v1/companies/{companyId}/vendors/{id}
+  POST   /api/v1/companies/{companyId}/vendors
+  PATCH  /api/v1/companies/{companyId}/vendors/{id}
+  DELETE /api/v1/companies/{companyId}/vendors/{id}
+
+4.1 Create Vendor
+POST /api/v1/companies/{companyId}/vendors
+Permission: supply-chain:create
+
+Body:
+{
+  "code": "V-100",
+  "name": "Acme Supplies",
+  "email": "ap@acme.com",
+  "phone": "+1-555-0100",
+  "city": "Austin",
+  "country": "US",
+  "taxId": "TX-9988",
+  "isActive": true,
+  "customFields": {
+    "paymentTerms": "Net30",
+    "preferredCurrency": "USD",
+    "isPreferredVendor": true
+  }
+}
+
+4.2 Update Vendor
+PATCH /api/v1/companies/{companyId}/vendors/{id}
+Permission: supply-chain:edit
+
+Body (partial OK):
+{
+  "name": "Acme Supplies LLC",
+  "customFields": {
+    "paymentTerms": "Net60",
+    "isPreferredVendor": false
+  }
+}
+
+Rules:
+  - Only send keys that exist in form-schema (unknown keys → 400)
+  - Required fields must be present on create (or have defaultValue)
+  - On update: if customFields is omitted, existing custom values are left unchanged
+  - On update: if customFields is sent, only included keys are upserted
+  - On update clear rules:
+      omit key     → leave existing
+      key: null    → clear value (non-required)
+      key: ""      → clear text-like value (non-required)
+      checkbox false → store false
+  - POST/PATCH responses return full customFields map (via findOne)
+
+4.3 Get Vendor (detail)
+GET /api/v1/companies/{companyId}/vendors/{id}
+Permission: supply-chain:view
+
+Response includes (note: vendorCode, not code):
+{
+  "vendorId": "12",
+  "companyId": "2",
+  "vendorCode": "V-100",
+  "name": "Acme Supplies",
+  "...": "...",
+  "metadata": { },
+  "customFields": {
+    "paymentTerms": "Net30",
+    "preferredCurrency": "USD",
+    "isPreferredVendor": true
+  }
+}
+
+Create request body still uses "code".
+Response always uses "vendorCode".
+
+Note: List endpoint (GET /vendors) currently returns standard columns only.
+Use detail GET when you need customFields on edit/view.
+
+metadata + customFields coexist:
+  - metadata     = hardcoded SAP-style tabs (FE keeps as-is)
+  - customFields = dynamic UDFs from form-schema
+  Do not put the same key in both.
+
+
+5. FIELD TYPE → UI CONTROL MAP
+--------------------------------------------------------------------------------
+fieldType     UI control              Value type in customFields
+------------  ----------------------  --------------------------------
+text          <input type="text">     string
+textarea      <textarea>              string
+number        number input (int)      number (integer)
+decimal       number input (float)    number
+date          date picker             string "YYYY-MM-DD"
+email         email input             string
+phone         tel/text input          string
+dropdown      <select> / combobox     string (option.value)
+checkbox      checkbox / switch       boolean
+
+validation JSON (optional):
+  min, max              → number/decimal
+  minLength, maxLength  → text/textarea/email
+  regex                 → text
+  unique                → reserved (backend Phase 2)
+
+
+6. SUGGESTED FE FLOW (VENDOR CREATE)
+--------------------------------------------------------------------------------
+1) Open Create Vendor page
+2) Parallel fetch:
+     - optional: any static vendor lookups
+     - GET .../entities/vendor/form-schema
+3) Build form:
+     standardFields = { code, name, email, ... }
+     customFields   = {}
+     for each schema.field:
+       customFields[field.fieldName] = field.defaultValue ?? (checkbox ? false : '')
+4) User fills form
+5) Client-side validate required + types (UX only)
+6) POST vendor with { ...standardFields, customFields }
+7) On 400 with "Unknown custom field" / "is required" → show field error
+8) On success → navigate to vendor detail
+
+
+7. SUGGESTED FE FLOW (VENDOR EDIT)
+--------------------------------------------------------------------------------
+1) GET vendor by id  → get standard + customFields
+2) GET form-schema   → know which controls to show
+3) Merge:
+     for each schema.field:
+       value = vendor.customFields?.[field.fieldName]
+               ?? field.defaultValue
+               ?? (checkbox ? false : '')
+4) PATCH only changed fields + customFields map of changed UDFs
+   (or send full customFields map — both OK)
+
+
+8. ADMIN APIs — CUSTOM FIELD DEFINITIONS
+--------------------------------------------------------------------------------
+Base: /api/v1/companies/{companyId}/custom-fields
+Permission: custom_fields:*
+
+8.1 List definitions
+GET /custom-fields?entityType=vendor
+GET /custom-fields?entityType=vendor&includeInactive=true
+
+8.2 Get one
+GET /custom-fields/{fieldId}
+
+8.3 Create
+POST /custom-fields
+{
+  "entityType": "vendor",
+  "fieldName": "paymentTerms",          // immutable after create
+  "displayName": "Payment Terms",
+  "fieldType": "dropdown",
+  "isRequired": true,
+  "defaultValue": "Net30",
+  "options": [
+    { "value": "Net30", "label": "Net 30" },
+    { "value": "Net60", "label": "Net 60" }
+  ],
+  "validation": null,
+  "sortOrder": 10,
+  "isActive": true,
+  "isFilterable": false
+}
+
+Rules:
+  - fieldName: starts with letter; letters/numbers/_ only
+  - dropdown REQUIRES options[]
+  - entityType for now: "vendor" only
+
+8.4 Update
+PATCH /custom-fields/{fieldId}
+{
+  "displayName": "Payment Terms (AP)",
+  "isRequired": false,
+  "sortOrder": 5,
+  "options": [ ... ]
+}
+Cannot change fieldName.
+
+8.5 Deactivate (soft delete)
+DELETE /custom-fields/{fieldId}
+→ field hidden from form-schema; historical values kept
+
+
+9. DEMO SEED DATA (DEMO_ACME)
+--------------------------------------------------------------------------------
+After npm run seed:client-logins, DEMO_ACME already has:
+  paymentTerms (dropdown, required)
+  preferredCurrency (text)
+  isPreferredVendor (checkbox)
+
+Login:
+  companyCode: DEMO_ACME
+  employeeCode: ADMIN001
+  password: Admin@123
+
+
+10. TYPESCRIPT TYPES (COPY TO FE)
+--------------------------------------------------------------------------------
+export type CustomFieldType =
+  | 'text' | 'textarea' | 'number' | 'decimal'
+  | 'date' | 'email' | 'phone' | 'dropdown' | 'checkbox';
+
+export type CustomFieldOption = { value: string; label: string };
+
+export type CustomFieldValidation = {
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
+  regex?: string;
+  unique?: boolean;
+};
+
+export type FormSchemaField = {
+  fieldId: string;
+  fieldName: string;
+  displayName: string;
+  fieldType: CustomFieldType;
+  isRequired: boolean;
+  defaultValue: unknown | null;
+  validation: CustomFieldValidation | null;
+  options: CustomFieldOption[] | null;
+  sortOrder: number;
+};
+
+export type VendorFormSchema = {
+  entityType: 'vendor';
+  fields: FormSchemaField[];
+};
+
+export type VendorPayload = {
+  code: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  taxId?: string;
+  isActive?: boolean;
+  customFields?: Record<string, unknown>;
+};
+
+
+11. EXAMPLE API HELPERS (FE)
+--------------------------------------------------------------------------------
+// form-schema for Vendor form
+export async function getVendorFormSchema(companyId: string) {
+  return api.get(`/companies/${companyId}/entities/vendor/form-schema`);
+}
+
+// vendor detail (includes customFields)
+export async function getVendor(companyId: string, vendorId: string) {
+  return api.get(`/companies/${companyId}/vendors/${vendorId}`);
+}
+
+export async function createVendor(companyId: string, body: VendorPayload) {
+  return api.post(`/companies/${companyId}/vendors`, body);
+}
+
+export async function updateVendor(
+  companyId: string,
+  vendorId: string,
+  body: Partial<VendorPayload>,
+) {
+  return api.patch(`/companies/${companyId}/vendors/${vendorId}`, body);
+}
+
+// admin definitions
+export async function listVendorCustomFields(companyId: string) {
+  return api.get(`/companies/${companyId}/custom-fields`, {
+    params: { entityType: 'vendor' },
+  });
+}
+
+export async function createCustomField(companyId: string, body: unknown) {
+  return api.post(`/companies/${companyId}/custom-fields`, body);
+}
+
+
+12. ERRORS TO HANDLE
+--------------------------------------------------------------------------------
+HTTP 400 example (field-level):
+{
+  "success": false,
+  "message": "Unknown custom field: fooBar",
+  "data": null,
+  "errors": [
+    { "field": "customFields.fooBar", "message": "Unknown custom field: fooBar" }
+  ],
+  "timestamp": "...",
+  "path": "/api/v1/companies/2/vendors"
+}
+
+Other messages:
+  "Custom field \"Payment Terms\" is required"
+  "\"Preferred Currency\" must be at most 3 characters"
+  "\"Payment Terms\" has an invalid option"
+
+HTTP 403
+  "Insufficient permissions"           → missing custom_fields:*
+  "Insufficient module permissions"    → missing supply-chain:*
+
+HTTP 409
+  "Custom field name already exists for this entity"
+  "Vendor code already exists"
+
+Admin list envelope:
+  GET /custom-fields?entityType=vendor → { "items": [...], "total": N }
+
+
+13. DO / DON'T
+--------------------------------------------------------------------------------
+DO
+  - Use form-schema to drive Vendor form controls
+  - Send values under `customFields` (NOT under `metadata` for new UDFs)
+  - Use option.value (not label) for dropdowns
+  - Use YYYY-MM-DD for date fields
+  - Re-login after permission seed changes
+
+DON'T
+  - Hardcode custom field names in FE (except demos)
+  - Send unknown keys in customFields
+  - Expect list vendors API to include customFields yet
+  - Require custom_fields:view just to open Vendor form
+
+
+14. RELATED BACKEND DOCS
+--------------------------------------------------------------------------------
+  docs/VENDOR-CUSTOM-FIELDS-IMPLEMENTATION-PLAN.txt
+  docs/DYNAMIC-CUSTOM-FIELDS-BACKEND-ANALYSIS.txt
+  docs/CUSTOM-FIELDS-INDUSTRY-PARITY-AND-PERMISSIONS.txt
+
+
+================================================================================
+END — Frontend Vendor Custom Fields Integration
+================================================================================

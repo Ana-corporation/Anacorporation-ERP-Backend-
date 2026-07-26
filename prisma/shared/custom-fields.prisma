@@ -1,0 +1,63 @@
+// shared | custom fields (UDF) — definitions + values
+
+model CustomFieldDefinition {
+  fieldId       BigInt    @id @default(autoincrement()) @map("field_id")
+  companyId     BigInt    @map("company_id")
+  entityType    String    @map("entity_type") @db.VarChar(40)
+  fieldName     String    @map("field_name") @db.VarChar(80)
+  displayName   String    @map("display_name") @db.VarChar(120)
+  fieldType     String    @map("field_type") @db.VarChar(40)
+  sectionKey    String?   @map("section_key") @db.VarChar(40)
+  isRequired    Boolean   @default(false) @map("is_required")
+  defaultValue  Json?     @map("default_value")
+  validation    Json?
+  options       Json?
+  placeholder   String?   @db.VarChar(255)
+  helpText      String?   @map("help_text") @db.VarChar(500)
+  description   String?   @db.VarChar(1000)
+  sortOrder     Int       @default(0) @map("sort_order")
+  isActive      Boolean   @default(true) @map("is_active")
+  isReadOnly    Boolean   @default(false) @map("is_read_only")
+  isHidden      Boolean   @default(false) @map("is_hidden")
+  isSearchable  Boolean   @default(false) @map("is_searchable")
+  isFilterable  Boolean   @default(false) @map("is_filterable")
+  isSortable    Boolean   @default(false) @map("is_sortable")
+  isExportable  Boolean   @default(true) @map("is_exportable")
+  isPrintable   Boolean   @default(true) @map("is_printable")
+  createdBy     BigInt?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedBy     BigInt?   @map("updated_by")
+  updatedAt     DateTime? @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  company Company            @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  values  CustomFieldValue[]
+
+  @@unique([companyId, entityType, fieldName])
+  @@index([companyId, entityType, isActive])
+  @@index([companyId, entityType, sectionKey])
+  @@map("custom_field_definitions")
+}
+
+model CustomFieldValue {
+  valueId     BigInt    @id @default(autoincrement()) @map("value_id")
+  companyId   BigInt    @map("company_id")
+  entityType  String    @map("entity_type") @db.VarChar(40)
+  recordId    BigInt    @map("record_id")
+  fieldId     BigInt    @map("field_id")
+  valueText   String?   @map("value_text") @db.VarChar(2000)
+  valueNumber Decimal?  @map("value_number") @db.Decimal(18, 6)
+  valueDate   DateTime? @map("value_date") @db.Date
+  valueBool   Boolean?  @map("value_bool")
+  valueJson   Json?     @map("value_json")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime? @map("updated_at")
+
+  field   CustomFieldDefinition @relation(fields: [fieldId], references: [fieldId], onDelete: Cascade)
+  company Company               @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@unique([fieldId, recordId])
+  @@index([companyId, entityType, recordId])
+  @@index([companyId, fieldId, valueText])
+  @@map("custom_field_values")
+}

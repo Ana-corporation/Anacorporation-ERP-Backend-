@@ -1,0 +1,93 @@
+================================================================================
+VENDOR CUSTOM FIELDS
+BACKEND VALIDATION ENHANCEMENTS — IMPLEMENTED
+(Architecture Locked)
+Date: 2026-07-23
+================================================================================
+
+BEST APPROACH CHOSEN
+================================================================================
+
+1. Reject duplicates (do NOT auto-rename fieldName)
+   → Clear 400 so admin chooses an intentional name.
+
+2. Block both reserved fieldName AND reserved displayName labels
+   → e.g. "Vendor Name" / name both rejected with friendly message.
+
+3. Require valid sectionKey (known catalog key)
+   → No silent fallback to "custom" on create/update.
+
+4. Soft-delete keeps values forever; form-schema hides field;
+   Vendor GET still returns historical values for deactivated fields.
+
+5. Validate defaultValue + validation rules at definition create/update.
+
+No DB redesign. No Vendor API shape redesign.
+
+
+WHAT CHANGED
+================================================================================
+
+1. PREVENT DUPLICATE STANDARD FIELDS
+   - Reserved fieldName list expanded (id, gstNumber, panNumber, …)
+   - Reserved displayName labels (Vendor Name, GST Number, Payment Terms, …)
+   - HTTP 400 example:
+     "Vendor Name is already a standard Vendor field."
+
+2. PREVENT DUPLICATE CUSTOM FIELDS
+   - displayName unique (case-insensitive) → 400
+   - fieldName unique → 400 (no auto suffix _2)
+
+3. BACKEND VALIDATION
+   - displayName required (Zod)
+   - fieldType required + supported types only
+   - sectionKey REQUIRED + must be in meta sections catalog
+   - dropdown must have options
+   - validation.min/max and minLength/maxLength consistency
+   - validation.regex must compile
+   - defaultValue coerced against field type / options / rules
+
+4. SOFT DELETE PROTECTION
+   - DELETE definition → isActive=false + deletedAt (values NOT deleted)
+   - Form-schema / create-edit → active fields only
+   - Vendor GET customFields → includes historical values even if field deactivated
+
+5. AUDIT INFORMATION
+   - Responses now include createdBy, updatedBy, createdAt, updatedAt
+
+6. RESERVED FIELD NAME VALIDATION
+   - Blocks id, companyId, vendorId, metadata, customFields, createdAt, …
+   - Meta endpoint also returns reservedDisplayNames for FE UX
+
+
+FE IMPACT
+================================================================================
+
+Create custom field body MUST include sectionKey:
+
+  {
+    "entityType": "vendor",
+    "displayName": "Factory Capacity",
+    "fieldType": "number",
+    "sectionKey": "general"
+  }
+
+GET .../custom-fields/meta/modules/vendor/sections now returns:
+  reservedFieldNames[]
+  reservedDisplayNames[]
+
+If duplicate or reserved → expect HTTP 400 with message + errors[].field
+
+
+FILES TOUCHED
+================================================================================
+
+  src/modules/shared/custom-fields/custom-fields.constants.ts
+  src/modules/shared/custom-fields/custom-fields.service.ts
+  src/modules/shared/custom-fields/custom-fields-validation.service.ts
+  src/modules/shared/custom-fields/dto/custom-field-definition.dto.ts
+
+
+================================================================================
+END
+================================================================================

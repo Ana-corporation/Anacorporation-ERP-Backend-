@@ -1,0 +1,437 @@
+================================================================================
+INDUSTRY STANDARD CUSTOM FIELDS / UDF — PARITY & PERMISSIONS ANALYSIS
+Purpose    : Match enterprise ERP expectations before implementation
+Compared  : SAP Business One, Odoo, Microsoft Dynamics 365, Zoho, Salesforce
+Also refs  : docs/DYNAMIC-CUSTOM-FIELDS-BACKEND-ANALYSIS.txt (our backend design)
+Date       : 2026-07-20
+Status     : ANALYSIS ONLY — do not implement until decisions in Section 8 are confirmed
+================================================================================
+
+1. WHY THIS MATTERS
+--------------------------------------------------------------------------------
+Companies already using SAP B1 / Odoo / Dynamics / Zoho / Salesforce expect
+"Custom Fields", "User Defined Fields (UDF)", or "Dynamic Forms" to behave in a
+familiar way:
+
+  - Admins can add fields to Vendor / Customer / Item / Document without a code
+    release
+  - Fields have types, defaults, mandatory rules, valid values / lookups
+  - Fields appear on forms and in API payloads
+  - Access is controlled (who can manage fields vs who can see/edit values)
+  - Data is tenant/company safe
+
+Our product must feel like that standard — even if our storage engine is
+different (SaaS multi-tenant cannot safely ALTER TABLE per company like classic
+on-prem ERPs).
+
+
+2. HOW THE BIG ERPs DO IT (STORAGE + MODEL)
+--------------------------------------------------------------------------------
+
++------------------+---------------------------+------------------------------+
+| Product          | Storage approach          | Naming / concept             |
++------------------+---------------------------+------------------------------+
+| SAP Business One | ALTER system tables; add  | User-Defined Fields (UDF)    |
+|                  | columns with U_ prefix    | + UDT / UDO                  |
+| Odoo Studio      | ALTER model tables; add   | Custom / Studio fields       |
+|                  | columns (x_studio_*)      | (+ Property fields = virtual)|
+| Dynamics 365     | Metadata + real columns   | Custom attributes / columns  |
+|                  | on entity tables          | (Dataverse AttributeMetadata)|
+| Salesforce       | Metadata + real columns   | Custom Fields (__c suffix)   |
+| Zoho CRM/Creator | Metadata-driven modules   | Custom fields + layouts      |
+|                  | + flexible schema         |                              |
++------------------+---------------------------+------------------------------+
+
+Important difference for OUR SaaS backend
+-----------------------------------------
+SAP B1 / Odoo / Dynamics / Salesforce usually create REAL database columns when
+a custom field is added. That works when each customer has its own DB (or the
+platform owns schema evolution).
+
+We are multi-tenant on shared Neon/Postgres with Prisma migrations controlled
+by engineering. Per-tenant ALTER TABLE is NOT acceptable.
+
+Therefore:
+  MATCH their PRODUCT behavior (definitions, types, forms, permissions, APIs)
+  DO NOT MATCH their physical ALTER-TABLE storage
+  USE metadata definitions + values (EAV / hybrid JSON) as in our earlier analysis
+
+This is the same pattern used by many modern multi-tenant SaaS ERPs that
+advertise "custom fields" while keeping one shared schema.
+
+
+3. COMMON CAPABILITY MATRIX (WHAT USERS EXPECT)
+--------------------------------------------------------------------------------
+Capability                         SAP B1  Odoo  Dynamics  Zoho  Salesforce
+---------------------------------  ------  ----  --------  ----  ----------
+Add field to standard entity         Y      Y       Y       Y        Y
+Field types (text/num/date/...)      Y      Y       Y       Y        Y
+Required / default value             Y      Y       Y       Y        Y
+Valid values / dropdown              Y      Y       Y       Y        Y
+Lookup / link to other entity        Y      Y       Y       Y        Y
+Show on form / layout                Y      Y       Y       Y        Y
+API access to custom field values    Y      Y       Y       Y        Y
+Admin-only manage definitions        Y      Y       Y       Y        Y
+Field-level view/edit security     Weak*  Groups    Y       Y        Y
+Audit on field changes             Limited  Y       Y      Opt       Y
+Multi-company / tenant isolation     Y      Y       Y       Y        Y
+Import/export mapping                Y      Y       Y       Y        Y
+
+* SAP B1 field visibility is often via Form Settings / UI templates per user
+  or category — weaker than Salesforce/Dynamics true Field-Level Security.
+
+
+4. PERMISSION MODELS (DETAILED) — THIS IS THE KEY SECTION
+--------------------------------------------------------------------------------
+Enterprise products separate TWO permission layers:
+
+  LAYER A — Definition management (who can CREATE/EDIT custom field metadata)
+  LAYER B — Value access (who can VIEW/EDIT the field on records)
+  (+ always LAYER C — entity/object CRUD: Vendor edit, Customer read, etc.)
+
+Without Layer A, any user could change the form schema.
+Without Layer B, sensitive UDFs (salary band, bank details) leak to all roles
+that can open the record.
+Without Layer C, custom fields have nowhere to live.
+
+------------------------------------------------------------------------------
+4.1 SAP Business One
+------------------------------------------------------------------------------
+Definition management
+  - Authorization: Customization Tools > User-Defined Fields - Management
+  - Only authorized users may add/change UDFs
+  - Adding a UDF changes DB structure (historically done when others are offline)
+
+Value / UI access
+  - Not a full FLS engine like Salesforce
+  - Visibility often via Form Settings / Settings Fields Setup / categories
+  - Can hide UDF per user or template; edit restriction is weaker/UI-oriented
+  - Community guidance: hide fields + lock form settings so users cannot unhide
+
+Takeaway for us
+  - MUST have an explicit "manage custom fields" admin permission (SAP parity)
+  - Field hide/show can start as role-based later; SAP itself is not the gold
+    standard for FLS
+
+------------------------------------------------------------------------------
+4.2 Odoo (Studio)
+------------------------------------------------------------------------------
+Definition management
+  - Studio / settings access (admin-level) to add fields
+  - Custom fields get technical names with x_ / x_studio_ prefix
+
+Value / UI access
+  - Per-field "Limit visibility to groups" / Allow-Forbid groups
+  - Required / readonly / invisible can vary by view
+  - Multi-company: company_id record rules; optional company_dependent values
+
+Takeaway for us
+  - Group/role visibility on fields is expected
+  - Company isolation is mandatory (we already have companyId)
+
+------------------------------------------------------------------------------
+4.3 Microsoft Dynamics 365 / Dataverse
+------------------------------------------------------------------------------
+Definition management
+  - Customizer / system admin creates attributes via metadata APIs
+  - Field has "Field Security" flag enablement
+
+Value access — Field-Level Security (strong model)
+  - Field Security Profile → Field Permission:
+      CanRead / CanCreate / CanUpdate
+  - Assigned to users or teams
+  - If a field is security-enabled and no profile grants access, only System
+    Admin sees it (deny-by-default for secured fields)
+  - Applies to UI, API, reports, search — not just forms
+
+Takeaway for us
+  - Gold-standard FLS: Read / Create / Update per field profile
+  - Enforce in API responses (strip inaccessible fields), not only hide in UI
+
+------------------------------------------------------------------------------
+4.4 Salesforce
+------------------------------------------------------------------------------
+Definition management
+  - Customize Application / Modify Metadata style admin rights
+  - Custom fields use __c API names
+
+Value access — Field-Level Security (FLS)
+  - Profiles + Permission Sets: Visible / Read-Only per field
+  - Object CRUD is separate from FLS
+  - FLS applies everywhere (UI, list views, reports, API)
+  - Best practice: deny by default for sensitive fields; grant via permission sets
+  - Apex/API must honor FLS (WITH SECURITY_ENFORCED / stripInaccessible)
+
+Takeaway for us
+  - Match mental model: Object permission ≠ Field permission
+  - Backend must filter customFields in GET/POST/PATCH by caller FLS
+
+------------------------------------------------------------------------------
+4.5 Zoho CRM / Creator
+------------------------------------------------------------------------------
+Definition management
+  - Admin configures fields in form/module builder
+
+Value access
+  - Permission sets with:
+      Module level | Record level (CRUD) | Feature (import/export) | Field level
+  - Field permission: show / hide / read-only
+  - Extra: PII / ePHI flags that further restrict sensitive fields
+
+Takeaway for us
+  - Same 4-layer idea as our IAM direction
+  - Consider isSensitive / containsPii on definitions for later compliance
+
+
+5. WHAT “MATCHING THE STANDARD” MEANS FOR OUR BACKEND
+--------------------------------------------------------------------------------
+We should match the USER-FACING and SECURITY model of these ERPs, not the
+on-prem ALTER TABLE engine.
+
+MUST-HAVE (parity for enterprise buyers) — Phase 1
+  [P1-1] Admin can define UDFs per company + entity (Vendor first)
+  [P1-2] Dedicated permission to manage definitions
+         e.g. custom_fields:view | custom_fields:create | custom_fields:edit
+              | custom_fields:delete  (or custom_fields:manage)
+  [P1-3] Entity permissions still required to read/write values
+         e.g. vendors:view / vendors:edit  (or module permission supply-chain)
+  [P1-4] Types: text, number, decimal, date, email, phone, dropdown, checkbox
+  [P1-5] required, defaultValue, options, sortOrder, active
+  [P1-6] API returns/accepts customFields map with standard payload
+  [P1-7] Tenant isolation by companyId on definitions + values
+  [P1-8] Soft-deactivate definitions; immutable fieldName (API key)
+  [P1-9] Backend validates values against definitions (never FE-only)
+
+SHOULD-HAVE (Salesforce/Dynamics-class) — Phase 2
+  [P2-1] Field-Level Security: per role (or permission-set) Read / Write
+  [P2-2] Strip hidden fields from API responses; reject writes to read-only
+  [P2-3] isSensitive / PII flag on definition
+  [P2-4] Filterable flag + search/filter on custom values
+  [P2-5] Audit trail for definition changes and value changes
+  [P2-6] Field groups / sections on form (layout metadata)
+
+NICE-TO-HAVE (full platform) — Phase 3
+  [P3-1] Lookup to other entities / UDO-style
+  [P3-2] Formula / auto-number
+  [P3-3] Conditional visibility rules (evaluate on BE too)
+  [P3-4] Import/export column mapping
+  [P3-5] Header vs line-level UDFs on documents
+  [P3-6] User-defined tables/objects (SAP UDT/UDO) — separate product epic
+
+
+6. RECOMMENDED PERMISSION DESIGN FOR THIS REPO
+--------------------------------------------------------------------------------
+Align with existing NestJS patterns:
+  @RequirePermissions('resource:action')
+  @RequireModulePermission('moduleCode', action)
+  company-scoped routes under /companies/:companyId/...
+
+------------------------------------------------------------------------------
+6.1 Layer A — Definition management (NEW permission codes)
+------------------------------------------------------------------------------
+  custom_fields:view     — list/get definitions for a company/entity
+  custom_fields:create   — create definition
+  custom_fields:edit     — update definition (label, options, required, order)
+  custom_fields:delete   — soft-deactivate definition
+
+Suggested grants (seed):
+  PLATFORM_OWNER     → all custom_fields:*
+  Company ADMIN      → all custom_fields:*  (own company only)
+  Manager / Employee → custom_fields:view only (so forms can render)
+                       OR no direct grant; FE loads definitions via a
+                       dedicated "form schema" endpoint allowed if user has
+                       entity view permission (see 6.3)
+
+Decision needed:
+  Option A (SAP-like): only admins see definition admin UI; end users get
+    definitions through entity form-schema endpoint tied to vendors:view
+  Option B: Managers also manage fields for their module
+  Recommend: Option A for v1
+
+------------------------------------------------------------------------------
+6.2 Layer C — Entity value access (EXISTING — reuse)
+------------------------------------------------------------------------------
+  Reading Vendor including customFields  → vendors:view  (+ tenant check)
+  Writing Vendor customFields            → vendors:edit / create
+  Same pattern later for customers, products, etc.
+
+Rule:
+  Having custom_fields:edit does NOT allow editing Vendor business data.
+  Having vendors:edit does NOT allow creating new field definitions.
+
+------------------------------------------------------------------------------
+6.3 Layer B — Field-Level Security (DEFER TO PHASE 2, design now)
+------------------------------------------------------------------------------
+Table draft: custom_field_permissions
+  companyId, fieldId, roleId (or permissionSetId)
+  canView  Boolean
+  canEdit  Boolean
+
+Runtime rules (Dynamics/Salesforce parity):
+  1. User must pass entity permission (vendors:view / edit)
+  2. If field has NO FLS rows → default ALLOW for users who can access entity
+     (simpler than Dynamics deny-default; easier adoption)
+     OR default DENY when definition.isSecured = true (Dynamics-like)
+  3. If FLS rows exist (or isSecured=true):
+       GET  → include field only if canView
+       POST/PATCH → accept field only if canEdit; reject otherwise
+  4. Never rely on FE hiding alone
+
+v1 recommendation:
+  Ship WITHOUT per-field FLS table.
+  Document that Phase 2 will add isSecured + custom_field_permissions.
+  This still matches SAP B1 early behavior better than over-building FLS first.
+
+------------------------------------------------------------------------------
+6.4 Form-schema endpoint (important UX parity)
+------------------------------------------------------------------------------
+Enterprise UIs need definitions to render forms even when the user is not a
+custom-field admin.
+
+Recommended endpoint:
+  GET /companies/:companyId/entities/:entityType/form-schema
+  Auth: JWT + tenant + entity view permission (e.g. vendors:view)
+  Returns: active definitions the caller may VIEW (apply FLS when present)
+  Does NOT require custom_fields:view
+
+Admin definition CRUD stays on:
+  /companies/:companyId/custom-fields
+  Requires custom_fields:* permissions
+
+
+7. STORAGE DECISION VS INDUSTRY (RECONFIRM)
+--------------------------------------------------------------------------------
+Industry physical model     : often real columns (U_, x_studio_, __c, new_)
+Our required physical model : shared schema + definitions + values
+
+Parity strategy
+  - API field names feel like ERP UDFs (stable fieldName keys)
+  - Optional display prefix in docs only (e.g. U_ for SAP-familiar FE) —
+    do NOT require U_ in DB
+  - Values appear beside standard fields in GET/PUT like Salesforce/Dynamics
+  - Admin UI called "Custom Fields" / "User Defined Fields"
+
+Hybrid storage (recommended for Neon + Prisma):
+  custom_field_definitions
+  custom_field_values (typed columns for filter)
+  optional entity.metadata JSON snapshot for fast GET
+  Source of truth: values table (or definitions+values); metadata is cache
+
+
+8. DECISIONS TO CONFIRM BEFORE IMPLEMENTATION
+--------------------------------------------------------------------------------
+Please answer these (defaults recommended in brackets):
+
+D1  Product name in UI/API docs?
+    [Custom Fields]  also accept alias "UDF" in docs
+
+D2  v1 entities?
+    [Vendor only]
+
+D3  Who manages definitions?
+    [Company ADMIN + PLATFORM_OWNER only]  (SAP-like)
+
+D4  End-user form schema access?
+    [Yes — via form-schema endpoint gated by entity :view]
+
+D5  Field-Level Security in v1?
+    [No — design ready, implement Phase 2]
+    If Yes: default allow or Dynamics-style secured deny-default?
+
+D6  Storage?
+    [Hybrid: definitions + EAV values + optional metadata snapshot]
+
+D7  v1 field types?
+    [text, number, decimal, date, email, phone, dropdown, checkbox]
+
+D8  Strict reject unknown customFields keys?
+    [Yes]
+
+D9  Permission code style?
+    [custom_fields:view|create|edit|delete]
+
+D10 Soft-delete definitions with existing values?
+    [Deactivate; keep historical values; hide from new forms]
+
+
+9. MAPPING: INDUSTRY TERM → OUR BACKEND TERM
+--------------------------------------------------------------------------------
+Industry term              Our term
+-------------------------  ----------------------------------
+UDF / Custom Field         CustomFieldDefinition + values
+Object / Module / Entity   entityType (vendor, customer, ...)
+API name (__c / U_ / x_)   fieldName (immutable)
+Label                      displayName
+Data type                  fieldType
+Mandatory                  isRequired
+Valid values               options JSON
+Set Linked Table / Lookup  lookup entityType (Phase 3)
+FLS / Field Security       custom_field_permissions (Phase 2)
+Form layout                form-schema + sortOrder (+ groups later)
+UDO / Custom Object        out of scope (future epic)
+Company / Org              companyId tenant
+
+
+10. RISK IF WE SKIP PERMISSION ANALYSIS
+--------------------------------------------------------------------------------
+- Any Vendor editor could redefine company schema → data chaos
+- Sensitive UDFs visible to all roles with entity read → compliance failure
+- FE-only hide fields → still leak via API (Salesforce explicitly warns this)
+- No form-schema endpoint → every client reinvents definition loading
+- Trying to ALTER TABLE like SAP/Odoo on shared Neon → migration nightmare
+
+
+11. RECOMMENDED STANCE (SUMMARY)
+--------------------------------------------------------------------------------
+YES — treat Custom Fields / UDF as a first-class enterprise feature and match
+      SAP/Odoo/Dynamics/Zoho/Salesforce capability expectations.
+
+NO  — do not copy their ALTER-TABLE storage on our multi-tenant Prisma/Neon DB.
+
+PERMISSIONS — implement in this order:
+  Phase 1: Layer A (custom_fields:*) + Layer C (entity CRUD) + form-schema
+  Phase 2: Layer B (field-level Read/Write, API-enforced)
+  Phase 3: advanced types, formulas, UDO-like objects
+
+Next step after you confirm Section 8 (D1–D10):
+  Update implementation plan + FE handoff, then build Vendor custom fields.
+
+
+12. SOURCE REFERENCES (PUBLIC DOCS)
+--------------------------------------------------------------------------------
+SAP B1
+  - Learning: Customizing User-Defined Fields, Tables, Objects, and Values
+  - Help: How to Create User-Defined Fields and Tables
+  - Auth: Customization Tools > User-Defined Fields - Management
+
+Odoo
+  - Studio Fields and widgets docs (x_ / x_studio_, group visibility)
+  - Multi-company guidelines (company_id, company_dependent)
+
+Dynamics 365 / Dataverse
+  - Field level security admin docs
+  - FieldPermission / Field Security Profile
+  - AttributeMetadata / CreateAttribute
+
+Salesforce
+  - Field-Level Security / Permission Sets
+  - CustomField Metadata API (__c)
+  - Security.stripInaccessible / WITH SECURITY_ENFORCED
+
+Zoho
+  - Creator/CRM permission sets: module, record, feature, field level
+  - PII / ePHI field flags
+
+
+13. RELATED INTERNAL DOCS
+--------------------------------------------------------------------------------
+  docs/DYNAMIC-CUSTOM-FIELDS-BACKEND-ANALYSIS.txt
+  docs/RBAC-PROMPT-REVIEW-AND-DEV-SECTION.txt  (if present)
+  src/common/constants/permissions.constant.ts
+  src/modules/purchase/vendors/*
+
+
+================================================================================
+END — INDUSTRY PARITY & PERMISSIONS ANALYSIS
+Awaiting your D1–D10 decisions before proceeding to implementation.
+================================================================================

@@ -1,0 +1,236 @@
+================================================================================
+CUSTOM FIELDS — ADMIN DIRECT CREATE (NO APPROVAL)
+BOOTSTRAP + USAGE DIAGRAM
+Date:     2026-07-23
+Decision: Skip request/approve workflow. Company Admin creates fields directly.
+Scope:    Vendor only (entityType=vendor)
+================================================================================
+
+
+0. PRODUCT RULE (LOCKED)
+--------------------------------------------------------------------------------
+  Admin (custom_fields:create) creates the field immediately.
+  No Pending / Approve / Reject queue.
+  Normal users only FILL values on Vendor form.
+
+
+1. BOOTSTRAP DIAGRAM (SYSTEM READY)
+--------------------------------------------------------------------------------
+
+  [Shared Neon DB]
+         |
+         |  migrate + seed
+         v
+  +------------------+     +------------------------+
+  | companies        |     | permissions catalogue  |
+  | DEMO_ACME        |     | custom_fields:view     |
+  | PLATFORM         |     | custom_fields:create   |
+  +--------+---------+     | custom_fields:edit     |
+           |               | custom_fields:delete   |
+           |               +-----------+------------+
+           |                           |
+           v                           v
+  +------------------+     +------------------------+
+  | users + roles    |---->| ADMIN role has         |
+  | ADMIN001         |     | custom_fields:*        |
+  +------------------+     +------------------------+
+           |
+           |  seed also creates demo definitions
+           v
+  +-----------------------------------------------+
+  | custom_field_definitions (DEMO_ACME / vendor) |
+  |  vendorTier | preferredCurrency | ...         |
+  +-----------------------------------------------+
+           |
+           v
+  Backend ready → npm run start:dev
+
+
+  Local commands:
+    npx prisma migrate deploy
+    npx prisma generate
+    npm run seed:client-logins
+    npm run start:dev
+
+  Login:
+    companyCode:  DEMO_ACME
+    employeeCode: ADMIN001
+    password:     Admin@123
+
+
+2. ADMIN CREATE FLOW (HOW TO USE APIs)
+--------------------------------------------------------------------------------
+
+  FE: Settings → Customization → Custom Fields → Create
+
+                    LOGIN (ADMIN)
+                          |
+                          v
+         +--------------------------------+
+         | GET /custom-fields/meta/modules|
+         | GET .../modules/vendor/sections|
+         |   → sections + reserved names  |
+         +----------------+---------------+
+                          |
+                          v
+         +--------------------------------+
+         | Admin fills form:              |
+         |  Module = Vendor               |
+         |  Section = general / payment…  |
+         |  Display name = Factory Cap…   |
+         |  Type = number / dropdown…     |
+         |  Required / default / options  |
+         +----------------+---------------+
+                          |
+                          v
+         +--------------------------------+
+         | POST /companies/{id}/custom-fields
+         | Permission: custom_fields:create
+         | Body: entityType, sectionKey,  |
+         |       displayName, fieldType…  |
+         | fieldName AUTO-GENERATED       |
+         +----------------+---------------+
+                          |
+                          v
+         +--------------------------------+
+         | INSERT custom_field_definitions|
+         | Status: ACTIVE immediately     |
+         | (NO approval step)             |
+         +----------------+---------------+
+                          |
+                          v
+         Field ready for Vendor forms
+
+
+3. VENDOR FORM FLOW (END USER)
+--------------------------------------------------------------------------------
+
+  FE: Purchase → Vendors → Create / Edit
+
+         User with supply-chain:view
+                          |
+                          v
+         +----------------------------------------+
+         | GET .../entities/vendor/form-schema    |
+         | → fields[] with sectionKey             |
+         | → merge into General / Payment / … tabs|
+         +------------------+---------------------+
+                          |
+                          v
+         User fills standard + custom fields
+                          |
+                          v
+         +----------------------------------------+
+         | POST/PATCH .../vendors                 |
+         | { code, name, metadata, customFields } |
+         +------------------+---------------------+
+                          |
+            +-------------+-------------+
+            |                           |
+            v                           v
+   vendors table              custom_field_values
+   (core + metadata)          (UDF answers)
+
+
+4. MERMAID (copy to docs / Notion)
+--------------------------------------------------------------------------------
+
+```mermaid
+flowchart TD
+  subgraph bootstrap [Bootstrap once]
+    A[migrate + seed] --> B[Company DEMO_ACME]
+    B --> C[ADMIN role + custom_fields permissions]
+    C --> D[Optional demo CF definitions]
+  end
+
+  subgraph admin [Admin - Settings Custom Fields]
+    E[Login ADMIN001] --> F[GET meta modules and sections]
+    F --> G[POST custom-fields create]
+    G --> H[(custom_field_definitions ACTIVE)]
+  end
+
+  subgraph user [User - Vendor form]
+    I[GET form-schema] --> J[Render fields by sectionKey]
+    J --> K[POST or PATCH vendor + customFields]
+    K --> L[(vendors)]
+    K --> M[(custom_field_values)]
+  end
+
+  bootstrap --> admin
+  H --> I
+```
+
+
+5. API CHEAT SHEET (ADMIN DIRECT)
+--------------------------------------------------------------------------------
+
+  Meta
+    GET  /api/v1/custom-fields/meta/modules
+    GET  /api/v1/custom-fields/meta/modules/vendor/sections
+
+  Create (immediate — no PENDING)
+    POST /api/v1/companies/{companyId}/custom-fields
+    {
+      "entityType": "vendor",
+      "sectionKey": "general",
+      "displayName": "Factory Capacity",
+      "fieldType": "number",
+      "isRequired": false,
+      "sortOrder": 40,
+      "validation": { "min": 0, "max": 100000 }
+    }
+
+  List
+    GET  /api/v1/companies/{companyId}/custom-fields?entityType=vendor
+    GET  ...?entityType=vendor&groupedBySection=true
+
+  Update / Deactivate
+    PATCH  .../custom-fields/{fieldId}
+    DELETE .../custom-fields/{fieldId}
+
+  Vendor form
+    GET  .../entities/vendor/form-schema
+    POST .../vendors  { ..., "customFields": { "factoryCapacity": 250 } }
+    GET  .../vendors/{id}  → includes customFields map
+
+
+6. PERMISSIONS (NO request / approve)
+--------------------------------------------------------------------------------
+
+  custom_fields:view     list / get definitions + meta
+  custom_fields:create   create definition NOW
+  custom_fields:edit     update definition
+  custom_fields:delete   soft deactivate
+
+  supply-chain:view      load form-schema + see vendor
+  supply-chain:create    create vendor with customFields
+  supply-chain:edit      update vendor customFields
+
+  NOT used (skipped by product decision):
+    custom_fields:request
+    custom_fields:approve
+
+
+7. WHAT WAS CHANGED vs APPROVAL SPEC
+--------------------------------------------------------------------------------
+
+  Spec said: Request → Pending → Approve → definition
+  We do:     Admin Create → definition ACTIVE immediately
+
+  APIs already existed for admin create — kept / documented.
+  No custom_field_requests table.
+  No approval endpoints.
+
+
+8. RELATED DOCS
+--------------------------------------------------------------------------------
+  docs/CUSTOM-FIELDS-CREATE-VENDOR-BACKEND-REPLY.txt
+  docs/CUSTOM-FIELDS-VENDOR-FE-EXPECTATIONS-ACK.txt
+  docs/VENDOR-CUSTOM-FIELDS-FRONTEND-HANDOFF.txt
+  docs/CURRENT-MULTI-TENANT-FLOW.txt
+  docs/API-URL-INDEX.txt  (section 33b)
+
+
+================================================================================
+END
+================================================================================
