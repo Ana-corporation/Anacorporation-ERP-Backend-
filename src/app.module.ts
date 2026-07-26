@@ -17,6 +17,7 @@ import { OrganizationModule } from './modules/organization/organization.module';
 import { IamModule } from './modules/iam/iam.module';
 import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { PurchaseModule } from './modules/purchase/purchase.module';
+import { InventoryMasterModule } from './modules/inventory/inventory-master.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { HealthModule } from './modules/health/health.module';
     IamModule,
     SubscriptionModule,
     PurchaseModule,
+    InventoryMasterModule,
   ],
   providers: [
     { provide: APP_PIPE, useClass: ZodValidationPipe },

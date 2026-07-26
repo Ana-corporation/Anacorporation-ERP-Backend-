@@ -1,12 +1,17 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
   "exclude": [
     "node_modules",
     "test",
     "dist",
     "**/*spec.ts",
     "src/modules/crm/**",
-    "src/modules/inventory/**",
+    "src/modules/inventory/items/**",
+    "src/modules/inventory/stock/**",
     "src/modules/manufacturing/**",
     "src/modules/assets/**",
     "src/modules/sales/**",

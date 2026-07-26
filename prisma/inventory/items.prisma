@@ -1,0 +1,117 @@
+// inventory | items (Item Master Data)
+
+model Item {
+  itemId      BigInt @id @default(autoincrement()) @map("item_id")
+  companyId   BigInt @map("company_id")
+
+  // Header — core identity
+  itemCode    String  @map("item_code") @db.VarChar(50)
+  description String  @db.VarChar(255)
+  oldCode     String? @map("old_code") @db.VarChar(50)
+  itemType    String  @default("item") @map("item_type") @db.VarChar(30)
+  itemGroup   String? @map("item_group") @db.VarChar(80)
+  uomGroup    String? @map("uom_group") @db.VarChar(80)
+  barcode     String? @db.VarChar(100)
+  priceList   String? @map("price_list") @db.VarChar(80)
+  unitPrice   Decimal? @map("unit_price") @db.Decimal(18, 6)
+  currencyCode String? @map("currency_code") @db.VarChar(10)
+
+  isInventoryItem Boolean @default(true) @map("is_inventory_item")
+  isSalesItem     Boolean @default(true) @map("is_sales_item")
+  isPurchaseItem  Boolean @default(true) @map("is_purchase_item")
+
+  // General tab
+  doNotApplyDiscountGroups Boolean   @default(false) @map("do_not_apply_discount_groups")
+  manufacturer             String?   @db.VarChar(120)
+  additionalIdentifier     String?   @map("additional_identifier") @db.VarChar(80)
+  shippingType             String?   @map("shipping_type") @db.VarChar(40)
+  manageBy                 String    @default("none") @map("manage_by") @db.VarChar(20)
+  status                   String    @default("active") @db.VarChar(20)
+  activeFrom               DateTime? @map("active_from") @db.Date
+  activeTo                 DateTime? @map("active_to") @db.Date
+
+  // Right panel — classification
+  netWeightKg     Decimal?  @map("net_weight_kg") @db.Decimal(18, 6)
+  grossWeightKg   Decimal?  @map("gross_weight_kg") @db.Decimal(18, 6)
+  division        String?   @db.VarChar(80)
+  coreActivity    String?   @map("core_activity") @db.VarChar(80)
+  majorGroup      String?   @map("major_group") @db.VarChar(120)
+  brandName       String?   @map("brand_name") @db.VarChar(80)
+  effectiveDate   DateTime? @map("effective_date") @db.Date
+  customerStockNo String?   @map("customer_stock_no") @db.VarChar(80)
+  stockToBe       String?   @map("stock_to_be") @db.VarChar(80)
+  stockDioDays    Int?      @map("stock_dio_days")
+  contractItemsFor String?  @map("contract_items_for") @db.VarChar(120)
+
+  // Purchasing / inventory quick-filter columns
+  preferredVendorId BigInt? @map("preferred_vendor_id")
+  valuationMethod   String? @map("valuation_method") @db.VarChar(30)
+  itemCost          Decimal? @map("item_cost") @db.Decimal(18, 6)
+  manageStockByWarehouse Boolean @default(true) @map("manage_stock_by_warehouse")
+
+  // Long text + tab payload bags
+  remarks        String? @db.Text
+  purchaseJson   Json?   @map("purchase_json")
+  salesJson      Json?   @map("sales_json")
+  inventoryJson  Json?   @map("inventory_json")
+  planningJson   Json?   @map("planning_json")
+  productionJson Json?   @map("production_json")
+  propertiesJson Json?   @map("properties_json")
+  attachmentsJson Json?  @map("attachments_json")
+  metadata       Json?
+
+  isActive   Boolean   @default(true) @map("is_active")
+  createdBy  BigInt?   @map("created_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedBy  BigInt?   @map("updated_by")
+  updatedAt  DateTime? @map("updated_at")
+  deletedBy  BigInt?   @map("deleted_by")
+  deletedAt  DateTime? @map("deleted_at")
+  rowVersion Int       @default(1) @map("row_version")
+
+  company         Company               @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  preferredVendor Vendor?               @relation(fields: [preferredVendorId], references: [vendorId])
+  warehouseStock  ItemWarehouseStock[]
+
+  @@unique([companyId, itemCode])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, itemGroup])
+  @@index([companyId, brandName])
+  @@map("items")
+}
+
+model ItemWarehouseStock {
+  itemWarehouseStockId BigInt @id @default(autoincrement()) @map("item_warehouse_stock_id")
+  companyId            BigInt @map("company_id")
+  itemId               BigInt @map("item_id")
+  warehouseId          BigInt @map("warehouse_id")
+
+  isLocked     Boolean @default(false) @map("is_locked")
+  qtyOnHand    Decimal @default(0) @map("qty_on_hand") @db.Decimal(18, 6)
+  qtyCommitted Decimal @default(0) @map("qty_committed") @db.Decimal(18, 6)
+  qtyOrdered   Decimal @default(0) @map("qty_ordered") @db.Decimal(18, 6)
+
+  requiredQty Decimal? @map("required_qty") @db.Decimal(18, 6)
+  minimumQty  Decimal? @map("minimum_qty") @db.Decimal(18, 6)
+  maximumQty  Decimal? @map("maximum_qty") @db.Decimal(18, 6)
+
+  firstBinLocation   String? @map("first_bin_location") @db.VarChar(80)
+  defaultBinLocation String? @map("default_bin_location") @db.VarChar(80)
+  enforceDefaultBin  Boolean @default(false) @map("enforce_default_bin")
+
+  createdBy  BigInt?   @map("created_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedBy  BigInt?   @map("updated_by")
+  updatedAt  DateTime? @map("updated_at")
+  rowVersion Int       @default(1) @map("row_version")
+
+  company   Company   @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  item      Item      @relation(fields: [itemId], references: [itemId], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
+
+  @@unique([itemId, warehouseId])
+  @@index([companyId])
+  @@index([warehouseId])
+  @@map("item_warehouse_stock")
+}

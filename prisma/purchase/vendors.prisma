@@ -21,7 +21,8 @@ model Vendor {
   deletedAt  DateTime? @map("deleted_at")
   rowVersion Int       @default(1) @map("row_version")
 
-  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  company        Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  preferredItems Item[]
 
   @@unique([companyId, vendorCode])
   @@index([companyId])

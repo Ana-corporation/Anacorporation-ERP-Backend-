@@ -1,0 +1,386 @@
+================================================================================
+ITEM MASTER DATA — BACKEND HANDOFF FOR FRONTEND
+Module:   Inventory / Item Master
+Phase:    ITEM-1 (MVP) + partial ITEM-2 (warehouse stock rows)
+Status:   IMPLEMENTED — tables created on Neon, APIs live
+Date:     2026-07-26
+================================================================================
+
+
+1. WHAT WAS BUILT
+--------------------------------------------------------------------------------
+
+  Prisma schema : prisma/inventory/items.prisma
+  Migration     : prisma/migrations/20260726120000_item_master/migration.sql
+  Nest module   : src/modules/inventory/item-master/
+  Registered in : src/app.module.ts  (InventoryMasterModule)
+
+  Two tables:
+    items                 — master header + general + classification + JSON bags
+    item_warehouse_stock  — 1:N stock row per warehouse (Inventory tab grid)
+
+  Design decision (same as Vendor):
+    Fields that drive list filters / reports are REAL COLUMNS.
+    Tab data that is only displayed on the form is stored in JSONB bags
+    (purchase_json, sales_json, planning_json, production_json,
+     properties_json, attachments_json, metadata).
+    This means the FE can add tab fields WITHOUT a backend migration.
+
+
+2. TABLE: items
+--------------------------------------------------------------------------------
+
+  DB column                      Type            API field (JSON)          Req  Default
+  -----------------------------  --------------  ------------------------  ---  --------------
+  item_id                        BIGSERIAL PK    itemId (string)           -    auto
+  company_id                     BIGINT FK       (from URL)                yes  -
+  item_code                      VARCHAR(50)     itemCode                  YES  - (uppercased)
+  description                    VARCHAR(255)    description               YES  -
+  old_code                       VARCHAR(50)     oldCode                   no   null
+  item_type                      VARCHAR(30)     itemType                  no   'item'
+  item_group                     VARCHAR(80)     itemGroup                 no   null
+  uom_group                      VARCHAR(80)     uomGroup                  no   null
+  barcode                        VARCHAR(100)    barcode                   no   null
+  price_list                     VARCHAR(80)     priceList                 no   null
+  unit_price                     DECIMAL(18,6)   unitPrice                 no   null
+  currency_code                  VARCHAR(10)     currencyCode              no   null
+
+  is_inventory_item              BOOLEAN         isInventoryItem           no   true
+  is_sales_item                  BOOLEAN         isSalesItem               no   true
+  is_purchase_item               BOOLEAN         isPurchaseItem            no   true
+
+  -- General tab --
+  do_not_apply_discount_groups   BOOLEAN         doNotApplyDiscountGroups  no   false
+  manufacturer                   VARCHAR(120)    manufacturer              no   null
+  additional_identifier          VARCHAR(80)     additionalIdentifier      no   null
+  shipping_type                  VARCHAR(40)     shippingType              no   null
+  manage_by                      VARCHAR(20)     manageBy                  no   'none'
+  status                         VARCHAR(20)     status                    no   'active'
+  active_from                    DATE            activeFrom                no   null
+  active_to                      DATE            activeTo                  no   null
+
+  -- Right panel: classification --
+  net_weight_kg                  DECIMAL(18,6)   netWeightKg               no   null
+  gross_weight_kg                DECIMAL(18,6)   grossWeightKg             no   null
+  division                       VARCHAR(80)     division                  no   null
+  core_activity                  VARCHAR(80)     coreActivity              no   null
+  major_group                    VARCHAR(120)    majorGroup                no   null
+  brand_name                     VARCHAR(80)     brandName                 no   null
+  effective_date                 DATE            effectiveDate             no   null
+  customer_stock_no              VARCHAR(80)     customerStockNo           no   null
+  stock_to_be                    VARCHAR(80)     stockToBe                 no   null
+  stock_dio_days                 INTEGER         stockDioDays              no   null
+  contract_items_for             VARCHAR(120)    contractItemsFor          no   null
+
+  -- Purchasing / inventory promoted columns --
+  preferred_vendor_id            BIGINT FK       preferredVendorId (string) no  null
+  valuation_method               VARCHAR(30)     valuationMethod           no   null
+  item_cost                      DECIMAL(18,6)   itemCost                  no   null
+  manage_stock_by_warehouse      BOOLEAN         manageStockByWarehouse    no   true
+
+  -- Long text + JSON bags --
+  remarks                        TEXT            remarks                   no   null
+  purchase_json                  JSONB           purchase   (object)       no   null
+  sales_json                     JSONB           sales      (object)       no   null
+  inventory_json                 JSONB           inventory  (object)       no   null
+  planning_json                  JSONB           planning   (object)       no   null
+  production_json                JSONB           production (object)       no   null
+  properties_json                JSONB           properties (object)       no   null
+  attachments_json               JSONB           attachments (array)       no   null
+  metadata                       JSONB           metadata   (object)       no   null
+
+  -- Audit --
+  is_active                      BOOLEAN         isActive                  no   true
+  created_by / created_at / updated_by / updated_at / deleted_by / deleted_at
+  row_version                    INTEGER                                        1
+
+  Constraints / indexes:
+    UNIQUE (company_id, item_code)
+    INDEX  (company_id)
+    INDEX  (company_id, status)
+    INDEX  (company_id, item_group)
+    INDEX  (company_id, brand_name)
+    FK     company_id         -> companies(company_id)  ON DELETE CASCADE
+    FK     preferred_vendor_id-> vendors(vendor_id)     ON DELETE SET NULL
+
+
+3. TABLE: item_warehouse_stock
+--------------------------------------------------------------------------------
+
+  DB column                  Type            API field             Req  Default
+  -------------------------  --------------  --------------------  ---  -------
+  item_warehouse_stock_id    BIGSERIAL PK    itemWarehouseStockId  -    auto
+  company_id                 BIGINT FK       (from URL)            yes  -
+  item_id                    BIGINT FK       (from URL)            yes  -
+  warehouse_id               BIGINT FK       warehouseId (string)  YES  -
+  is_locked                  BOOLEAN         isLocked              no   false
+  qty_on_hand                DECIMAL(18,6)   qtyOnHand             no   0
+  qty_committed              DECIMAL(18,6)   qtyCommitted          no   0
+  qty_ordered                DECIMAL(18,6)   qtyOrdered            no   0
+  required_qty               DECIMAL(18,6)   requiredQty           no   null
+  minimum_qty                DECIMAL(18,6)   minimumQty            no   null
+  maximum_qty                DECIMAL(18,6)   maximumQty            no   null
+  first_bin_location         VARCHAR(80)     firstBinLocation      no   null
+  default_bin_location       VARCHAR(80)     defaultBinLocation    no   null
+  enforce_default_bin        BOOLEAN         enforceDefaultBin     no   false
+  created_by / created_at / updated_by / updated_at / row_version
+
+  Constraints:
+    UNIQUE (item_id, warehouse_id)
+    FK item_id      -> items(item_id)           ON DELETE CASCADE
+    FK warehouse_id -> warehouses(warehouse_id) ON DELETE CASCADE
+
+  NOTE: "Available" is NOT stored. Compute on FE:
+        available = qtyOnHand - qtyCommitted
+
+
+4. ENUM-LIKE VALUES (validated by backend)
+--------------------------------------------------------------------------------
+
+  itemType         : item | service | labor | travel
+  manageBy         : none | serial | batch
+  status           : active | inactive | advanced
+  valuationMethod  : moving_average | standard | fifo | serial_batch
+
+  Sending anything else returns 400 with a Zod validation error.
+
+
+5. API ENDPOINTS
+--------------------------------------------------------------------------------
+
+  Base: /api/v1/companies/{companyId}/items
+  Auth: Bearer JWT. Permission module 'supply-chain' (same as Vendors):
+        view -> GET, create -> POST, edit -> PATCH/PUT, delete -> DELETE
+
+  GET    /companies/{companyId}/items                     list (paginated)
+  GET    /companies/{companyId}/items/{id}                one + warehouse stock
+  POST   /companies/{companyId}/items                     create
+  PATCH  /companies/{companyId}/items/{id}                partial update
+  DELETE /companies/{companyId}/items/{id}                soft delete
+  PUT    /companies/{companyId}/items/{id}/warehouses     upsert one stock row
+  DELETE /companies/{companyId}/items/{id}/warehouses/{warehouseId}
+
+  LIST query params:
+    page, limit, sortBy, sortOrder, search, fromDate, toDate
+    code            (contains, item_code)
+    description     (contains)
+    brandName       (contains)
+    status          (exact)
+    itemType        (exact)
+    itemGroup       (exact)
+    division        (exact)
+    majorGroup      (exact)
+    isActive / isInventoryItem / isSalesItem / isPurchaseItem  (boolean)
+
+    search hits: itemCode, description, oldCode, barcode, brandName
+    sortBy allow-list: itemCode | description | status | createdAt (default createdAt)
+
+
+6. SAMPLE CREATE PAYLOAD
+--------------------------------------------------------------------------------
+
+  POST /api/v1/companies/15/items
+
+  {
+    "itemCode": "042-100006231",
+    "description": "ECON Fig 973 Bourdon tube pressure gauge Type",
+    "oldCode": "ECN-973",
+    "itemType": "item",
+    "itemGroup": "A-Brand",
+    "uomGroup": "Manual",
+    "barcode": "8901234567890",
+    "priceList": "List Price",
+    "unitPrice": 0,
+    "currencyCode": "AED",
+
+    "isInventoryItem": true,
+    "isSalesItem": true,
+    "isPurchaseItem": true,
+
+    "manufacturer": "Econosto",
+    "shippingType": "By Air",
+    "manageBy": "none",
+    "status": "inactive",
+    "activeFrom": "2026-01-01",
+
+    "netWeightKg": 1.25,
+    "grossWeightKg": 1.5,
+    "division": "Flow Technology",
+    "coreActivity": "Valves",
+    "majorGroup": "042 ECONOSTO VALVES",
+    "brandName": "Econ",
+    "customerStockNo": "CUST-9931",
+    "stockDioDays": 90,
+
+    "preferredVendorId": "3",
+    "valuationMethod": "moving_average",
+    "itemCost": 42.5,
+    "manageStockByWarehouse": true,
+
+    "remarks": "Cabinet/Mounting/flange material: stainless steel\nRange: 0-16 bar",
+
+    "purchase": {
+      "mfrCatalogNo": "973-100",
+      "purchasingUomName": "PC",
+      "itemsPerPurchaseUnit": 1,
+      "packagingUomName": "Box",
+      "quantityPerPackage": 1,
+      "length": 10, "width": 10, "height": 12,
+      "volume": 1.2, "volumeUnit": "cf",
+      "weight": 1.5,
+      "factor1": 1, "factor2": 1, "factor3": 1, "factor4": 1,
+      "customsGroup": "General", "customsPercent": 5,
+      "taxGroup": "Zero Rated", "taxPercent": 0
+    },
+    "sales": {
+      "taxGroup": "Zero Rated", "taxPercent": 0,
+      "salesUomName": "PC",
+      "itemsPerSalesUnit": 1,
+      "quantityPerPackage": 1,
+      "factor1": 1, "factor2": 1, "factor3": 1, "factor4": 1
+    },
+    "inventory": {
+      "setGlAccountsBy": "Item Group",
+      "uomName": "PC",
+      "requiredQty": 10, "minimumQty": 5, "maximumQty": 100
+    },
+    "planning": {
+      "planningMethod": "none",
+      "procurementMethod": "buy",
+      "orderInterval": null,
+      "orderMultiple": 1,
+      "minimumOrderQty": 1,
+      "leadTimeDays": 14,
+      "toleranceDays": 2
+    },
+    "production": {
+      "phantomItem": false,
+      "issueMethod": "backflush",
+      "bomType": null,
+      "productionStdCost": 0,
+      "includeInStdCostRollup": false
+    },
+    "properties": { "P1": true, "P7": true, "P42": false },
+    "attachments": [
+      { "targetPath": "/uploads/items", "fileName": "datasheet.pdf",
+        "attachmentDate": "2026-07-24" }
+    ],
+    "metadata": { "importedFrom": "SAP-OITM" }
+  }
+
+  Only itemCode + description are required. Everything else can be omitted.
+  Empty strings ("") are treated as "not provided" and stored as NULL.
+
+
+7. SAMPLE UPSERT WAREHOUSE STOCK
+--------------------------------------------------------------------------------
+
+  PUT /api/v1/companies/15/items/7/warehouses
+
+  {
+    "warehouseId": "2",
+    "isLocked": false,
+    "qtyOnHand": 150,
+    "qtyCommitted": 20,
+    "qtyOrdered": 50,
+    "requiredQty": 10,
+    "minimumQty": 5,
+    "maximumQty": 500,
+    "firstBinLocation": "A-01-01",
+    "defaultBinLocation": "A-01-02",
+    "enforceDefaultBin": true
+  }
+
+  Idempotent: same (itemId, warehouseId) updates the existing row.
+
+
+8. SAMPLE GET-ONE RESPONSE (shape)
+--------------------------------------------------------------------------------
+
+  {
+    "success": true,
+    "message": "...",
+    "data": {
+      "itemId": "7",
+      "companyId": "15",
+      "itemCode": "042-100006231",
+      "description": "ECON Fig 973 Bourdon tube pressure gauge Type",
+      "...": "all columns from section 2",
+      "purchaseJson":   { ... },
+      "salesJson":      { ... },
+      "inventoryJson":  { ... },
+      "planningJson":   { ... },
+      "productionJson": { ... },
+      "propertiesJson": { ... },
+      "attachmentsJson":[ ... ],
+      "metadata":       { ... },
+      "warehouseStock": [
+        {
+          "itemWarehouseStockId": "1",
+          "warehouseId": "2",
+          "qtyOnHand": "150",
+          "qtyCommitted": "20",
+          "qtyOrdered": "50",
+          "defaultBinLocation": "A-01-02",
+          "warehouse": { "warehouseId": "2", "warehouseCode": "WH-MAIN",
+                         "name": "Main Warehouse" }
+        }
+      ]
+    }
+  }
+
+  IMPORTANT for FE:
+    - All BIGINT ids are returned as STRINGS (bigint-safe serialization).
+    - DECIMAL values serialize as strings — parse before math.
+    - Request body uses short keys (purchase, sales, ...);
+      response uses the DB column names (purchaseJson, salesJson, ...).
+
+
+9. FE TAB MAPPING
+--------------------------------------------------------------------------------
+
+  Header (always visible)
+    itemCode, description, oldCode, itemType, itemGroup, uomGroup,
+    barcode, priceList, unitPrice + currencyCode,
+    isInventoryItem / isSalesItem / isPurchaseItem
+
+  general      -> doNotApplyDiscountGroups, manufacturer, additionalIdentifier,
+                  shippingType, manageBy, status, activeFrom, activeTo
+  purchasing   -> preferredVendorId (column) + purchase{} bag
+  sales        -> sales{} bag
+  inventory    -> valuationMethod, itemCost, manageStockByWarehouse (columns)
+                  + inventory{} bag + warehouse grid (separate endpoint)
+  planning     -> planning{} bag
+  production   -> production{} bag
+  properties   -> properties{} bag (map of code -> boolean, NOT 64 columns)
+  remarks      -> remarks (TEXT)
+  attachments  -> attachments[] bag (real file storage lands in a later phase)
+
+  Right panel (put under general or its own "classification" section)
+    netWeightKg, grossWeightKg, division, coreActivity, majorGroup,
+    brandName, effectiveDate, customerStockNo, stockToBe, stockDioDays,
+    contractItemsFor
+
+
+10. ERRORS TO EXPECT
+--------------------------------------------------------------------------------
+
+  400  Zod validation (bad enum, string too long, non-numeric id)
+  404  Item / Warehouse / Preferred vendor not found in this company
+  409  "Item code already exists"  (unique per company, case-insensitive
+       because codes are uppercased on save)
+
+
+11. NOT DONE YET (later phases)
+--------------------------------------------------------------------------------
+
+  - Lookup master tables (item_groups, uom_groups, brands, divisions).
+    v1 stores these as free text / VARCHAR so the FE can ship now.
+  - Real file upload for attachments (storage module).
+  - Custom fields entityType=item.
+  - BOM / production cost rollup, price-list engine, G/L determination.
+  - Serial / batch transaction engine (only manageBy flag is stored).
+
+================================================================================
+END
+================================================================================

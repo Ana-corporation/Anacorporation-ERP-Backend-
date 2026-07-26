@@ -20,6 +20,7 @@ model Warehouse {
   branch               Branch?          @relation(fields: [branchId], references: [branchId])
   userCompanies        UserCompany[]
   userPreferences      UserPreference[]
+  itemStock            ItemWarehouseStock[]
 
   @@unique([companyId, warehouseCode])
   @@index([companyId])
