@@ -1,0 +1,496 @@
+================================================================================
+ITEM MASTER DATA — DEEP MODEL ANALYSIS
+Source:     ITEM MASTER DATA.docx (SAP Business One screenshots × 9)
+Date:       2026-07-24
+Scope:      Inventory / Item Master (to build next)
+Audience:   Backend / Frontend / Product / QA
+Status:     ANALYSIS ONLY — no DB implementation yet
+================================================================================
+
+
+0. ONE-LINE VERDICT
+--------------------------------------------------------------------------------
+
+  The Word file is NOT a text spec — it is 9 SAP Business One "Item Master
+  Data" UI screenshots (table OITM). It defines a full ERP item master with
+  header + 9 tabs + a custom right-hand "General" panel.
+
+  Recommendation for OUR ERP:
+    Build a company-scoped Item Master using the SAME patterns as Vendor
+    (shared Neon + companyId, structured columns + optional metadata JSON,
+    reusable for custom fields later). Do NOT clone SAP 1:1 in v1.
+
+
+1. SOURCE DOCUMENT FACTS
+--------------------------------------------------------------------------------
+
+  File:     C:\Users\swent\Downloads\ITEM MASTER DATA.docx
+  Content:  Title "ITEM MASTER DATA:" + embedded PNGs image1…image9
+  Product:  SAP Business One
+  Sample:   ECON Fig 973 Bourdon tube pressure gauge
+  SAP hint: Footer shows OITM (SAP Item Master table)
+
+  Screens captured (tabs):
+    1  Header + General
+    2  Purchasing Data
+    3  Sales Data
+    4  Inventory Data (+ warehouse grid)
+    5  Planning Data
+    6  Production Data
+    7  Properties (64 boolean flags)
+    8  Remarks (long technical text)
+    9  Attachments (file grid)
+
+
+2. UI SHAPE (HOW SAP ORGANIZES ITEM MASTER)
+--------------------------------------------------------------------------------
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │ HEADER (always visible)                                     │
+  │  Item No, Description, Old Code, Type, Group, UoM Group,    │
+  │  Bar Code, Price List, Unit Price + currency                │
+  │  Flags: Inventory Item | Sales Item | Purchase Item         │
+  ├──────────────────────────────┬──────────────────────────────┤
+  │ TABS                         │ RIGHT PANEL ("General")      │
+  │  General                     │  Net/Gross Weight            │
+  │  Purchasing Data             │  Division / Core Activity    │
+  │  Sales Data                  │  Major Group / Brand         │
+  │  Inventory Data              │  Effective Date, Cust Stock  │
+  │  Planning Data               │  Stock DIO, Contract Items    │
+  │  Production Data             │  Attachment path             │
+  │  Properties                  │                              │
+  │  Remarks                     │                              │
+  │  Attachments                 │                              │
+  └──────────────────────────────┴──────────────────────────────┘
+
+  FE implication (same as Vendor):
+    Prefer one form feel with tabs — map sectionKey / tab keys:
+      general | purchasing | sales | inventory | planning |
+      production | properties | remarks | attachments
+
+
+3. FIELD INVENTORY (FROM SCREENSHOTS)
+--------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+3.1 HEADER — core identity (always on form)
+------------------------------------------------------------------------------
+
+  Field (UI)              Type           Notes / sample
+  ----------------------  -------------  ------------------------------------
+  Item No.                string PK      Manual / series; e.g. 042-100006231
+  Description             string         Long name
+  Old Code                string?        Legacy code
+  Item Type               enum/lookup    Items (also Labor/Travel in SAP)
+  Item Group              lookup         A-Brand
+  UoM Group               lookup         Manual
+  Bar Code                string?
+  Price List              lookup         List Price (pricing context)
+  Unit Price              decimal?       + currency (Primary Curr)
+  Inventory Item          boolean        checked
+  Sales Item              boolean        checked
+  Purchase Item           boolean        checked
+
+------------------------------------------------------------------------------
+3.2 GENERAL TAB
+------------------------------------------------------------------------------
+
+  Do Not Apply Discount Groups   boolean
+  Manufacturer                   lookup
+  Additional Identifier          string?
+  Shipping Type                  lookup      By Air
+  Manage Item by                 enum        None | Serial Numbers | Batches
+  Item Status                    enum        Active | Inactive | Advanced
+  Active From / To               date?
+  Remarks (short)                string?
+
+------------------------------------------------------------------------------
+3.3 RIGHT PANEL — customer / AnaCorp classification (UDFs in SAP)
+------------------------------------------------------------------------------
+
+  These look like SAP User-Defined Fields on the item form:
+
+  Net Weight (KG)         decimal
+  Gross Weight (KG)       decimal
+  Division                lookup      Flow Technology
+  Core Activity           lookup      Valves
+  Major Group             lookup      042 ECONOSTO VALVES
+  Effective Date          date?
+  Attachment              string/path (also Attachments tab)
+  Cust. Stock No.         string?
+  Stock to be             string?
+  Brand Name              lookup      Econ
+  Stock DIO Days          number?
+  Contract Items for      lookup?
+
+  OUR ERP note:
+    Treat as either:
+      A) Structured columns on items (if used in filters/reports), OR
+      B) customFields / metadata JSON (same pattern as Vendor UDFs)
+    Prefer A for Division / Brand / Major Group if they drive list filters.
+
+------------------------------------------------------------------------------
+3.4 PURCHASING DATA TAB
+------------------------------------------------------------------------------
+
+  Preferred Vendor              FK → vendors
+  Mfr Catalog No.               string?
+  Purchasing UoM Name           string/lookup   PC
+  Items per Purchase Unit       decimal         1
+  Packaging UoM Name            string?
+  Quantity per Package          decimal         1
+  Length / Width / Height       decimal?
+  Volume (+ unit)               decimal? + enum cf
+  Weight                        decimal?
+  Factor 1..4                   decimal         default 1
+  Customs Group                 lookup + %
+  Tax Group (purchase)          lookup + %      Zero Rated 0%
+
+------------------------------------------------------------------------------
+3.5 SALES DATA TAB
+------------------------------------------------------------------------------
+
+  Tax Group (sales)             lookup + %
+  Sales UoM Name                string/lookup   PC
+  Items per Sales Unit          decimal         1
+  Packaging UoM Name            string?
+  Quantity per Package          decimal         1
+  Length / Width / Height       decimal?
+  Volume (+ unit)               decimal?
+  Weight                        decimal?
+  Factor 1..4                   decimal
+
+------------------------------------------------------------------------------
+3.6 INVENTORY DATA TAB
+------------------------------------------------------------------------------
+
+  Set G/L Accounts By           enum/lookup     Item Group
+  UoM Name (inventory)          string/lookup
+  Weight                        decimal?
+  Valuation Method              enum            Moving Average | Standard | FIFO…
+  Item Cost                     decimal?
+  Manage Inventory by Warehouse boolean
+
+  Inventory levels (defaults):
+    Required (Purchasing UoM)   decimal?
+    Minimum                     decimal?
+    Maximum                     decimal?
+
+  Warehouse grid (1:N child rows):
+    Whse Code                   FK → warehouses
+    Whse Name                   display
+    Locked                      boolean
+    In Stock                    decimal (system)
+    Committed                   decimal (system)
+    Ordered                     decimal (system)
+    Available                   decimal (computed)
+    First Bin Location          string?
+    Default Bin Location        string?
+    Enforce Default Bin Loc.    boolean
+
+------------------------------------------------------------------------------
+3.7 PLANNING DATA TAB
+------------------------------------------------------------------------------
+
+  Planning Method               enum            None | MRP …
+  Procurement Method            enum            Buy | Make
+  Order Interval                lookup?
+  Order Multiple                decimal?
+  Minimum Order Qty             decimal
+  Lead Time (Days)              int?
+  Tolerance Days                int?
+
+------------------------------------------------------------------------------
+3.8 PRODUCTION DATA TAB
+------------------------------------------------------------------------------
+
+  Phantom Item                  boolean
+  Issue Method                  enum            Backflush | Manual
+  BOM Type                      string?
+  No. of Item Components        int (system)
+  No. of Resource Components    int (system)
+  Production Std Cost           decimal + currency
+  Include in Prod Std Cost Rollup  boolean
+
+------------------------------------------------------------------------------
+3.9 PROPERTIES TAB
+------------------------------------------------------------------------------
+
+  64 boolean property slots (SAP B1 classic).
+  UI: "Items Property 1" … "Items Property 64" + Select All / Clear.
+
+  OUR ERP recommendation:
+    Do NOT create 64 boolean columns.
+    Use either:
+      - custom field definitions (entityType=item) with checkbox type, OR
+      - item_properties JSON / bit flags table keyed by property code.
+
+------------------------------------------------------------------------------
+3.10 REMARKS TAB
+------------------------------------------------------------------------------
+
+  Long text (SAP shows ~256000 char capacity).
+  Sample content = technical specs (material, range, connection, ERIKS #).
+
+  Store as: remarksText / descriptionLong (Text / varchar large).
+
+------------------------------------------------------------------------------
+3.11 ATTACHMENTS TAB
+------------------------------------------------------------------------------
+
+  Grid:
+    # | Target Path | File Name | Attachment Date
+
+  OUR ERP: reuse file-asset pattern when storage module is ready;
+  v1 can be JSON list or item_attachments table.
+
+
+4. RECOMMENDED DATA MODEL (OUR ERP — NOT SAP CLONE)
+--------------------------------------------------------------------------------
+
+  Align with locked platform patterns:
+    ✓ Shared Neon DB + companyId
+    ✓ Soft delete + audit (createdBy/At, updatedBy/At)
+    ✓ Lookups as master tables (or enums for small sets)
+    ✓ Child tables for warehouse stock / attachments
+    ✓ Optional customFields later (entityType = item)
+
+------------------------------------------------------------------------------
+4.1 TABLES — VERSION 1 (MUST HAVE)
+------------------------------------------------------------------------------
+
+  A) items                         — master header + general + key flags
+  B) item_purchase_data            — 1:1 purchasing (or columns on items)
+  C) item_sales_data               — 1:1 sales
+  D) item_inventory_settings       — 1:1 valuation / default levels
+  E) item_warehouse_stock          — 1:N per warehouse (qty + bins)
+  F) item_planning_data            — 1:1 planning
+  G) item_production_data          — 1:1 production flags (BOM later)
+  H) item_attachments              — 1:N files (optional v1.1)
+
+  Lookup masters (company or shared):
+    item_groups
+    uom_groups / units_of_measure
+    manufacturers (optional)
+    brands / divisions / major_groups (or metadata + custom fields)
+
+  Practical v1 simplification (recommended):
+    ONE table `items` with JSON columns for purchase/sales/planning/
+    production extras that are rarely filtered,
+    PLUS `item_warehouse_stock` for real inventory numbers.
+
+------------------------------------------------------------------------------
+4.2 SUGGESTED `items` CORE COLUMNS (v1)
+------------------------------------------------------------------------------
+
+  item_id                 BIGSERIAL PK
+  company_id              BIGINT FK NOT NULL
+  item_code               VARCHAR(50) NOT NULL     -- Item No.
+  description             VARCHAR(255) NOT NULL
+  old_code                VARCHAR(50) NULL
+  item_type               VARCHAR(30) DEFAULT 'item'  -- item|service|…
+  item_group_id           BIGINT NULL
+  uom_group_id            BIGINT NULL
+  barcode                 VARCHAR(100) NULL
+  default_price_list_id   BIGINT NULL
+  unit_price              DECIMAL(18,6) NULL
+  currency_code           VARCHAR(10) NULL
+
+  is_inventory_item       BOOLEAN DEFAULT true
+  is_sales_item           BOOLEAN DEFAULT true
+  is_purchase_item        BOOLEAN DEFAULT true
+
+  manufacturer_id         BIGINT NULL
+  shipping_type           VARCHAR(40) NULL
+  manage_by               VARCHAR(20) DEFAULT 'none'  -- none|serial|batch
+  status                  VARCHAR(20) DEFAULT 'active' -- active|inactive|advanced
+  active_from             DATE NULL
+  active_to               DATE NULL
+
+  net_weight_kg           DECIMAL(18,6) NULL
+  gross_weight_kg         DECIMAL(18,6) NULL
+  division                VARCHAR(80) NULL      -- or FK
+  core_activity           VARCHAR(80) NULL
+  major_group             VARCHAR(120) NULL
+  brand_name              VARCHAR(80) NULL
+  effective_date          DATE NULL
+  customer_stock_no       VARCHAR(80) NULL
+  stock_dio_days          INT NULL
+
+  remarks                 TEXT NULL
+  purchase_json           JSONB NULL             -- purchasing tab bag
+  sales_json              JSONB NULL
+  inventory_json          JSONB NULL             -- valuation defaults
+  planning_json           JSONB NULL
+  production_json         JSONB NULL
+  properties_json         JSONB NULL             -- property flags map
+  metadata                JSONB NULL             -- FE extras / SAP parity
+
+  is_active               BOOLEAN DEFAULT true
+  created_by / created_at / updated_by / updated_at / deleted_at
+  row_version
+
+  @@unique([company_id, item_code])
+  @@index([company_id, status])
+  @@index([company_id, item_group_id])
+  @@index([company_id, brand_name])
+
+------------------------------------------------------------------------------
+4.3 SUGGESTED `item_warehouse_stock` (v1)
+------------------------------------------------------------------------------
+
+  id                      BIGSERIAL PK
+  company_id              BIGINT
+  item_id                 BIGINT FK → items
+  warehouse_id            BIGINT FK → warehouses
+  is_locked               BOOLEAN DEFAULT false
+  qty_on_hand             DECIMAL(18,6) DEFAULT 0   -- In Stock
+  qty_committed           DECIMAL(18,6) DEFAULT 0
+  qty_ordered             DECIMAL(18,6) DEFAULT 0
+  -- available = on_hand - committed (compute in API)
+  default_bin_location    VARCHAR(80) NULL
+  first_bin_location      VARCHAR(80) NULL
+  enforce_default_bin     BOOLEAN DEFAULT false
+
+  @@unique([item_id, warehouse_id])
+
+
+5. PHASE PLAN (DO NOT BUILD EVERYTHING AT ONCE)
+--------------------------------------------------------------------------------
+
+  PHASE ITEM-1 (create now — MVP Item Master)
+    • items table + CRUD APIs under companies/:id/items
+    • Header fields + Inventory/Sales/Purchase flags
+    • General status + remarks
+    • Right-panel classification (division/brand/major group/weights)
+    • List + get + create + patch + soft delete
+    • Permissions: items:view|create|edit|delete (or inventory:*)
+    • Seed DEMO_ACME sample item (pressure gauge)
+
+  PHASE ITEM-2
+    • Purchasing + Sales UoM / tax / preferred vendor
+    • Inventory valuation + default min/max
+    • item_warehouse_stock linked to existing warehouses
+
+  PHASE ITEM-3
+    • Planning + Production flags
+    • Serial/Batch manage_by enforcement
+    • Attachments
+    • Custom fields entityType=item (reuse CF module)
+
+  PHASE ITEM-4
+    • BOM / Production rollup
+    • Price lists as first-class
+    • Full G/L account determination
+    • Properties designer (not 64 hard columns)
+
+
+6. GAP vs CURRENT BACKEND
+--------------------------------------------------------------------------------
+
+  Current stub (src/modules/inventory/items):
+    CreateProductDto ≈ sku, name, categoryId, uom, cost/price,
+                       isManufactured / isPurchasable / isSaleable, metadata
+
+  That is a thin Product — NOT SAP Item Master.
+
+  Gap:
+    Missing almost all tabs (purchase/sales/inventory grid/planning/
+    production/properties/attachments) and AnaCorp classification panel.
+
+  Decision:
+    Rename mental model from "Product" → "Item" (Item Master).
+    Either evolve Product into Item, or introduce Item and deprecate Product.
+    Prefer ONE entity: Item (itemCode), keep Product alias only if FE needs it.
+
+
+7. API CONTRACT SKETCH (ITEM-1)
+--------------------------------------------------------------------------------
+
+  Base: /api/v1/companies/{companyId}/items
+
+  GET    /items?search=&status=&itemGroupId=
+  GET    /items/{itemId}
+  POST   /items
+  PATCH  /items/{itemId}
+  DELETE /items/{itemId}          -- soft deactivate
+
+  Create body (v1 example):
+  {
+    "itemCode": "042-100006231",
+    "description": "ECON Fig 973 Bourdon tube pressure gauge Type",
+    "itemType": "item",
+    "itemGroup": "A-Brand",
+    "uomGroup": "Manual",
+    "isInventoryItem": true,
+    "isSalesItem": true,
+    "isPurchaseItem": true,
+    "status": "inactive",
+    "division": "Flow Technology",
+    "coreActivity": "Valves",
+    "majorGroup": "042 ECONOSTO VALVES",
+    "brandName": "Econ",
+    "remarks": "Cabinet/Mounting/flange material: stainless steel\n..."
+  }
+
+  Permissions (propose):
+    items:view | items:create | items:edit | items:delete
+    Grant to DEMO_ACME ADMIN (same pattern as org structure perms).
+
+
+8. FE FORM TABS (MIRROR VENDOR PATTERN)
+--------------------------------------------------------------------------------
+
+  sectionKey / tab keys:
+    general | purchasing | sales | inventory | planning |
+    production | properties | remarks | attachments
+
+  Header always visible (itemCode, description, flags).
+  Right-panel fields can live under general or a "classification" section.
+
+
+9. WHAT NOT TO COPY FROM SAP IN V1
+--------------------------------------------------------------------------------
+
+  ✗ 64 hard-coded property columns
+  ✗ Full G/L account determination engine
+  ✗ Complete price-list engine
+  ✗ BOM explosion / production cost rollup
+  ✗ Serial/Batch transaction engine (only store manageBy flag)
+  ✗ Database-per-company
+
+
+10. ALIGNMENT WITH LOCKED PLATFORM ARCHITECTURE
+--------------------------------------------------------------------------------
+
+  Same as Vendor / Custom Fields decisions:
+    ✓ Shared DB + companyId
+    ✓ Soft delete retains history
+    ✓ Admin permissions on role (seed)
+    ✓ Optional future: custom fields for Item via entityType=item
+    ✓ metadata JSON allowed for FE extras that are not first-class yet
+
+
+11. OPEN QUESTIONS FOR PRODUCT
+--------------------------------------------------------------------------------
+
+  Q1  Item code: manual only, or auto series like SAP?
+  Q2  Keep name "Item" or "Product" in APIs?
+  Q3  Right-panel fields (Division/Brand/…) — first-class columns or UDFs?
+  Q4  Warehouse stock editable on Item form in v1, or read-only from stock module?
+  Q5  Should preferred vendor link to existing vendors module now?
+
+
+12. NEXT BACKEND STEP (WHEN APPROVED)
+--------------------------------------------------------------------------------
+
+  1. Confirm Q1–Q5
+  2. Add prisma/inventory/items.prisma (+ warehouse stock)
+  3. Migration + permissions seed for ADMIN
+  4. Nest module items CRUD (company-scoped)
+  5. FE handoff TXT (tabs + sample payloads) — same style as Vendor CF
+
+
+================================================================================
+END — Item Master deep analysis prepared from ITEM MASTER DATA.docx
+================================================================================

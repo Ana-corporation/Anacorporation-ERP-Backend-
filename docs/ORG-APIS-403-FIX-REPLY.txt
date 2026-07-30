@@ -1,0 +1,88 @@
+================================================================================
+BE REPLY — Organization APIs 403 FIX
+Date:       2026-07-24
+Issue:      ALL Organization list/create APIs returned 403 Insufficient permissions
+Root cause: DEMO_ACME ADMIN role had product-module perms + custom_fields:*
+            but NOT branches/departments/designations/warehouses:*
+Fix:        seed:client-logins now grants all 16 org structure permissions
+            + seeds demo org rows for DEMO_ACME
+================================================================================
+
+
+1. PERMISSIONS GRANTED TO ADMIN (16)
+--------------------------------------------------------------------------------
+
+  branches:view
+  branches:create
+  branches:edit
+  branches:delete
+
+  departments:view
+  departments:create
+  departments:edit
+  departments:delete
+
+  designations:view
+  designations:create
+  designations:edit
+  designations:delete
+
+  warehouses:view
+  warehouses:create
+  warehouses:edit
+  warehouses:delete
+
+
+2. HOW TO APPLY
+--------------------------------------------------------------------------------
+
+  npm run seed:client-logins
+
+  Or quick patch only:
+  npm run seed:org-permissions
+
+  Then RE-LOGIN as ADMIN001 (fresh JWT / session cache).
+
+
+3. LIVE VERIFY (after seed + re-login on localhost:3002)
+--------------------------------------------------------------------------------
+
+  [x] Permissions granted to ADMIN (16 codes above)
+  [x] GET  /companies/15/branches       → 200 (demo rows present)
+  [x] GET  /companies/15/departments    → 200
+  [x] GET  /companies/15/designations   → 200
+  [x] GET  /companies/15/warehouses     → 200
+  [x] POST /companies/15/branches       → 201 (tested)
+  [x] Demo seed rows: Yes
+        Branches:      HQ, BLR (+ any prior rows)
+        Departments:   OPS, FIN, SCM
+        Designations:  ADMIN, MGR, EXEC
+        Warehouses:    WH-HQ, WH-BLR
+
+  NOTE on /auth/me permissions[]:
+    Company ADMIN keeps permissions[] empty for platform-nav shaping.
+    Org codes live on the role in DB and are loaded into the request
+    user context for API guards — they will NOT appear in the FE
+    platform permissions[] array. API 200/201 is the source of truth.
+
+
+4. FE RE-VERIFY STEPS
+--------------------------------------------------------------------------------
+
+  1. Backend: npm run seed:client-logins  (already run on this env)
+  2. FE: logout + login DEMO_ACME / ADMIN001 / Admin@123
+  3. Company → Organization → 4 tabs should list records
+  4. Optional: npm run seed:demo-org (FE script) should PASS (no 403)
+
+
+5. FILES CHANGED
+--------------------------------------------------------------------------------
+
+  scripts/seed-client-login-samples.js   (+ ORG_STRUCTURE_PERMISSION_CODES + demo org seed)
+  scripts/sync-org-structure-permissions.js  (standalone sync)
+  package.json  (seed:org-permissions)
+
+
+================================================================================
+END
+================================================================================

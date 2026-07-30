@@ -8,6 +8,15 @@ import {
 
 const PLATFORM_NAV_SET = new Set<string>(PLATFORM_NAV_PERMISSIONS);
 
+/**
+ * Tenant authorization contract: all role permission codes except platform-nav.
+ * Used by Company ADMIN (and other company roles) for FE / QA visibility.
+ * Backend API guards still load full DB permissions separately.
+ */
+export function toTenantPermissions(rolePermissions: string[]): string[] {
+  return [...new Set(rolePermissions.filter((code) => !PLATFORM_NAV_SET.has(code)))].sort();
+}
+
 function cloneContext(input: RoleLoginHandlerInput): AuthRoleSnapshot {
   const { accessContext } = input;
   return {
@@ -25,6 +34,8 @@ function cloneContext(input: RoleLoginHandlerInput): AuthRoleSnapshot {
       })),
     },
     permissions: [],
+    tenantAdmin: false,
+    platformOwner: false,
   };
 }
 
@@ -37,8 +48,8 @@ function scopeToActiveCompany(snapshot: AuthRoleSnapshot): AuthRoleSnapshot {
 
 /** Drop modules that have no "view" — FE hides them anyway; keeps payload clean. */
 function keepViewableModules(snapshot: AuthRoleSnapshot): AuthRoleSnapshot {
-  snapshot.activeCompany.modules = snapshot.activeCompany.modules.filter((m) =>
-    m.isActive && m.permissions.includes('view'),
+  snapshot.activeCompany.modules = snapshot.activeCompany.modules.filter(
+    (m) => m.isActive && m.permissions.includes('view'),
   );
   return snapshot;
 }
@@ -51,25 +62,29 @@ export const handlePlatformOwner: RoleLoginHandler = (input) => {
   const snapshot = cloneContext(input);
   snapshot.activeCompany.modules = [];
   snapshot.permissions = input.rolePermissions.filter((code) => PLATFORM_NAV_SET.has(code));
+  snapshot.tenantAdmin = false;
+  snapshot.platformOwner = true;
   return scopeToActiveCompany(snapshot);
 };
 
 /**
- * ADMIN — full control of one company only.
- * All subscribed modules with full actions; permissions[] empty → no platform menu.
+ * ADMIN — full control of one company (Option C Hybrid).
+ * permissions[] = tenant role codes (org / iam / shared / product…), never platform nav.
  */
 export const handleCompanyAdmin: RoleLoginHandler = (input) => {
   const snapshot = cloneContext(input);
-  snapshot.permissions = [];
+  snapshot.permissions = toTenantPermissions(input.rolePermissions);
+  snapshot.tenantAdmin = true;
+  snapshot.platformOwner = false;
   return scopeToActiveCompany(keepViewableModules(snapshot));
 };
 
 /**
- * MANAGER — assigned modules with partial actions (no platform menu).
+ * MANAGER — assigned modules with partial actions; expose tenant role perms.
  */
 export const handleManager: RoleLoginHandler = (input) => {
   const snapshot = cloneContext(input);
-  snapshot.permissions = [];
+  snapshot.permissions = toTenantPermissions(input.rolePermissions);
   return scopeToActiveCompany(keepViewableModules(snapshot));
 };
 
@@ -78,7 +93,7 @@ export const handleManager: RoleLoginHandler = (input) => {
  */
 export const handleStaff: RoleLoginHandler = (input) => {
   const snapshot = cloneContext(input);
-  snapshot.permissions = [];
+  snapshot.permissions = toTenantPermissions(input.rolePermissions);
   return scopeToActiveCompany(keepViewableModules(snapshot));
 };
 
@@ -87,7 +102,7 @@ export const handleStaff: RoleLoginHandler = (input) => {
  */
 export const handleSales: RoleLoginHandler = (input) => {
   const snapshot = cloneContext(input);
-  snapshot.permissions = [];
+  snapshot.permissions = toTenantPermissions(input.rolePermissions);
   return scopeToActiveCompany(keepViewableModules(snapshot));
 };
 
@@ -96,16 +111,16 @@ export const handleSales: RoleLoginHandler = (input) => {
  */
 export const handleViewer: RoleLoginHandler = (input) => {
   const snapshot = cloneContext(input);
-  snapshot.permissions = [];
+  snapshot.permissions = toTenantPermissions(input.rolePermissions);
   return scopeToActiveCompany(keepViewableModules(snapshot));
 };
 
 /**
- * Fallback for unknown company roles — company-scoped, no platform nav.
+ * Fallback for unknown company roles — company-scoped, tenant permissions only.
  */
 export const handleDefaultCompanyRole: RoleLoginHandler = (input) => {
   const snapshot = cloneContext(input);
-  snapshot.permissions = [];
+  snapshot.permissions = toTenantPermissions(input.rolePermissions);
   return scopeToActiveCompany(keepViewableModules(snapshot));
 };
 

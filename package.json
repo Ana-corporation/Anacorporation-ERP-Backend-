@@ -28,7 +28,8 @@
     "prisma:seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
     "seed:erp-modules": "node scripts/seed-erp-product-modules.js",
     "seed:phase1-login": "node scripts/seed-phase1-login-user.js",
-    "seed:client-logins": "node scripts/seed-client-login-samples.js"
+    "seed:client-logins": "node scripts/seed-client-login-samples.js",
+    "seed:org-permissions": "node scripts/sync-org-structure-permissions.js"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.14.0",

@@ -1,0 +1,298 @@
+================================================================================
+COMPANY ADMIN PERMISSION MODEL
+Architecture Review + Backend Opinion (ONE FILE)
+Date:       2026-07-24
+Audience:   Frontend / Product / QA / Backend
+Status:     Option C Hybrid IMPLEMENTED (2026-07-24)
+            Tenant permissions[] on ADMIN login + /auth/me
+================================================================================
+
+
+0. ONE-LINE VERDICT
+--------------------------------------------------------------------------------
+
+  Backend security today is CORRECT.
+  Option C (Hybrid) is IMPLEMENTED:
+    Company ADMIN permissions[] = tenant role codes (visible contract)
+    Backend API guards remain the final authorization layer.
+  External architecture review rating: ★★★★★ 9.5 / 10 — APPROVED & DONE.
+
+
+1. CURRENT BACKEND (AS-IS)
+--------------------------------------------------------------------------------
+
+  Company ADMIN has:
+
+    • Database Role Permissions   (real source used by API guards)
+    • API Authorization           (PermissionsGuard checks request user context)
+    • permissions[] intentionally empty on login /auth/me
+                                  (shaped for platform-nav only)
+
+  Current flow:
+
+    Login
+      ↓
+    JWT  { roleCode: "ADMIN", ... }   ← permissions NOT embedded in JWT body
+      ↓
+    API Request (+ session / user-context cache)
+      ↓
+    Backend loads role permissions from database
+      ↓
+    Authorization succeeds
+      ↓
+    API returns 200
+
+
+2. ANALYSIS
+--------------------------------------------------------------------------------
+
+  From a security perspective, the backend is correct.
+
+  The backend remains the final source of authorization.
+
+  However, the backend currently EXPOSES a different contract than it
+  ENFORCES.
+
+  Example today:
+
+    Visible (/auth/me permissions[])     Hidden (DB role → API guard)
+    ---------------------------------    ------------------------------
+    permissions: []                      branches:view
+                                         branches:create
+                                         departments:view
+                                         custom_fields:view
+                                         users:view (if granted)
+                                         roles:view (if granted)
+                                         ...
+
+  This creates two sources of truth:
+
+    One visible  → FE / QA / docs look at permissions[]
+    One hidden   → API guards look at DB-loaded role permissions
+
+  That mismatch caused confusion on Organization APIs (FE thought ADMIN
+  had zero org perms because permissions[] was empty, while DB already
+  had branches:* after the seed fix).
+
+
+3. PRODUCT / FE RECOMMENDATION (FROM REVIEW DOC)
+--------------------------------------------------------------------------------
+
+  Return explicit TENANT permissions inside the auth snapshot
+  (login + /auth/me permissions[] — and optionally JWT claims later).
+
+  Include examples like:
+
+    branches:view | branches:create | …
+    departments:view | …
+    designations:* | warehouses:*
+    users:view | roles:view
+    vendors via product modules / supply-chain actions
+    custom_fields:view | custom_fields:create | …
+
+  Do NOT return PLATFORM permissions to Company ADMIN:
+
+    companies:create
+    plans:create / plans:edit
+    modules:create / modules:edit
+    subscriptions:create
+    (anything that belongs only to Platform Owner)
+
+  Recommended identity flags:
+
+    {
+      "roleCode": "ADMIN",
+      "tenantAdmin": true,
+      "platformOwner": false,
+      "permissions": [ "...tenant codes..." ]
+    }
+
+
+4. BENEFITS
+--------------------------------------------------------------------------------
+
+  • One authorization contract (visible = same codes FE cares about)
+  • Easier FE implementation (hide/show Organization tabs from list)
+  • Easier QA (assert permissions[] contains branches:view)
+  • Easier documentation
+  • Easier debugging
+  • Easier future mobile clients
+
+  Important:
+
+    Backend must ALWAYS remain the final authorization layer.
+    Frontend permissions NEVER replace API authorization.
+
+
+5. BACKEND OPINION (OUR RECOMMENDATION)
+--------------------------------------------------------------------------------
+
+  ★★★★★  Option C — Hybrid  (AGREE)
+
+  Identity
+    ↓
+  roleCode (+ tenantAdmin / platformOwner flags)
+
+  Authorization contract (for FE / QA)
+    ↓
+  permissions[] = TENANT role permission codes only
+
+  Security (always)
+    ↓
+  Backend API Guards load / verify permissions server-side
+
+  Why we agree:
+
+    1. Security model does not weaken — guards stay mandatory.
+    2. FE/QA stop treating empty permissions[] as “no access”.
+    3. Platform Owner nav stays separate (platform codes only for OWNER).
+    4. Matches modern ERP SaaS pattern (tenant admin sees tenant rights).
+
+  What we would NOT do:
+
+    ✗ Put platform owner codes on Company ADMIN
+    ✗ Trust FE permissions[] alone for security
+    ✗ Remove DB role permissions / guard checks
+    ✗ Redesign Organization APIs for this (unrelated)
+
+
+6. IMPLEMENTATION NOTES (WHEN APPROVED)
+--------------------------------------------------------------------------------
+
+  Suggested change points (Nest auth):
+
+    • role-login-response.handlers.ts
+        Company ADMIN: populate permissions[] from rolePermissions
+        filtered to TENANT codes (organization / iam / shared / product…)
+        exclude PLATFORM_NAV / companies:* create-edit platform codes
+
+    • Keep PLATFORM_OWNER: permissions[] = platform nav codes only
+      (current behavior for Administration menu)
+
+    • Optional later: embed same tenant permissions array in JWT claims
+      (nice for mobile; not required if /auth/me always called)
+
+    • Optional flags on snapshot:
+        tenantAdmin: roleCode === 'ADMIN'
+        platformOwner: roleCode === 'PLATFORM_OWNER'
+
+  After change:
+
+    FE re-login ADMIN001
+    Expect permissions[] to include branches:view, departments:view, …
+    Organization APIs still 200 via guards (unchanged)
+
+
+7. WHAT IS ALREADY FIXED (RELATED)
+--------------------------------------------------------------------------------
+
+  Organization 403 issue was FIXED by seeding the 16 org structure
+  permissions onto ADMIN role (DB). APIs already return 200/201 after
+  re-login.
+
+  This document is about the VISIBLE CONTRACT (permissions[]), not about
+  re-fixing API authorization.
+
+
+8. DECISION CHECKLIST
+--------------------------------------------------------------------------------
+
+  [x] Architecture review agrees Option C Hybrid (see §10)
+  [x] Product / FE go-ahead (implement now)
+  [x] Backend implements tenant permissions[] on ADMIN login + /auth/me
+  [x] tenantAdmin / platformOwner flags on login + /auth/me
+  [ ] FE stops assuming empty permissions[] means no org access
+  [ ] QA asserts sample codes present after ADMIN login
+  [x] Platform Owner permissions[] remain platform-only
+
+
+9. FINAL RECOMMENDATION
+--------------------------------------------------------------------------------
+
+  Keep backend guards as the single security enforcer.
+
+  Company ADMIN permissions[] now lists tenant capabilities explicitly
+  (Option C Hybrid) — implemented 2026-07-24.
+
+  Do not mix Platform Owner powers into Company ADMIN.
+
+
+10. ARCHITECTURE REVIEW FEEDBACK (APPENDED 2026-07-24)
+--------------------------------------------------------------------------------
+
+  Source: Backend Review Feedback — Solution Architecture Opinion
+  Rating: ★★★★★ 9.5 / 10
+  Verdict: AGREE — approve Hybrid as long-term direction
+
+  --- What the review AGREES with ---
+
+  1. Backend remains the final security layer
+     Frontend permissions never replace Backend validation.
+     Every protected request must pass server-side permission checks.
+
+  2. Company ADMIN should receive tenant permissions in permissions[]
+     Examples: branches:view, departments:view, users:view, roles:view,
+     custom_fields:view, …
+     Removes ambiguity for FE, QA, docs, and future mobile.
+
+  3. Platform Owner permissions stay separate
+     Never on Company ADMIN:
+       companies:create, plans:create/update, modules:create,
+       subscriptions:create
+
+  4. API Guards should not change
+     This is an authentication CONTRACT improvement only.
+     Security enforcement stays identical.
+
+  --- Optional suggestions (NOT required for v1) ---
+
+  S1  Future capabilities object (instead of only two booleans):
+        capabilities: {
+          tenantAdmin, platformOwner,
+          canManageOrganization, canManageUsers, canManageRoles
+        }
+      Optional later — not required for Version 1.
+
+  S2  One centralized Permission Service for all permission generation:
+        Role → Role Permissions → Permission Service
+          → JWT/Login → /auth/me → API Guards
+      Avoid building permission lists in multiple places.
+
+  S3  Keep model flexible for future scopes
+      (company → branch / warehouse / department) without redesign.
+
+  --- What the review would NOT change ---
+
+  ✗ Empty permissions[] for Company ADMIN
+  ✗ Trusting Frontend permissions for security
+  ✗ Removing Backend API Guards
+  ✗ Mixing Platform Owner perms into Company ADMIN
+  ✗ Special FE exceptions using isCompanyAdmin everywhere
+
+
+11. COMBINED FINAL OPINION + IMPLEMENTATION RESULT
+--------------------------------------------------------------------------------
+
+  Identity
+    ↓
+  roleCode (+ tenantAdmin / platformOwner)   ← IMPLEMENTED
+
+  Authorization Contract
+    ↓
+  permissions[]  (tenant codes for ADMIN; platform for OWNER)  ← IMPLEMENTED
+
+  Security
+    ↓
+  Backend API Guards  (unchanged — still final)
+
+  Live check (ADMIN001 after re-login):
+    tenantAdmin: true
+    platformOwner: false
+    permissions includes: branches:*, departments:*, designations:*,
+                          warehouses:*, custom_fields:*, product modules…
+    permissions does NOT include: companies:create, plans:*, modules:*
+
+
+================================================================================
+END — Single handoff: review + opinion + feedback + implementation
+================================================================================

@@ -1,0 +1,231 @@
+================================================================================
+BE → FE REPLY
+Hybrid Permission Model — CONTRACT CONFIRMATION
+Date:       2026-07-25
+From:       Backend
+To:         Frontend
+Status:     LOCKED for FE alignment (Option C Hybrid — live)
+Related:    docs/ADMIN-PERMISSION-MODEL-REVIEW.txt
+================================================================================
+
+
+0. ONE-LINE ANSWER
+--------------------------------------------------------------------------------
+
+  C) Both POST /auth/login AND GET /auth/me return the SAME Hybrid snapshot:
+       permissions[] + tenantAdmin + platformOwner
+
+  Old doc "permissions only on /me" is OUTDATED (Yes).
+
+  FE rule: prefer /auth/me; login already has the list too — either is fine.
+
+
+1. AUTH RESPONSE CONTRACT (Q1–Q3)
+--------------------------------------------------------------------------------
+
+Q1. Source of truth for permissions[]
+    Answer: **C — Both login AND /me** (preferred by FE — CONFIRMED)
+
+    • POST /auth/login  → data.permissions[]  (full Hybrid list)
+    • GET  /auth/me     → data.permissions[]  (same shaping rules)
+    • Same builder: RoleLoginResponseBuilder (role handlers)
+
+    FE may hydrate from either. Prefer /auth/me after app boot / refresh
+    of session; login payload is valid for immediate Redux store.
+
+Q2. tenantAdmin / platformOwner always present?
+    [x] POST /auth/login     → YES (booleans, always set)
+    [x] GET  /auth/me        → YES
+    [x] POST /auth/refresh   → YES
+        Refresh calls createAuthSession → same toLoginPayload shape
+        (permissions + tenantAdmin + platformOwner + tokens)
+
+Q3. Old FE auth doc:
+    "NOT in login response: permissions[] → get from /auth/me"
+    → **YES, OUTDATED** after Hybrid.
+    Update AUTH-API-AND-LOGIN-TEST-REFERENCE.txt accordingly.
+
+
+2. COMPANY ADMIN permissions[] (Q4–Q5)
+--------------------------------------------------------------------------------
+
+Q4. Sample ADMIN001 permissions[] (DEMO_ACME) — expected after seed
+
+  After: npm run seed:client-logins + re-login ADMIN001
+
+  Identity flags:
+    tenantAdmin:   true
+    platformOwner: false
+    roleCode:      ADMIN   (on activeCompany.role.roleCode)
+
+  permissions[] includes (tenant only — sorted alphabetically in API):
+
+  --- Organization ---
+    branches:view
+    branches:create
+    branches:edit
+    branches:delete
+    departments:view
+    departments:create
+    departments:edit
+    departments:delete
+    designations:view
+    designations:create
+    designations:edit
+    designations:delete
+    warehouses:view
+    warehouses:create
+    warehouses:edit
+    warehouses:delete
+
+  --- Custom fields ---
+    custom_fields:view
+    custom_fields:create
+    custom_fields:edit
+    custom_fields:delete
+
+  --- Tenant IAM (Users / Roles) ---
+    users:view
+    users:create
+    users:edit
+    users:delete
+    roles:view
+    roles:create
+    roles:edit
+    roles:delete
+
+  --- Product modules (Phase-1 style codes from subscription entitlement) ---
+    financials:view|create|edit|delete|approve
+    supply-chain:view|create|edit|delete|approve
+    hcm:view|create|edit|delete|approve
+    manufacturing:view|create|edit|delete|approve
+    crm:view|create|edit|delete|approve
+    projects:view|create|edit|delete|approve
+
+  Also: activeCompany.modules[] still carries per-module action arrays
+  for workspace module tiles (unchanged).
+
+  NOTE: Re-run seed if users:*/roles:* missing from older ADMIN seed:
+    npm run seed:client-logins
+    then logout + login again.
+
+Q5. Platform Owner codes NEVER on Company ADMIN?
+    **CONFIRMED YES.**
+
+    Filtered out of company-role permissions[]:
+      companies:view|create|edit|delete
+      subscription:view|edit
+      modules:view|edit
+      plans:view|edit
+
+    (PLATFORM_NAV_PERMISSIONS in role-login-response.types.ts)
+
+
+3. OTHER ROLES (Q6–Q7)
+--------------------------------------------------------------------------------
+
+Q6. MANAGER / STAFF / SALES
+    **YES** — non-empty permissions[] with ONLY their role codes
+    (product module actions they were seeded with; no platform nav).
+
+    Flags:
+      tenantAdmin:   false
+      platformOwner: false
+
+    Examples (DEMO seed):
+      MGR001   → financials:view|create|edit|approve, crm:view|edit
+      STAFF001 → supply-chain:view, crm:view
+      SALES001 → crm:view|create|edit
+
+Q7. PLATFORM_OWNER (OWNER001)
+    platformOwner: true
+    tenantAdmin:   false
+    permissions[] = platform catalogue / nav codes ONLY, e.g.:
+      companies:view|create|edit|delete
+      subscription:view|edit
+      modules:view|edit
+      plans:view|edit
+      (+ any other PLATFORM_OWNER seed extras that pass the platform filter)
+    activeCompany.modules[] = [] (no workspace product modules)
+
+
+4. 401 / 403 CONTRACT (Q8–Q9)
+--------------------------------------------------------------------------------
+
+Q8. Error shape — CONFIRMED (GlobalExceptionFilter):
+
+  {
+    "success": false,
+    "message": "Insufficient permissions",   // or Unauthorized message
+    "data": null,
+    "errors": [ ... ],                       // optional
+    "timestamp": "...",
+    "path": "..."
+  }
+
+  Permission guard message: "Insufficient permissions" (HTTP 403).
+
+Q9. 401 vs 403 — CONFIRMED
+
+  401 Unauthorized
+    → missing / invalid / expired token (or session invalid)
+
+  403 Forbidden
+    → valid token + session, but role lacks required permission code
+
+
+5. SINGLE SOURCE OF TRUTH (Q10–Q11)
+--------------------------------------------------------------------------------
+
+Q10. FE must NEVER invent permission codes?
+    **CONFIRMED.** Only use codes from permissions[] (or published catalogue).
+    UI gates via can(code); API still enforces via guards.
+
+Q11. Permission catalogue endpoint / doc?
+
+  Endpoint:
+    GET /api/v1/permissions
+    Requires: permissions:view
+    (paginated list of all permission rows in DB)
+
+  Code catalogue (source of truth for names/modules):
+    src/common/constants/permissions.constant.ts
+
+  FE should gate on codes returned for the logged-in user, not invent new ones.
+  Catalogue endpoint is for admin tooling / docs — not required for every
+  button render.
+
+
+6. OPTIONAL FUTURE SCOPES (Q12)
+--------------------------------------------------------------------------------
+
+Q12. Branch / warehouse / department scoped permissions?
+    **No timeline for v1.**
+    FE should ignore until Backend announces a new contract.
+    Current model = company-scoped permission codes only.
+
+
+7. REPLY CHECKLIST
+--------------------------------------------------------------------------------
+
+  [x] Q1–Q3 auth endpoints confirmed (C — both login + /me)
+  [x] Q4 sample ADMIN001 permissions[] listed above
+  [x] Q5 platform codes excluded from company ADMIN — confirmed
+  [x] Q6–Q7 other roles confirmed
+  [x] Q8–Q9 401/403 shape confirmed
+  [x] Q10–Q11 catalogue / single source confirmed
+  [x] Q12 future scopes — none for v1
+
+
+8. FE ACTIONS AFTER THIS REPLY
+--------------------------------------------------------------------------------
+
+  1. Update AUTH-API-AND-LOGIN-TEST-REFERENCE.txt (Hybrid)
+  2. Gate Users / Roles / Org with can(permission)
+  3. Remove identity-based CRUD fallbacks (tenantAdmin ≠ CRUD)
+  4. Re-seed + re-login if users:*/roles:* missing on ADMIN001
+
+
+================================================================================
+END — Feed this reply to Frontend
+================================================================================

@@ -45,6 +45,38 @@ const CUSTOM_FIELDS_PERMISSION_CODES = [
   { module: 'shared', code: 'custom_fields:delete', name: 'Delete Custom Fields', action: 'delete' },
 ];
 
+/** Company Organization tab — branches / departments / designations / warehouses */
+const ORG_STRUCTURE_PERMISSION_CODES = [
+  { module: 'organization', code: 'branches:view', name: 'View Branches', action: 'view' },
+  { module: 'organization', code: 'branches:create', name: 'Create Branches', action: 'create' },
+  { module: 'organization', code: 'branches:edit', name: 'Edit Branches', action: 'edit' },
+  { module: 'organization', code: 'branches:delete', name: 'Delete Branches', action: 'delete' },
+  { module: 'organization', code: 'departments:view', name: 'View Departments', action: 'view' },
+  { module: 'organization', code: 'departments:create', name: 'Create Departments', action: 'create' },
+  { module: 'organization', code: 'departments:edit', name: 'Edit Departments', action: 'edit' },
+  { module: 'organization', code: 'departments:delete', name: 'Delete Departments', action: 'delete' },
+  { module: 'organization', code: 'designations:view', name: 'View Designations', action: 'view' },
+  { module: 'organization', code: 'designations:create', name: 'Create Designations', action: 'create' },
+  { module: 'organization', code: 'designations:edit', name: 'Edit Designations', action: 'edit' },
+  { module: 'organization', code: 'designations:delete', name: 'Delete Designations', action: 'delete' },
+  { module: 'organization', code: 'warehouses:view', name: 'View Warehouses', action: 'view' },
+  { module: 'organization', code: 'warehouses:create', name: 'Create Warehouses', action: 'create' },
+  { module: 'organization', code: 'warehouses:edit', name: 'Edit Warehouses', action: 'edit' },
+  { module: 'organization', code: 'warehouses:delete', name: 'Delete Warehouses', action: 'delete' },
+];
+
+/** Company IAM — Users / Roles (tenant admin shell) */
+const TENANT_IAM_PERMISSION_CODES = [
+  { module: 'iam', code: 'users:view', name: 'View Users', action: 'view' },
+  { module: 'iam', code: 'users:create', name: 'Create Users', action: 'create' },
+  { module: 'iam', code: 'users:edit', name: 'Edit Users', action: 'edit' },
+  { module: 'iam', code: 'users:delete', name: 'Delete Users', action: 'delete' },
+  { module: 'iam', code: 'roles:view', name: 'View Roles', action: 'view' },
+  { module: 'iam', code: 'roles:create', name: 'Create Roles', action: 'create' },
+  { module: 'iam', code: 'roles:edit', name: 'Edit Roles', action: 'edit' },
+  { module: 'iam', code: 'roles:delete', name: 'Delete Roles', action: 'delete' },
+];
+
 /** Platform owner flat permissions expected by frontend Administration nav */
 const PLATFORM_OWNER_PERMISSION_CODES = [
   { module: 'organization', code: 'companies:view', name: 'View Companies', action: 'view' },
@@ -59,6 +91,13 @@ const PLATFORM_OWNER_PERMISSION_CODES = [
   { module: 'subscription', code: 'plans:view', name: 'View Plans', action: 'view' },
   { module: 'subscription', code: 'plans:edit', name: 'Edit Plans', action: 'edit' },
   ...CUSTOM_FIELDS_PERMISSION_CODES,
+  ...ORG_STRUCTURE_PERMISSION_CODES,
+];
+
+const ADMIN_EXTRA_PERMISSION_CODES = [
+  ...CUSTOM_FIELDS_PERMISSION_CODES,
+  ...ORG_STRUCTURE_PERMISSION_CODES,
+  ...TENANT_IAM_PERMISSION_CODES,
 ];
 
 const ACCOUNTS = [
@@ -105,7 +144,7 @@ const ACCOUNTS = [
       crm: ['view', 'create', 'edit', 'delete', 'approve'],
       projects: ['view', 'create', 'edit', 'delete', 'approve'],
     },
-    platformPermissionCodes: CUSTOM_FIELDS_PERMISSION_CODES.map((p) => p.code),
+    platformPermissionCodes: ADMIN_EXTRA_PERMISSION_CODES.map((p) => p.code),
   },
   {
     level: 'manager',
@@ -241,7 +280,16 @@ async function ensureModules() {
     (await prisma.module.findMany()).map((m) => [m.moduleCode, m]),
   );
 
-  for (const perm of [...PLATFORM_OWNER_PERMISSION_CODES, ...CUSTOM_FIELDS_PERMISSION_CODES]) {
+  const flatPermissions = [
+    ...PLATFORM_OWNER_PERMISSION_CODES,
+    ...CUSTOM_FIELDS_PERMISSION_CODES,
+    ...ORG_STRUCTURE_PERMISSION_CODES,
+    ...TENANT_IAM_PERMISSION_CODES,
+  ];
+  const seenPermCodes = new Set();
+  for (const perm of flatPermissions) {
+    if (seenPermCodes.has(perm.code)) continue;
+    seenPermCodes.add(perm.code);
     const mod = modulesByCode.get(perm.module);
     if (!mod) continue;
     await prisma.permission.upsert({
@@ -738,6 +786,149 @@ async function ensureVendorCustomFieldSamples() {
   console.log('Vendor custom field samples ready for DEMO_ACME (paymentTerms deactivated).');
 }
 
+/** Demo Organization tab rows for DEMO_ACME (branches / depts / designations / warehouses). */
+async function ensureDemoOrgStructure() {
+  const company = await prisma.company.findUnique({ where: { companyCode: 'DEMO_ACME' } });
+  if (!company) {
+    console.warn('DEMO_ACME not found — skip org structure seed');
+    return;
+  }
+  const companyId = company.companyId;
+
+  const branches = [
+    {
+      branchCode: 'HQ',
+      name: 'Head Office',
+      address: '12 Anna Salai',
+      city: 'Chennai',
+      country: 'IN',
+      phone: '+91-44-40000001',
+    },
+    {
+      branchCode: 'BLR',
+      name: 'Bangalore Branch',
+      address: 'MG Road',
+      city: 'Bengaluru',
+      country: 'IN',
+      phone: '+91-80-40000002',
+    },
+  ];
+
+  const branchIds = {};
+  for (const row of branches) {
+    const saved = await prisma.branch.upsert({
+      where: {
+        companyId_branchCode: { companyId, branchCode: row.branchCode },
+      },
+      update: {
+        name: row.name,
+        address: row.address,
+        city: row.city,
+        country: row.country,
+        phone: row.phone,
+        isActive: true,
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+      create: {
+        companyId,
+        ...row,
+        isActive: true,
+      },
+    });
+    branchIds[row.branchCode] = saved.branchId;
+  }
+
+  for (const row of [
+    { departmentCode: 'OPS', name: 'Operations' },
+    { departmentCode: 'FIN', name: 'Finance' },
+    { departmentCode: 'SCM', name: 'Supply Chain' },
+  ]) {
+    await prisma.department.upsert({
+      where: {
+        companyId_departmentCode: { companyId, departmentCode: row.departmentCode },
+      },
+      update: {
+        name: row.name,
+        parentDepartmentId: null,
+        isActive: true,
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+      create: {
+        companyId,
+        departmentCode: row.departmentCode,
+        name: row.name,
+        parentDepartmentId: null,
+        isActive: true,
+      },
+    });
+  }
+
+  for (const row of [
+    { designationCode: 'ADMIN', name: 'Administrator', gradeLevel: 1 },
+    { designationCode: 'MGR', name: 'Manager', gradeLevel: 2 },
+    { designationCode: 'EXEC', name: 'Executive', gradeLevel: 3 },
+  ]) {
+    await prisma.designation.upsert({
+      where: {
+        companyId_designationCode: { companyId, designationCode: row.designationCode },
+      },
+      update: {
+        name: row.name,
+        gradeLevel: row.gradeLevel,
+        isActive: true,
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+      create: {
+        companyId,
+        ...row,
+        isActive: true,
+      },
+    });
+  }
+
+  for (const row of [
+    {
+      warehouseCode: 'WH-HQ',
+      name: 'Main Warehouse (HQ)',
+      branchId: branchIds.HQ ?? null,
+      address: 'Industrial Estate, Chennai',
+    },
+    {
+      warehouseCode: 'WH-BLR',
+      name: 'Bangalore Warehouse',
+      branchId: branchIds.BLR ?? null,
+      address: 'Peenya Industrial Area',
+    },
+  ]) {
+    await prisma.warehouse.upsert({
+      where: {
+        companyId_warehouseCode: { companyId, warehouseCode: row.warehouseCode },
+      },
+      update: {
+        name: row.name,
+        branchId: row.branchId,
+        address: row.address,
+        isActive: true,
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+      create: {
+        companyId,
+        warehouseCode: row.warehouseCode,
+        name: row.name,
+        branchId: row.branchId,
+        address: row.address,
+        isActive: true,
+      },
+    });
+  }
+
+  console.log('DEMO_ACME org structure ready (branches, departments, designations, warehouses).');
+}
+
 async function main() {
   console.log('Seeding client login sample accounts...\n');
 
@@ -759,6 +950,8 @@ async function main() {
     );
   }
 
+  await ensureDemoOrgStructure();
+
   console.log('\nDone. Test with POST /api/v1/auth/login:');
   console.log(
     JSON.stringify(
@@ -770,6 +963,9 @@ async function main() {
       null,
       2,
     ),
+  );
+  console.log(
+    '\nADMIN001 now includes org permissions: branches:* departments:* designations:* warehouses:*',
   );
 }
 

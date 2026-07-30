@@ -1,0 +1,301 @@
+================================================================================
+PERMISSION FLOW — FULL QUICK NOTES
+Hybrid Model (Option C) — Locked for Version 1
+Date:       2026-07-25
+For:        Frontend / Product / QA / Backend
+================================================================================
+
+
+0. WHAT WE ARE FOLLOWING (SIMPLE)
+--------------------------------------------------------------------------------
+
+  Core Platform
+       ↓
+  Authentication  (login / me / refresh → JWT + session)
+       ↓
+  Permissions     (Hybrid: permissions[] for UI + Guards for API)
+       ↓
+  Org / IAM       (branches, depts, designations, warehouses, users, roles)
+       ↓
+  Vendor Module   (+ custom fields)
+       ↓
+  Customer Module
+       ↓
+  Inventory       (Item Master — analysis ready, not built yet)
+       ↓
+  Sales
+       ↓
+  HR
+       ↓
+  Enterprise Enhancements (form designer, scopes, BOM, etc.)
+
+
+================================================================================
+1. HYBRID PERMISSION MODEL (LOCKED)
+--------------------------------------------------------------------------------
+
+  THREE LAYERS — do not mix them:
+
+  ┌─────────────────┐
+  │ 1. IDENTITY     │  Who is the user?
+  │    roleCode     │  ADMIN / MANAGER / STAFF / SALES / PLATFORM_OWNER
+  │    tenantAdmin  │  true/false — for shell/nav only, NOT for CRUD
+  │    platformOwner│  true/false — for shell/nav only, NOT for CRUD
+  └────────┬────────┘
+           ↓
+  ┌─────────────────┐
+  │ 2. AUTHORIZATION│  What can they do? (UI gates)
+  │    permissions[]│  Exact codes like branches:view, vendors:create
+  │                 │  FE uses this to show/hide buttons and menus
+  └────────┬────────┘
+           ↓
+  ┌─────────────────┐
+  │ 3. SECURITY     │  Can they really do it? (API)
+  │    API Guards   │  Backend ALWAYS re-checks before allowing action
+  │                 │  FE permissions[] is NEVER the final authority
+  └─────────────────┘
+
+
+================================================================================
+2. FULL REQUEST FLOW (QUICK PICTURE)
+--------------------------------------------------------------------------------
+
+  User Login
+       │
+       ▼
+  POST /api/v1/auth/login
+       │
+       ▼
+  Backend checks company + employee + password
+       │
+       ▼
+  Load Role → Load Role Permissions from DB
+       │
+       ▼
+  Shape response by role (Hybrid):
+       • ADMIN          → tenant permissions[] (no platform codes)
+       • PLATFORM_OWNER → platform permissions[] only
+       • MANAGER/STAFF  → their limited tenant permissions[]
+       │
+       ▼
+  Return: accessToken + user + activeCompany + permissions[] + flags
+       │
+       ▼
+  FE stores in Redux / local storage
+       │
+       ▼
+  User opens a screen (e.g. Organization → Branches)
+       │
+       ├── FE checks permissions[] → show/hide button (UI only)
+       │
+       └── FE calls API → Backend Guard checks DB permissions again
+                │
+                ├── Has permission → 200 / 201
+                └── No permission  → 403 Insufficient permissions
+
+
+================================================================================
+3. ANSWERS TO FE QUESTIONS (QUICK NOTES)
+================================================================================
+
+----- SECTION 1: AUTH + HYBRID -----
+
+  Q1.1  Same snapshot on login + /me?
+        → YES. Both return permissions[] + tenantAdmin + platformOwner.
+
+  Q1.2  Refresh also returns Hybrid snapshot?
+        → YES. Same shape as login (new tokens + permissions + flags).
+
+  Q1.3  ADMIN never gets platform codes?
+        → YES. No companies:*, plans:*, modules:*, subscription:* for ADMIN.
+
+  Q1.4  PLATFORM_OWNER never gets tenant-only codes in permissions[]?
+        → YES for the visible contract. OWNER permissions[] = platform nav
+          codes only. Tenant work is done as company ADMIN.
+
+  Q1.5  Permission codes stable?
+        → YES. No silent renames. FE notice required if codes change.
+
+
+----- SECTION 2: GUARDS + ERRORS -----
+
+  Q2.1  Every protected write guarded?
+        → PARTIAL. Global guards exist. Org/CF/Users/Roles use
+          @RequirePermissions. Vendors use @RequireModulePermission
+          (supply-chain). Auth routes = JWT only (by design).
+
+  Q2.2  401 vs 403 correct?
+        → YES. 401 = bad/missing token. 403 = no permission.
+
+  Q2.3  Error envelope standard?
+        → YES. { success, message, data, errors?, timestamp, path }
+
+  Q2.4  Inactive company blocked from writes?
+        → PARTIAL. suspended/cancelled blocked on fresh context.
+          Cache (~5 min) can still allow until expiry. Re-login safest.
+
+
+----- SECTION 3: TENANT ISOLATION -----
+
+  Q3.1  companyId checked vs membership?
+        → PARTIAL. JWT + membership used. Path :companyId not always
+          forced to match JWT (hardening still open).
+
+  Q3.2  x-company-id cannot escalate?
+        → YES. Mismatch with JWT → 403.
+
+  Q3.3  Lists never leak other companies?
+        → YES when companyId is correct. Always send matching header.
+
+
+----- SECTION 4: ORGANIZATION -----
+
+  Q4.1  ADMIN has 16 org perms after seed?
+        → YES.
+
+  Q4.2  Demo org rows seeded?
+        → YES. HQ, BLR | OPS, FIN, SCM | ADMIN, MGR, EXEC | WH-HQ, WH-BLR.
+
+  Q4.3  Soft or hard delete?
+        → SOFT. deletedAt + isActive=false. Values/history kept.
+
+  Q4.4  Delete branch with warehouses?
+        → SOFT-UNLINK today (no 409, no cascade). FE should warn.
+          Backend 409-on-children = future hardening.
+
+
+----- SECTION 5: USERS + ROLES -----
+
+  Q5.1  ADMIN has users:* and roles:*?
+        → YES (after latest seed). Re-login required.
+
+  Q5.2  System roles protected from delete?
+        → YES for delete. Edit/permissions matrix not fully locked yet.
+          FE: treat isSystem as read-only.
+
+  Q5.3  Create user validation clear?
+        → PARTIAL. Email duplicate = clear 409. employeeCode unique = not yet.
+
+  Q5.4  Role change instant for next API call?
+        → PARTIAL. Cache ~5 min. Re-login or switch company to refresh now.
+
+
+================================================================================
+4. ORGANIZATION (detail)
+================================================================================
+
+  Flow we follow:
+
+    seed:client-logins
+         ↓
+    ADMIN role gets 16 org perms
+         ↓
+    Demo rows created (HQ, BLR, …)
+         ↓
+    User re-logins
+         ↓
+    FE shows Organization tabs with data
+         ↓
+    GET/POST /companies/{id}/branches|departments|designations|warehouses
+         ↓
+    Guard checks branches:view / branches:create / etc.
+         ↓
+    200 / 201 or 403
+
+
+================================================================================
+5. USERS + ROLES (detail)
+================================================================================
+
+  Flow:
+
+    Admin opens Users / Roles screen
+         ↓
+    FE checks permissions[] (users:view / roles:view) → show UI
+         ↓
+    FE calls API
+         ↓
+    Backend Guard checks DB permissions again
+         ↓
+    Allow (200) or deny (403)
+
+  Remember: tenantAdmin flag is for SHELL/NAV only — not for allowing CRUD.
+
+
+================================================================================
+6. VENDOR + CUSTOM FIELDS (detail)
+================================================================================
+
+  Flow we follow:
+
+    Admin creates field (Settings → Custom Fields)
+         ↓
+    POST /companies/{id}/custom-fields  (needs custom_fields:create)
+         ↓
+    Saved in custom_field_definitions (ACTIVE)
+         ↓
+    Vendor form loads GET .../entities/vendor/form-schema
+         ↓
+    User fills field → POST/PATCH vendor with customFields: { key: value }
+         ↓
+    Backend validates (required, type, options, rules)
+         ↓
+    Saved in custom_field_values (typed columns)
+         ↓
+    GET vendor returns customFields map
+
+  Soft-delete field:
+    → Hidden from new forms
+    → Old vendor values still kept and returned on GET
+
+
+================================================================================
+7. FULL PLATFORM FLOW WE FOLLOW
+--------------------------------------------------------------------------------
+
+  Core Platform (Nest + Prisma + shared DB)
+        ↓
+  Authentication (login / me / refresh → JWT + session)
+        ↓
+  Permissions (Hybrid: permissions[] for UI + Guards for API)
+        ↓
+  Org / IAM (branches, depts, designations, warehouses, users, roles)
+        ↓
+  Vendor Module (+ custom fields)
+        ↓
+  Customer Module
+        ↓
+  Inventory (Item Master — analysis ready)
+        ↓
+  Sales → HR → Enterprise Enhancements
+
+
+================================================================================
+8. FE QUICK RULES (TAKE NOTES)
+--------------------------------------------------------------------------------
+
+  1. Gate UI with permissions[] codes only — never with tenantAdmin alone.
+  2. Always send: Authorization: Bearer <token> + x-company-id: <active>
+  3. After seed or role change → re-login (or switch company).
+  4. Treat 403 as “hide or disable action”; treat 401 as “go to login”.
+  5. Do not invent permission codes; use what BE returns.
+  6. Vendor: keep metadata (SAP tabs) and customFields (UDFs) separate.
+
+
+================================================================================
+9. REPLY CHECKLIST (FILLED)
+--------------------------------------------------------------------------------
+
+  [x] Section 1 Auth Hybrid
+  [x] Section 2 Guards / errors
+  [x] Section 3 Tenant isolation
+  [x] Section 4 Organization
+  [x] Section 5 Users / Roles
+  [x] Section 6 Vendor / Custom Fields
+  [x] Section 7 Subscription / Modules
+  [x] Section 8 Seed / Demo
+
+
+================================================================================
+END — Quick notes for Frontend
+================================================================================
