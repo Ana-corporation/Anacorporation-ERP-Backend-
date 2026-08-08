@@ -52,7 +52,65 @@ export class UsersRepository {
   }
 
   findByEmail(email: string) {
-    return this.prisma.user.findFirst({ where: { email, deletedAt: null } });
+    return this.prisma.user.findFirst({
+      where: { email: email.trim().toLowerCase(), deletedAt: null },
+    });
+  }
+
+  findByUsername(username: string) {
+    return this.prisma.user.findFirst({
+      where: { username, deletedAt: null },
+    });
+  }
+
+  findMembership(userId: string, companyId: string) {
+    return this.prisma.userCompany.findFirst({
+      where: {
+        userId: parseBigIntId(userId),
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+      },
+    });
+  }
+
+  findCompanyRole(companyId: string, roleId: string) {
+    return this.prisma.role.findFirst({
+      where: {
+        roleId: parseBigIntId(roleId),
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+      },
+    });
+  }
+
+  /**
+   * Company-scoped user snapshot for invite/list responses.
+   */
+  findCompanyUserDetail(userId: string, companyId: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        userId: parseBigIntId(userId),
+        deletedAt: null,
+        companies: {
+          some: { companyId: parseBigIntId(companyId), deletedAt: null },
+        },
+      },
+      include: {
+        companies: {
+          where: { companyId: parseBigIntId(companyId), deletedAt: null },
+          take: 1,
+        },
+        roles: {
+          where: {
+            companyId: parseBigIntId(companyId),
+            isActive: true,
+          },
+          include: { role: true },
+          take: 1,
+          orderBy: { assignedDate: 'desc' },
+        },
+      },
+    });
   }
 
   create(dto: CreateUserDto, companyId: string, passwordHash: string, createdBy?: string) {
@@ -83,6 +141,78 @@ export class UsersRepository {
       });
 
       return user;
+    });
+  }
+
+  createInvitedUser(params: {
+    companyId: string;
+    username: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    mobile?: string | null;
+    employeeId?: string | null;
+    passwordHash: string;
+    passwordExpiresDate: Date;
+    createdBy?: string;
+  }) {
+    const displayName =
+      [params.firstName, params.lastName].filter(Boolean).join(' ').trim() || params.username;
+
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          username: params.username,
+          email: params.email.trim().toLowerCase(),
+          firstName: params.firstName,
+          lastName: params.lastName || null,
+          mobile: params.mobile || null,
+          displayName,
+          createdBy: params.createdBy ? parseBigIntId(params.createdBy) : undefined,
+        },
+      });
+
+      await tx.userAuthentication.create({
+        data: {
+          userId: user.userId,
+          passwordHash: params.passwordHash,
+          mustChangePassword: true,
+          passwordExpiresDate: params.passwordExpiresDate,
+          lastPasswordReset: new Date(),
+        },
+      });
+
+      // active so temp password can be used for first login (mustChangePassword=true)
+      const membership = await tx.userCompany.create({
+        data: {
+          userId: user.userId,
+          companyId: parseBigIntId(params.companyId),
+          employeeId: params.employeeId || null,
+          status: 'active',
+          isDefault: true,
+          createdBy: params.createdBy ? parseBigIntId(params.createdBy) : undefined,
+        },
+      });
+
+      return { user, membership };
+    });
+  }
+
+  attachMembership(params: {
+    userId: string;
+    companyId: string;
+    employeeId?: string | null;
+    createdBy?: string;
+  }) {
+    return this.prisma.userCompany.create({
+      data: {
+        userId: parseBigIntId(params.userId),
+        companyId: parseBigIntId(params.companyId),
+        employeeId: params.employeeId || null,
+        status: 'active',
+        isDefault: false,
+        createdBy: params.createdBy ? parseBigIntId(params.createdBy) : undefined,
+      },
     });
   }
 

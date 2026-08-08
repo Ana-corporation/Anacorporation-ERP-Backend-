@@ -21,6 +21,8 @@ export interface AuthenticatedUser {
   subscriptionStatus: string;
   firstName: string;
   lastName: string;
+  /** True when user_authentication.must_change_password is set (invite temp password). */
+  mustChangePassword?: boolean;
 }
 
 export interface TenantContext {

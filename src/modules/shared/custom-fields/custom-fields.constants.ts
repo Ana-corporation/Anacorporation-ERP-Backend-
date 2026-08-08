@@ -97,6 +97,7 @@ export const VENDOR_RESERVED_CORE_KEYS = [
   'vendorCode',
   'vendorId',
   'companyId',
+  'supplierType',
   'name',
   'email',
   'phone',

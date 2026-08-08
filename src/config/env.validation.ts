@@ -15,10 +15,17 @@ const envSchema = z
     GCS_BUCKET: z.string().optional(),
     GCS_KEY_FILE_PATH: z.string().optional(),
     USE_MEMORY_SESSION: z.string().optional(),
+    TEMP_PASSWORD_TTL_HOURS: z.coerce.number().int().optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.NODE_ENV === 'production') {
-      if (
+    if (data.TEMP_PASSWORD_TTL_HOURS !== undefined && data.TEMP_PASSWORD_TTL_HOURS < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'TEMP_PASSWORD_TTL_HOURS must be >= 1 (or omit for default 24)',
+        path: ['TEMP_PASSWORD_TTL_HOURS'],
+      });
+    }
+    if (data.NODE_ENV === 'production') {      if (
         data.JWT_SECRET.length < 32 ||
         data.JWT_SECRET.includes('change-me') ||
         data.JWT_SECRET.includes('dev-jwt')

@@ -8,6 +8,8 @@ export interface AuthRoleSnapshot extends CompanyAccessContext {
   tenantAdmin: boolean;
   /** True when active role is PLATFORM_OWNER. */
   platformOwner: boolean;
+  /** True when invited user must set a permanent password. */
+  mustChangePassword: boolean;
 }
 
 export interface RoleLoginHandlerInput {

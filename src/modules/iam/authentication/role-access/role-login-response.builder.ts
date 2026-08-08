@@ -19,15 +19,18 @@ export class RoleLoginResponseBuilder {
   build(params: {
     accessContext: CompanyAccessContext;
     rolePermissions: string[];
+    mustChangePassword?: boolean;
   }): AuthRoleSnapshot {
     const roleCode = params.accessContext.activeCompany.role?.roleCode?.toUpperCase();
     const handler =
       (roleCode && ROLE_LOGIN_HANDLERS[roleCode]) || handleDefaultCompanyRole;
 
-    return handler({
+    const snapshot = handler({
       accessContext: params.accessContext,
       rolePermissions: params.rolePermissions,
     });
+    snapshot.mustChangePassword = Boolean(params.mustChangePassword);
+    return snapshot;
   }
 
   /** Login body: tokens + role-shaped snapshot including permissions contract. */
@@ -53,6 +56,7 @@ export class RoleLoginResponseBuilder {
       permissions: snapshot.permissions,
       tenantAdmin: snapshot.tenantAdmin,
       platformOwner: snapshot.platformOwner,
+      mustChangePassword: snapshot.mustChangePassword,
     };
   }
 

@@ -5,6 +5,7 @@ import { oauthConfig } from './oauth.config';
 import { mailConfig } from './mail.config';
 import { storageConfig } from './storage.config';
 import { queueConfig } from './queue.config';
+import { authSecurityConfig } from './auth-security.config';
 
 export default () => {
   const queue = queueConfig();
@@ -17,5 +18,6 @@ export default () => {
     gcs: storageConfig(),
     redis: queue.redis,
     bullmq: queue.bullmq,
+    auth: authSecurityConfig(),
   };
 };

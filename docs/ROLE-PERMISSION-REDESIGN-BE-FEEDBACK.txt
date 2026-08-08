@@ -1,0 +1,214 @@
+================================================================================
+ROLE & PERMISSION REDESIGN — BACKEND FEEDBACK
+Date:       2026-08-07
+Audience:   Product / Frontend / Backend / QA
+Source:     "ROLE & PERMISSION REDESIGN — BACKEND CHANGES" (business rules)
+Status:     ANALYSIS — current system vs redesign target
+Related:    docs/HYBRID-PERMISSION-CONTRACT-FE-REPLY.txt
+            docs/ADMIN-PERMISSION-MODEL-REVIEW.txt
+================================================================================
+
+
+0. ONE-LINE VERDICT
+--------------------------------------------------------------------------------
+
+  We already follow modern RBAC + Hybrid auth.
+  The redesign is mostly FE unlock + small BE hardening (rename lock, clone),
+  NOT a full permission-system rewrite.
+
+
+1. WHAT WE FOLLOW RIGHT NOW
+--------------------------------------------------------------------------------
+
+  Architecture (already live):
+
+    User
+      → user_roles
+        → roles
+          → role_permissions
+            → permissions
+
+  Rules we already follow:
+
+  ✓ Permissions belong to the ROLE (not the user)
+  ✓ User gets an assigned role only
+  ✓ Creating a role does NOT auto-assign permissions
+  ✓ Admin must explicitly set permissions (PUT .../permissions)
+  ✓ Login / /auth/me / refresh return:
+        permissions[]
+        tenantAdmin
+        platformOwner
+  ✓ Frontend must use permissions.includes("module:action")
+  ✓ Backend guards remain final authority on every API
+  ✓ System roles cannot be deleted (isSystem = true)
+
+
+2. SEEDED SYSTEM ROLES TODAY
+--------------------------------------------------------------------------------
+
+  roleCode              Typical name           isSystem
+  --------------------  ---------------------  --------
+  PLATFORM_OWNER        Platform Owner         true (platform company)
+  ADMIN                 Administrator          true
+  MANAGER               Manager                true
+  STAFF                 Staff                  true
+  SALES                 Sales                  true
+  VENDOR                Vendor                 true
+  INVENTORY_ADMIN       Inventory Admin        true
+
+  isSystem = true means: ERP default / seeded role.
+  It identifies defaults — it should NOT mean "permissions locked"
+  (and in our Nest API, it currently does NOT lock permission edits).
+
+
+3. HOW ROLE & PERMISSION WORKS TODAY (BACKEND TRUTH)
+--------------------------------------------------------------------------------
+
+  Action                              System roles          Custom roles
+  ----------------------------------  --------------------  -------------------
+  Create                              Seeded only           Allowed
+  Edit permissions (PUT)              ALLOWED (no block)    Allowed
+  Rename (PATCH roleName)             ALLOWED (no block)    Allowed
+  Delete                              BLOCKED               Allowed
+  Clone                               NOT IMPLEMENTED       NOT IMPLEMENTED
+
+  Create role body:
+    { "roleCode": "VENDOR_HEAD", "roleName": "Vendor Head" }
+
+  Result:
+    - Role row created
+    - Permissions = EMPTY
+    - Admin must call set-permissions separately
+
+  This matches the redesign rule: system must NOT guess permissions.
+
+
+4. HYBRID PERMISSION (CURRENT — UNCHANGED BY REDESIGN)
+--------------------------------------------------------------------------------
+
+  Hybrid = same auth response contains:
+
+  A) permissions[]
+     Codes inherited from the user's assigned role
+     Example: vendors:view, vendors:create, branches:edit
+     FE uses ONLY this for menus/buttons
+
+  B) Flags
+     tenantAdmin   = Company Admin (one company)
+     platformOwner = Platform Owner (platform nav)
+
+  Why "Hybrid"?
+     Because we return role permission codes AND admin/owner flags together.
+
+  Login flow (no change needed):
+
+    Login
+      → validate credentials
+      → find assigned role
+      → load role permissions
+      → return permissions[] + tenantAdmin + platformOwner
+      → FE builds UI from permissions[]
+      → BE still checks every API
+
+
+5. REDESIGN DOC vs CURRENT BACKEND
+--------------------------------------------------------------------------------
+
+  Redesign claim / want                      Current backend
+  -----------------------------------------  ----------------------------------
+  System roles seeded                        YES
+  Cannot delete system roles                 YES (isSystem check on delete)
+  Edit system role permissions               YES already allowed
+  "Permission matrix read-only"              NOT enforced in Nest BE
+                                             (likely FE UI lock only)
+  Cannot rename Administrator                NOT enforced yet
+  Keep other system role names               Soft recommendation only
+  Clone roles                                MISSING
+  Custom roles full CRUD + perms             YES (except clone)
+  Keep Hybrid login contract                 YES
+  Users inherit after re-login/refresh       YES (cache lag possible)
+
+
+6. IMPORTANT CORRECTION TO THE REDESIGN "CURRENT BEHAVIOR" SECTION
+--------------------------------------------------------------------------------
+
+  The redesign text says:
+
+    "Permission matrix is read-only.
+     Company Admin cannot update System role permissions."
+
+  That is NOT true for our Nest backend today.
+
+  Backend setPermissions() does NOT check isSystem.
+  Only delete checks isSystem.
+
+  If Admin cannot edit system-role permissions in the UI, that is almost
+  certainly a FRONTEND restriction, not a backend API block.
+
+  Therefore: do NOT "replace permission logic".
+  Unlock FE matrix + add missing BE rules (rename lock, clone).
+
+
+7. WHAT TO IMPLEMENT NEXT (ALIGNED TO REDESIGN)
+--------------------------------------------------------------------------------
+
+  Keep:
+    ✓ RBAC tables
+    ✓ Hybrid login response
+    ✓ Delete block for all isSystem roles
+    ✓ Permission editing open for system + custom roles
+
+  Add / harden:
+    1. Block rename for Administrator (roleCode ADMIN)
+       - Optional: also block roleCode change forever (already not in Update DTO)
+    2. Clone Role API
+       - Copy roleName/roleCode (new code) + copy role_permissions
+    3. Confirm FE removes "if isSystem → disable permission matrix"
+    4. Optional: invalidate permission cache when role permissions change
+       (so users get updates sooner than full re-login)
+
+  Do NOT:
+    ✗ Rebuild permissions schema
+    ✗ Auto-assign permissions on role create
+    ✗ Let FE authorize by role name (Accountant / Staff checks)
+
+
+8. TARGET RULE MATRIX (AFTER ALIGNMENT)
+--------------------------------------------------------------------------------
+
+  Role                 Delete   Rename        Edit permissions   Clone
+  -------------------  -------  ------------  -----------------  -----
+  Administrator        No       No            Yes                Yes
+  Manager              No       Keep/optional Yes                Yes
+  Staff                No       Keep/optional Yes                Yes
+  Sales / SALES        No       Keep/optional Yes                Yes
+  Vendor / VENDOR      No       Keep/optional Yes                Yes
+  Inventory Admin      No       Keep/optional Yes                Yes
+  Custom roles         Yes      Yes           Yes                Yes
+
+
+9. FE HANDOFF NOTES
+--------------------------------------------------------------------------------
+
+  - Show system roles in list with badge "System" (from isSystem)
+  - Allow permission matrix edit for system roles
+  - Disable Delete for isSystem === true
+  - Disable Rename for roleCode === "ADMIN" (Administrator)
+  - Create role: only roleCode + roleName (+ description)
+  - Then assign permissions via PUT /roles/:id/permissions
+  - UI must use permissions[], never role name checks
+  - Prefer roleCode without spaces: VENDOR_HEAD not "VENDOR HEAD"
+
+
+10. CONCLUSION
+--------------------------------------------------------------------------------
+
+  ✓ Current system is already RBAC + Hybrid.
+  ✓ Redesign goal is correct: editable system-role permissions.
+  ✓ Backend already allows permission edit on system roles.
+  ✓ Main work is FE unlock + BE rename lock + clone API.
+  ✗ Not a full replacement of permission architecture.
+
+================================================================================
+END
+================================================================================

@@ -14,6 +14,8 @@
  *   DEMO_ACME / MGR001    / Manager@123 → MANAGER (financials + crm partial)
  *   DEMO_ACME / STAFF001  / Staff@123   → STAFF (crm + supply-chain view)
  *   DEMO_ACME / SALES001  / Sales@123   → SALES (crm view/create/edit)
+ *   DEMO_ACME / VENDOR001 / Vendor@123  → VENDOR (supply-chain vendors CRUD)
+ *   DEMO_ACME / INV001    / InvAdmin@123 → INVENTORY_ADMIN (Item Master only)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
@@ -210,6 +212,50 @@ const ACCOUNTS = [
     roleName: 'Sales Executive',
     modulePermissions: {
       crm: ['view', 'create', 'edit'],
+    },
+    denyOtherModules: true,
+    platformPermissionCodes: [],
+  },
+  {
+    level: 'vendor',
+    companyCode: 'DEMO_ACME',
+    companyName: 'Demo Acme Corp',
+    companyStatus: 'trial',
+    planCode: 'DEMO_STARTER',
+    planName: 'Demo Starter',
+    productModules: PRODUCT_MODULE_CODES,
+    employeeCode: 'VENDOR001',
+    password: 'Vendor@123',
+    username: 'demo.vendor',
+    email: 'vendor@demo-acme.com',
+    firstName: 'Demo',
+    lastName: 'Vendor',
+    roleCode: 'VENDOR',
+    roleName: 'Vendor User',
+    modulePermissions: {
+      'supply-chain': ['view', 'create', 'edit', 'delete'],
+    },
+    denyOtherModules: true,
+    platformPermissionCodes: [],
+  },
+  {
+    level: 'inventory-admin',
+    companyCode: 'DEMO_ACME',
+    companyName: 'Demo Acme Corp',
+    companyStatus: 'trial',
+    planCode: 'DEMO_STARTER',
+    planName: 'Demo Starter',
+    productModules: PRODUCT_MODULE_CODES,
+    employeeCode: 'INV001',
+    password: 'InvAdmin@123',
+    username: 'demo.inventory',
+    email: 'inventory@demo-acme.com',
+    firstName: 'Demo',
+    lastName: 'Inventory',
+    roleCode: 'INVENTORY_ADMIN',
+    roleName: 'Inventory Admin',
+    modulePermissions: {
+      'supply-chain': ['view', 'create', 'edit', 'delete'],
     },
     denyOtherModules: true,
     platformPermissionCodes: [],

@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
-import { Public } from '@/common/decorators/auth.decorators';
+import { AllowWhenMustChangePassword, Public } from '@/common/decorators/auth.decorators';
 import { CurrentUser, CompanyId } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { AuthService } from './auth.service';
 import {
+  ChangePasswordDto,
   LoginDto,
   RefreshTokenDto,
   ResolveCompanyDto,
@@ -88,6 +89,7 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth()
+  @AllowWhenMustChangePassword()
   @ApiOperation({ summary: 'Get current user profile' })
   getMe(@CurrentUser() user: AuthenticatedUser, @CompanyId() companyId: string) {
     return this.authService.getMe(user.sub, companyId);
@@ -95,13 +97,27 @@ export class AuthController {
 
   @Get('companies')
   @ApiBearerAuth()
+  @AllowWhenMustChangePassword()
   @ApiOperation({ summary: 'List companies for current user' })
   getMyCompanies(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.getMyCompanies(user.sub);
   }
 
+  @Post('change-password')
+  @ApiBearerAuth()
+  @AllowWhenMustChangePassword()
+  @ApiOperation({ summary: 'Change password (required after invite temp password)' })
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @CompanyId() companyId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user.sub, companyId, dto);
+  }
+
   @Post('logout')
   @ApiBearerAuth()
+  @AllowWhenMustChangePassword()
   @ApiOperation({ summary: 'Logout and revoke session' })
   async logout(
     @Body() dto: RefreshTokenDto,
@@ -118,6 +134,7 @@ export class AuthController {
 
   @Post('switch-company')
   @ApiBearerAuth()
+  @AllowWhenMustChangePassword()
   @ApiOperation({ summary: 'Switch active company' })
   async switchCompany(
     @CurrentUser() user: AuthenticatedUser,

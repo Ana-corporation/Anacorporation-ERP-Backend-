@@ -1,0 +1,82 @@
+================================================================================
+ROLE & PERMISSION ALIGNMENT — IMPLEMENTED
+Date:       2026-08-07
+Status:     DONE (RBAC + Hybrid kept; behaviour aligned)
+Related:    docs/ROLE-PERMISSION-REDESIGN-BE-FEEDBACK.txt
+            docs/HYBRID-PERMISSION-CONTRACT-FE-REPLY.txt
+================================================================================
+
+
+0. SUMMARY
+--------------------------------------------------------------------------------
+
+  ✓ RBAC architecture unchanged
+  ✓ Hybrid auth unchanged (permissions[] + tenantAdmin + platformOwner)
+  ✓ System role permissions editable (no isSystem block on PUT)
+  ✓ System roles cannot be deleted
+  ✓ System roles cannot be renamed
+  ✓ Clone Role API added
+  ✓ PUT uses permissionCodes (FE/BE same contract)
+  ✓ Permission cache invalidated for role assignees after perm change
+  ✓ Create role still does NOT auto-assign permissions
+
+
+1. APIs
+--------------------------------------------------------------------------------
+
+  List / Get / Create / Patch / Delete
+    (existing)
+
+  PUT /api/v1/companies/:companyId/roles/:roleId/permissions
+    Body:
+    {
+      "permissionCodes": ["vendors:view", "vendors:create", "branches:view"]
+    }
+    - Works for system + custom roles
+    - Empty array [] clears all permissions
+    - Unknown codes → 400 with list of missing codes
+    - Invalidates user-context cache for users on that role
+
+  POST /api/v1/companies/:companyId/roles/:roleId/clone
+    Body:
+    {
+      "roleCode": "FACTORY_STAFF",
+      "roleName": "Factory Staff",
+      "description": "optional"
+    }
+    - Copies all permissions from source
+    - New role isSystem = false
+    - Requires unique roleCode
+
+
+2. RULES
+--------------------------------------------------------------------------------
+
+  System roles (isSystem=true): ADMIN, MANAGER, STAFF, SALES, VENDOR,
+  INVENTORY_ADMIN, PLATFORM_OWNER (platform co.)
+
+    Delete:  blocked
+    Rename:  blocked
+    Edit permissions: allowed
+    Clone:   allowed (clone is custom / isSystem=false)
+
+  Custom roles:
+
+    Create / Rename / Delete / Clone / Edit permissions: allowed
+    Create does NOT auto-assign permissions
+
+
+3. FE NOTES
+--------------------------------------------------------------------------------
+
+  - Remove any UI lock: if (isSystem) disable permission matrix
+  - Send permissionCodes (NOT permissionIds)
+  - Disable Rename + Delete when isSystem === true
+  - Keep using permissions[] for UI (never role name checks)
+  - After perm change, assignees should refresh/re-login if needed;
+    BE already clears permission cache for assignees
+
+
+================================================================================
+END
+================================================================================

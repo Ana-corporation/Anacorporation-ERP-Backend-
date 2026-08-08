@@ -1,6 +1,8 @@
 import {
   Injectable,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -15,7 +17,7 @@ import {
   UnauthorizedException,
 } from '@/common/exceptions/business.exception';
 import { DEFAULT_ADMIN_PERMISSIONS } from '@/common/constants/permissions.constant';
-import { LoginDto, SignUpDto } from './dto/auth.dto';
+import { LoginDto, SignUpDto, ChangePasswordDto } from './dto/auth.dto';
 import { AuthRepository } from './auth.repository';
 import { CompanyAccessContextService } from './company-access-context.service';
 import { AuthSessionService } from './auth-session.service';
@@ -186,6 +188,30 @@ export class AuthService {
       throw new UnauthorizedException('Invalid employee code or password');
     }
 
+    const auth = user.authentication;
+    if (
+      auth.mustChangePassword &&
+      auth.passwordExpiresDate &&
+      auth.passwordExpiresDate.getTime() < Date.now()
+    ) {
+      await this.authRepository.recordLoginHistory({
+        userId: user.userId.toString(),
+        companyId,
+        loginResult: 'failure',
+        failureReason: 'Temporary password expired',
+        ipAddress: meta.ipAddress,
+        browser,
+      });
+      throw new HttpException(
+        {
+          message: 'Temporary password has expired. Ask your admin to invite again.',
+          code: 'TEMP_PASSWORD_EXPIRED',
+          statusCode: HttpStatus.UNAUTHORIZED,
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
     await this.authRepository.updateLastLogin(user.userId.toString());
 
     await this.authRepository.recordLoginHistory({
@@ -286,13 +312,52 @@ export class AuthService {
       companyId,
     );
     const membership = await this.authRepository.findMembershipWithPermissions(userId, companyId);
+    const mustChangePassword = await this.authRepository.getMustChangePassword(userId);
 
     const snapshot = this.roleLoginResponseBuilder.build({
       accessContext,
       rolePermissions: membership?.permissions ?? [],
+      mustChangePassword,
     });
 
     return this.roleLoginResponseBuilder.toMePayload(snapshot);
+  }
+
+  async changePassword(userId: string, companyId: string, dto: ChangePasswordDto) {
+    const auth = await this.authRepository.findAuthenticationByUserId(userId);
+    if (!auth?.passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const currentOk = await bcrypt.compare(dto.currentPassword, auth.passwordHash);
+    if (!currentOk) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException('New password must be different from current password');
+    }
+
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, 12);
+    await this.authRepository.changePassword({
+      userId,
+      newPasswordHash,
+      previousPasswordHash: auth.passwordHash,
+      changedBy: userId,
+    });
+
+    await this.userContextCache.invalidate(userId, companyId);
+
+    await this.auditService.log({
+      companyId,
+      userId,
+      performedBy: userId,
+      action: UserAuditAction.password_change,
+      entityName: 'UserAuthentication',
+      entityId: userId,
+    });
+
+    return { mustChangePassword: false };
   }
 
   async getMyCompanies(userId: string) {
@@ -350,6 +415,7 @@ export class AuthService {
       userId,
       companyId,
     );
+    const mustChangePassword = await this.authRepository.getMustChangePassword(userId);
 
     const context: AuthenticatedUser = {
       sub: userId,
@@ -362,6 +428,7 @@ export class AuthService {
       permissions: membership.permissions,
       modules: accessContext.activeCompany.modules,
       subscriptionStatus: accessContext.activeCompany.subscription.status,
+      mustChangePassword,
     };
 
     await this.userContextCache.set(userId, companyId, context);
@@ -402,10 +469,12 @@ export class AuthService {
     );
     const membership = await this.authRepository.findMembershipWithPermissions(userId, companyId);
     const rolePermissions = membership?.permissions ?? [];
+    const mustChangePassword = await this.authRepository.getMustChangePassword(userId);
 
     const snapshot = this.roleLoginResponseBuilder.build({
       accessContext,
       rolePermissions,
+      mustChangePassword,
     });
 
     const payload: JwtPayload = {

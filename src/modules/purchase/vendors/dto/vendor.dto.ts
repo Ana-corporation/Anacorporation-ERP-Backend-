@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { SUPPLIER_TYPES } from '../vendor-code.util';
 
 /** Match prisma/purchase/vendors.prisma column sizes. */
 const emptyToUndefined = (value: unknown) =>
@@ -12,7 +13,12 @@ const optionalTrimmed = (max: number) =>
   );
 
 export const CreateVendorSchema = z.object({
-  code: z.string().trim().min(1).max(40),
+  /**
+   * Required on create — saved on Vendor and used to auto-generate vendorCode
+   * (RM001 / CS001 / SP001 / ES001). Exact Ana Excel labels.
+   * Immutable after create (tied to vendorCode prefix).
+   */
+  supplierType: z.enum(SUPPLIER_TYPES),
   name: z.string().trim().min(1).max(200),
   email: z.preprocess(
     emptyToUndefined,

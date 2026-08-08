@@ -482,4 +482,47 @@ export class AuthRepository {
       data: { sessionStatus: 'logged_out', logoutTime: new Date() },
     });
   }
+
+  findAuthenticationByUserId(userId: string) {
+    return this.prisma.userAuthentication.findUnique({
+      where: { userId: parseBigIntId(userId) },
+    });
+  }
+
+  async getMustChangePassword(userId: string): Promise<boolean> {
+    const auth = await this.findAuthenticationByUserId(userId);
+    return Boolean(auth?.mustChangePassword);
+  }
+
+  async changePassword(params: {
+    userId: string;
+    newPasswordHash: string;
+    previousPasswordHash: string;
+    changedBy?: string;
+  }) {
+    const userId = parseBigIntId(params.userId);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.userPasswordHistory.create({
+        data: {
+          userId,
+          passwordHash: params.previousPasswordHash,
+          hashAlgorithm: 'bcrypt',
+          changedBy: params.changedBy ? parseBigIntId(params.changedBy) : userId,
+        },
+      });
+
+      return tx.userAuthentication.update({
+        where: { userId },
+        data: {
+          passwordHash: params.newPasswordHash,
+          mustChangePassword: false,
+          passwordExpiresDate: null,
+          passwordChangedDate: new Date(),
+          lastPasswordReset: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    });
+  }
 }

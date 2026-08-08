@@ -1,0 +1,17 @@
+================================================================================
+BACKEND VALIDATION HARDENING — APPLIED
+Date:       2026-08-07
+================================================================================
+
+A) bigintIdSchema (src/common/zod/common.schemas.ts)
+   - Coerces number | bigint → digit string
+   - optionalNullableBigintIdSchema for invite roleId (34 / "34" / null)
+
+B) generateTemporaryPassword (users.service.ts)
+   - Symbols: @ $ ! % * ? # _ -   (no & or ^)
+
+Restart Nest after pull, then retest invite + login.
+
+================================================================================
+END
+================================================================================

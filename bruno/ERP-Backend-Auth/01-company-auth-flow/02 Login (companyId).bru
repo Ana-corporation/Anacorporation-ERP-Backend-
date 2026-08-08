@@ -31,4 +31,14 @@ script:post-response {
 docs {
   Alternative login using companyId instead of companyCode.
   Run 00-setup/02 Resolve Company first to set companyId.
+
+  Same credentials as 01 Login (companyCode) — see that request docs.
+  Seed: npm run seed:client-logins
+
+  companyCode | employeeCode | password
+  PLATFORM    | OWNER001     | Owner@123
+  DEMO_ACME   | ADMIN001     | Admin@123
+  DEMO_ACME   | MGR001       | Manager@123
+  DEMO_ACME   | STAFF001     | Staff@123
+  DEMO_ACME   | SALES001     | Sales@123
 }

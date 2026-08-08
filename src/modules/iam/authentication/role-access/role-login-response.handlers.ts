@@ -36,6 +36,7 @@ function cloneContext(input: RoleLoginHandlerInput): AuthRoleSnapshot {
     permissions: [],
     tenantAdmin: false,
     platformOwner: false,
+    mustChangePassword: false,
   };
 }
 

@@ -12,6 +12,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { ModulePermissionGuard } from './common/guards/module-permission.guard';
 import { TenantGuard } from './common/guards/tenant.guard';
+import { MustChangePasswordGuard } from './common/guards/must-change-password.guard';
 import { SharedModule } from './modules/shared/shared.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { IamModule } from './modules/iam/iam.module';
@@ -41,6 +42,7 @@ import { HealthModule } from './modules/health/health.module';
     { provide: APP_INTERCEPTOR, useClass: ResponseTransformInterceptor },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
+    { provide: APP_GUARD, useClass: MustChangePasswordGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_GUARD, useClass: ModulePermissionGuard },
   ],

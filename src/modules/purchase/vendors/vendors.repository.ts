@@ -5,15 +5,17 @@ import { PaginationQueryDto, getPaginationParams } from '@/common/dto/pagination
 import { parseBigIntId } from '@/common/utils/bigint.util';
 import { buildListWhere, resolveOrderBy, ListFilterOptions } from '@/common/utils/prisma-filter.util';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
+import { formatVendorCode, parseVendorSequence } from './vendor-code.util';
 
 type DbClient = Prisma.TransactionClient | PrismaService;
 
 const VENDORS_LIST_FILTER: ListFilterOptions = {
   contains: { code: 'vendorCode', name: 'name', email: 'email' },
+  exact: { supplierType: 'supplierType' },
   booleans: { isActive: 'isActive' },
   dateRange: { field: 'createdAt' },
-  searchFields: ['vendorCode', 'name', 'email', 'phone', 'city', 'country'],
-  sortFields: ['vendorCode', 'name', 'createdAt'],
+  searchFields: ['vendorCode', 'name', 'email', 'phone', 'city', 'country', 'supplierType'],
+  sortFields: ['vendorCode', 'name', 'supplierType', 'createdAt'],
   defaultSortField: 'createdAt',
 };
 
@@ -69,8 +71,8 @@ export class VendorsRepository {
     });
   }
 
-  findByCode(companyId: string, vendorCode: string) {
-    return this.prisma.vendor.findFirst({
+  findByCode(companyId: string, vendorCode: string, client: DbClient = this.prisma) {
+    return this.db(client).vendor.findFirst({
       where: {
         companyId: parseBigIntId(companyId),
         vendorCode,
@@ -79,16 +81,38 @@ export class VendorsRepository {
     });
   }
 
+  /** Next code for prefix: RM001, CS002, … (ignores legacy "RM001 CSKMETA" style codes). */
+  async nextVendorCode(companyId: string, prefix: string, client: DbClient = this.prisma) {
+    const existing = await this.db(client).vendor.findMany({
+      where: {
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        vendorCode: { startsWith: prefix },
+      },
+      select: { vendorCode: true },
+    });
+
+    let maxSeq = 0;
+    for (const row of existing) {
+      const seq = parseVendorSequence(row.vendorCode, prefix);
+      if (seq !== null && seq > maxSeq) maxSeq = seq;
+    }
+
+    return formatVendorCode(prefix, maxSeq + 1);
+  }
+
   create(
     companyId: string,
-    dto: CreateVendorDto,
+    dto: Omit<CreateVendorDto, 'customFields'>,
+    vendorCode: string,
     createdBy?: string,
     client: DbClient = this.prisma,
   ) {
     return this.db(client).vendor.create({
       data: {
         companyId: parseBigIntId(companyId),
-        vendorCode: dto.code.trim().toUpperCase(),
+        vendorCode,
+        supplierType: dto.supplierType,
         name: dto.name.trim(),
         email: dto.email?.trim() || null,
         phone: dto.phone?.trim() || null,

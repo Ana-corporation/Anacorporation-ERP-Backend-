@@ -38,7 +38,31 @@ tests {
 }
 
 docs {
-  Main login flow. Auto-saves accessToken + companyId + userId.
-  Demo: EMP-00001 / TestPass1! / DEMO_ACME (after npm run seed:phase1-login)
-  Refresh cookie saved automatically by Bruno cookie jar.
+  Main login flow (companyCode). Auto-saves accessToken + companyId + userId.
+  Refresh cookie is saved automatically by Bruno cookie jar.
+
+  Seed first:
+    npm run seed:client-logins
+
+  --- Company / role logins (POST /api/v1/auth/login) ---
+  companyCode | employeeCode | password     | role
+  ------------|--------------|--------------|---------------------------
+  PLATFORM    | OWNER001     | Owner@123    | PLATFORM_OWNER (platform nav)
+  DEMO_ACME   | ADMIN001     | Admin@123    | ADMIN (full company modules)
+  DEMO_ACME   | MGR001       | Manager@123  | MANAGER
+  DEMO_ACME   | STAFF001     | Staff@123    | STAFF
+  DEMO_ACME   | SALES001     | Sales@123    | SALES
+
+  Recommended Bruno Local env for company ADMIN:
+    companyCode  = DEMO_ACME
+    employeeCode = ADMIN001
+    password     = Admin@123
+
+  Body fields:
+    employeeCode, password, companyCode
+
+  --- Super Admin login (separate request under 02-super-admin-flow) ---
+  POST /api/v1/super-admins/auth/login
+    email    = admin@platform.com   ({{superAdminEmail}})
+    password = TestPass1!           ({{superAdminPassword}})
 }

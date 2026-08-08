@@ -1,0 +1,72 @@
+================================================================================
+COMPANY USER INVITE — BACKEND IMPLEMENTED
+Date:       2026-08-07
+Status:     DONE — unblocks FE Invite dialog
+FE issue:   POST /api/v1/companies/:companyId/users/invite was missing
+================================================================================
+
+
+1. NEW / ALIGNED ENDPOINTS
+--------------------------------------------------------------------------------
+
+  POST   /api/v1/companies/:companyId/users/invite     users:create
+  GET    /api/v1/companies/:companyId/users            users:view
+  GET    /api/v1/companies/:companyId/users/:userId    users:view
+  PATCH  /api/v1/companies/:companyId/users/:userId    users:edit
+  PUT    /api/v1/companies/:companyId/users/:userId/role   roles:edit
+  DELETE /api/v1/companies/:companyId/users/:userId    users:delete
+
+  Legacy POST /api/v1/users remains (username+password create).
+
+
+2. INVITE BODY (exact FE contract)
+--------------------------------------------------------------------------------
+
+  {
+    "firstName": "Tom",
+    "lastName": "Ben",
+    "email": "tom@gmail.com",
+    "mobile": "7576877657",
+    "employeeId": "0095",
+    "roleId": "42",
+    "sendInviteEmail": true
+  }
+
+
+3. RESPONSE (wrapped by global interceptor as { success, data })
+--------------------------------------------------------------------------------
+
+  data:
+  {
+    "user": {
+      "userId": "...",
+      "username": "tom",
+      "displayName": "Tom Ben",
+      "firstName": "Tom",
+      "lastName": "Ben",
+      "email": "tom@gmail.com",
+      "mobile": "...",
+      "isActive": true,
+      "membership": { ... status: "active", employeeId, ... },
+      "role": { "roleId", "roleCode", "roleName" } | null
+    },
+    "temporaryPassword": "Abc12xyz!" | null
+  }
+
+  New user     → temporaryPassword string, mustChangePassword=true
+  Existing user new company → temporaryPassword null
+  Already member → 409 Conflict
+  Invalid roleId → 400
+
+
+4. NOTES
+--------------------------------------------------------------------------------
+
+  - Username derived from email local-part (unique suffix if needed)
+  - Membership status = active so temp password works on first login
+  - sendInviteEmail=true currently logs a stub (email provider later)
+  - Permissions still come only from assigned ROLE
+
+================================================================================
+END
+================================================================================

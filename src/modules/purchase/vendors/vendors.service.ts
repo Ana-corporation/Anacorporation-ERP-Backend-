@@ -9,6 +9,7 @@ import { toPaginatedResult } from '@/common/utils/pagination.util';
 import { CustomFieldsValuesService } from '@/modules/shared/custom-fields/custom-fields.service';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
 import { extractCfFilters, VendorListQueryDto } from './dto/vendor-list-query.dto';
+import { SUPPLIER_TYPE_PREFIX } from './vendor-code.util';
 import { VendorsRepository } from './vendors.repository';
 
 @Injectable()
@@ -67,16 +68,24 @@ export class VendorsService {
   }
 
   async create(companyId: string, dto: CreateVendorDto, actorId: string) {
-    const code = dto.code.trim().toUpperCase();
-    if (await this.repository.findByCode(companyId, code)) {
-      throw new ConflictException('Vendor code already exists');
-    }
-
+    const prefix = SUPPLIER_TYPE_PREFIX[dto.supplierType];
     const { customFields, ...vendorDto } = dto;
 
     const vendor = await this.prisma.$transaction(async (tx) => {
       const client = tx as Prisma.TransactionClient;
-      const created = await this.repository.create(companyId, vendorDto, actorId, client);
+      const vendorCode = await this.repository.nextVendorCode(companyId, prefix, client);
+
+      if (await this.repository.findByCode(companyId, vendorCode, client)) {
+        throw new ConflictException('Vendor code already exists');
+      }
+
+      const created = await this.repository.create(
+        companyId,
+        vendorDto,
+        vendorCode,
+        actorId,
+        client,
+      );
       await this.customFieldsValuesService.persistCustomFields(
         companyId,
         'vendor',
@@ -94,7 +103,11 @@ export class VendorsService {
       action: UserAuditAction.create,
       entityName: 'Vendor',
       entityId: vendor.vendorId.toString(),
-      newValue: { vendorCode: code, name: vendor.name },
+      newValue: {
+        vendorCode: vendor.vendorCode,
+        supplierType: vendor.supplierType,
+        name: vendor.name,
+      },
     });
 
     return this.findOne(vendor.vendorId.toString(), companyId);

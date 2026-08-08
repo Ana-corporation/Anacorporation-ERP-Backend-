@@ -1,28 +1,29 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
-import { bigintIdSchema } from '@/common/zod/common.schemas';
 
 export const CreateRoleSchema = z.object({
-  roleCode: z.string().min(1),
-  roleName: z.string().min(1),
+  roleCode: z.string().trim().min(1).max(40),
+  roleName: z.string().trim().min(1).max(120),
   description: z.string().optional(),
 });
 
 export const UpdateRoleSchema = z.object({
-  roleName: z.string().min(1).optional(),
+  roleName: z.string().trim().min(1).max(120).optional(),
   description: z.string().optional(),
 });
 
+/** Preferred FE/BE contract — replace all role permissions by code. */
 export const SetRolePermissionsSchema = z.object({
-  permissionIds: z.array(bigintIdSchema).min(1),
+  permissionCodes: z.array(z.string().trim().min(1)).default([]),
 });
 
-export const RolePermissionItemSchema = z.object({
-  permissionId: bigintIdSchema,
-  isAllowed: z.boolean().default(true),
+export const CloneRoleSchema = z.object({
+  roleCode: z.string().trim().min(1).max(40),
+  roleName: z.string().trim().min(1).max(120),
+  description: z.string().optional(),
 });
 
 export class CreateRoleDto extends createZodDto(CreateRoleSchema) {}
 export class UpdateRoleDto extends createZodDto(UpdateRoleSchema) {}
 export class SetRolePermissionsDto extends createZodDto(SetRolePermissionsSchema) {}
-export class RolePermissionItemDto extends createZodDto(RolePermissionItemSchema) {}
+export class CloneRoleDto extends createZodDto(CloneRoleSchema) {}
