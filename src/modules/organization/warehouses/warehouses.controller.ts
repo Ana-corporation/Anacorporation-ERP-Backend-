@@ -4,6 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CreateWarehouseDto, UpdateWarehouseDto } from './dto/warehouse.dto';
 import { WarehousesService } from './warehouses.service';
 
@@ -15,13 +16,23 @@ export class WarehousesController {
 
   @Get()
   @RequirePermissions('warehouses:view')
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.warehousesService.findAll(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('warehouses:view')
-  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.warehousesService.findOne(id, companyId);
   }
 
@@ -32,6 +43,7 @@ export class WarehousesController {
     @Body() dto: CreateWarehouseDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.warehousesService.create(companyId, dto, user.sub);
   }
 
@@ -43,6 +55,7 @@ export class WarehousesController {
     @Body() dto: UpdateWarehouseDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.warehousesService.update(id, companyId, dto, user.sub);
   }
 
@@ -53,6 +66,7 @@ export class WarehousesController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.warehousesService.remove(id, companyId, user.sub);
   }
 }

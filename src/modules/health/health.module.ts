@@ -17,13 +17,16 @@ class HealthController {
     const dbStart = Date.now();
     const dbOk = await this.prisma.isHealthy();
     const dbLatencyMs = Date.now() - dbStart;
-    const redisOk = await this.redis.ping();
+    const sessionStore = this.redis.getSessionStoreMode();
+    const redisOk = sessionStore === 'redis' ? await this.redis.ping() : false;
 
     return {
       status: dbOk ? 'ok' : 'degraded',
       database: dbOk ? 'connected' : 'disconnected',
       databaseLatencyMs: dbLatencyMs,
-      redis: this.redis.isMemoryMode() ? 'memory (dev)' : redisOk ? 'connected' : 'unavailable',
+      sessionStore,
+      redisOk,
+      redis: sessionStore === 'memory-disk' ? 'memory-disk (dev)' : redisOk ? 'connected' : 'unavailable',
       timestamp: new Date().toISOString(),
     };
   }

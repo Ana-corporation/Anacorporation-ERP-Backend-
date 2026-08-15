@@ -1,0 +1,340 @@
+================================================================================
+MANUAL TEST GUIDE — SECURITY & ORGANIZATION V1 (+ recent related fixes)
+Date:       2026-08-12
+Audience:   QA / Dev smoke testing (FE + BE)
+Base URL:   NEXT_PUBLIC_API_URL → /api/v1   (BE default: http://localhost:3002)
+Swagger:    http://localhost:3002/docs
+================================================================================
+
+
+0) WHAT THIS RELEASE COVERS (TEST SCOPE)
+--------------------------------------------------------------------------------
+
+MUST TEST (FE uses these)
+  A. Data Access Policies CRUD  (?tab=access-policies)
+  B. Assign policies on User drawer
+  C. Roles → direct role_permissions matrix (unchanged day-to-day path)
+  D. Items warehouse scope pilot (read filter + write deny toast)
+  E. ADMIN gets data_access_policies:* after migrate + re-login
+
+OPTIONAL / BE-ONLY (FE removed Permission Sets UI)
+  F. Permission Sets APIs still work in Swagger if you want API regression
+  G. No FE tab / no FE client calls for permission-sets
+
+ALSO REGRESS (earlier security work still in tree)
+  H. Company tenant isolation (wrong companyId → 403)
+  I. Role delete with assignees → 409
+  J. Last ADMIN protection → 409
+  K. Invite / temp-password / change-password (must stay unchanged)
+
+
+1) PRE-FLIGHT (DO THIS FIRST)
+--------------------------------------------------------------------------------
+
+Backend stopped, then from repo root (c:\ERP-Backend):
+
+  1. npx prisma generate
+       - Do NOT use PRISMA_GENERATE_NO_ENGINE=1 with normal postgresql:// URLs
+       - If EPERM on query_engine DLL → Nest is still locking the file; stop it
+
+  2. npx prisma migrate deploy
+       - Expect Security Org V1 tables:
+           permission_sets, permission_set_permissions, role_permission_sets
+           data_access_policies, data_access_policy_scopes, user_data_access_policies
+
+  3. Start BE:  npm run start:dev
+       - Swagger opens; no prisma:// URL errors on login
+
+  4. Start FE (usual command)
+
+  5. Login as company ADMIN, then LOG OUT and LOG IN again
+       - First login after migrate seeds catalog + backfills ADMIN with:
+           data_access_policies:view|create|edit|delete
+           permission_sets:view|create|edit|delete  (catalog only; FE UI removed)
+       - Re-login refreshes JWT / permissions[] session
+
+DEMO accounts (if using seed:client-logins):
+  Company: DEMO_ACME (or your seeded company code)
+  Admin:   ADMIN001 / Admin@123   (names may vary — check seed script header)
+
+
+2) PASS / FAIL RULES
+--------------------------------------------------------------------------------
+
+  PASS = expected status + UI message matches below
+  FAIL = 500, wrong company data leak, missing gate, or silent allow on out-of-scope write
+
+  Prefer testing with:
+    - Company Admin (full access)
+    - Non-admin user (limited role) for scope + isolation cases
+
+
+================================================================================
+TEST A — ACCESS POLICIES TAB (PRIMARY FE PATH)
+================================================================================
+
+Prep
+  - Org data exists: at least 2 warehouses (and optionally branch / department)
+  - Logged in as ADMIN with data_access_policies:* codes
+
+Steps
+  A1. Open company detail → ?tab=access-policies
+      EXPECT: tab loads (not gate / 403 message)
+
+  A2. Create policy
+      name: "WH North only"
+      scopes: [{ scopeType: "warehouse", scopeId: "<warehouseId-A>" }]
+      EXPECT: 201/success; row appears in list
+
+  A3. Get / edit policy
+      Change name or add second warehouse scope
+      EXPECT: PATCH succeeds; list/detail shows new scopes
+
+  A4. List policies
+      EXPECT: GET list returns created policies for THIS company only
+
+  A5. Delete policy (use a disposable one, not one assigned to a critical user)
+      EXPECT: DELETE succeeds; gone from list
+
+API (Swagger or FE network)
+  GET    /api/v1/companies/:companyId/data-access-policies
+  POST   /api/v1/companies/:companyId/data-access-policies
+  GET    /api/v1/companies/:companyId/data-access-policies/:id
+  PATCH  /api/v1/companies/:companyId/data-access-policies/:id
+  DELETE /api/v1/companies/:companyId/data-access-policies/:id
+
+Create body example:
+  {
+    "code": "WH_NORTH",
+    "name": "WH North only",
+    "description": "Pilot scope",
+    "isActive": true,
+    "scopes": [
+      { "scopeType": "warehouse", "scopeId": "123" }
+    ]
+  }
+
+scopeType allowed: branch | department | warehouse
+
+
+================================================================================
+TEST B — ASSIGN POLICY ON USER DRAWER
+================================================================================
+
+Prep
+  - Policy from Test A with warehouseId-A only
+  - Target user: non-admin (e.g. inventory / staff) who can open Item Master
+
+Steps
+  B1. Open Users → open user drawer → Data access policies
+  B2. Assign policyIds = [policy from A]
+      EXPECT: PUT succeeds; selected policies saved
+
+  B3. Reload drawer / GET again
+      EXPECT: same policies returned
+
+  B4. Clear assignment (empty policyIds) then re-assign for later Item tests
+      EXPECT: empty save works; re-assign works
+
+API
+  GET /api/v1/companies/:companyId/users/:userId/data-access-policies
+  PUT /api/v1/companies/:companyId/users/:userId/data-access-policies
+  body: { "policyIds": ["<id>", "..."] }
+
+
+================================================================================
+TEST C — ROLES MATRIX (DAY-TO-DAY — PERMISSION SETS UI REMOVED)
+================================================================================
+
+Steps
+  C1. Open Roles & Permissions
+      EXPECT: direct permission matrix still works (view/create/edit toggles)
+
+  C2. Confirm FE has NO Permission Sets card/tab/client calls
+      EXPECT: no FE calls to /permission-sets
+
+  C3. Edit a non-system custom role permission, save, re-login as that user
+      EXPECT: permissions[] on login/me reflect matrix only
+              (union with permission-sets is BE-internal; unused if no sets linked)
+
+  C4. System ADMIN role
+      EXPECT: can edit permissions (per earlier RBAC rules)
+              cannot rename/delete system role in ways BE blocks
+
+
+================================================================================
+TEST D — ITEMS WAREHOUSE SCOPE PILOT (READ + WRITE)
+================================================================================
+
+Prep
+  - User U has policy scoped to warehouse A only (not warehouse B)
+  - Item I has (or can have) stock rows for warehouse A and B
+  - Login as user U (not ADMIN — ADMIN may be unrestricted depending on policies)
+
+D1. READ filter
+  Login as U → open Item I detail
+  EXPECT: warehouseStock shows only warehouses in scope (A)
+           warehouse B stock hidden/filtered when user has warehouse scope policies
+
+  Note: If user has NO policies assigned, BE does not filter (full list).
+        Scope filter applies when resolveUserDataScope returns warehouseIds.
+
+D2. WRITE deny (out of scope)
+  As U, PUT stock for warehouse B (or delete stock for B)
+  API:
+    PUT    /api/v1/companies/:companyId/items/:id/warehouses
+    DELETE /api/v1/companies/:companyId/items/:id/warehouses/:warehouseId
+  EXPECT: 403
+           FE toast shows BE deny message (getApiErrorMessage)
+
+D3. WRITE allow (in scope)
+  As U, PUT/update stock for warehouse A
+  EXPECT: 200/success
+
+D4. ADMIN without restrictive policy
+  As ADMIN with no user policies (or full access)
+  EXPECT: can read/write all warehouses (baseline control)
+
+
+================================================================================
+TEST E — PERMISSION GATES
+================================================================================
+
+E1. ADMIN after migrate + re-login
+  EXPECT permissions[] includes:
+    data_access_policies:view|create|edit|delete
+  EXPECT Access Policies tab usable
+
+E2. User WITHOUT data_access_policies:view
+  EXPECT: FE shows gate message OR APIs return 403
+           cannot manage policies
+
+E3. Role attach still needs roles:view|edit where applicable
+  EXPECT: matrix edits blocked without roles:edit
+
+
+================================================================================
+TEST F — PERMISSION SETS (OPTIONAL BE / SWAGGER ONLY)
+================================================================================
+
+FE removed UI — skip unless you want API smoke.
+
+  GET/POST/PATCH/DELETE
+    /api/v1/companies/:companyId/permission-sets
+  GET/PUT
+    /api/v1/companies/:companyId/roles/:roleId/permission-sets
+    body PUT: { "permissionSetIds": ["..."] }
+
+EXPECT: APIs still respond if module is mounted
+        FE never calls them in normal flows
+
+
+================================================================================
+TEST G — TENANT ISOLATION (assertCompanyAccess)
+================================================================================
+
+Prep
+  - Token for Company X
+  - Valid resource IDs belonging to Company Y
+
+Steps
+  G1. Call any company-scoped route with X token but Y companyId in path
+      Examples:
+        GET /api/v1/companies/{Y}/roles
+        GET /api/v1/companies/{Y}/users
+        GET /api/v1/companies/{Y}/items
+        GET /api/v1/companies/{Y}/data-access-policies
+  EXPECT: 403 "Company context mismatch" (or equivalent)
+           NO data from company Y returned
+
+  G2. Same companyId as token
+  EXPECT: 200 (subject to module permissions)
+
+
+================================================================================
+TEST H — ROLE DELETE + LAST ADMIN (EARLIER FIXES)
+================================================================================
+
+H1. Role with active assignees
+  DELETE /companies/:companyId/roles/:id
+  EXPECT: 409 mentioning reassign users first
+
+H2. System role delete
+  EXPECT: 409 System roles cannot be deleted
+
+H3. Last ADMIN
+  Try DELETE last admin user OR replace/deactivate last ADMIN role
+  EXPECT: 409 cannot remove/deactivate last administrator
+
+
+================================================================================
+TEST I — REGRESSION: INVITE / TEMP PASSWORD (MUST NOT CHANGE)
+================================================================================
+
+I1. Invite company user (existing FE flow)
+  EXPECT: temp password generated by BE; invite response shape unchanged
+
+I2. Login with temp password
+  EXPECT: mustChangePassword true (or equivalent flag FE already handles)
+
+I3. POST /auth/change-password
+  EXPECT: success; subsequent login without force-change
+
+I4. Expired temp password (if TEMP_PASSWORD_TTL_HOURS configured)
+  EXPECT: login fails with TEMP_PASSWORD_EXPIRED (or documented code)
+
+
+================================================================================
+TEST J — PRISMA / BOOT HEALTH
+================================================================================
+
+J1. After generate + restart, login must NOT show:
+      "URL must start with the protocol prisma:// or prisma+postgres://"
+    That error means client was generated with NO_ENGINE — regenerate with Nest stopped.
+
+J2. Swagger loads; health/login works.
+
+
+================================================================================
+SUGGESTED SMOKE ORDER (30–45 MIN)
+================================================================================
+
+  [ ] 1. generate + migrate deploy + start BE/FE
+  [ ] 2. Admin login → logout → login (permission backfill)
+  [ ] 3. Access Policies CRUD (Test A)
+  [ ] 4. Assign policy on user drawer (Test B)
+  [ ] 5. Login as scoped user → Item read filter + write 403 (Test D)
+  [ ] 6. Roles matrix still works; no Permission Sets UI (Test C)
+  [ ] 7. Wrong companyId → 403 (Test G)
+  [ ] 8. Invite + change-password still OK (Test I)
+  [ ] 9. (Optional) Swagger Permission Sets CRUD (Test F)
+
+
+================================================================================
+QUICK FAILURE CHEAT SHEET
+================================================================================
+
+Symptom                              Likely cause / fix
+-----------------------------------  ------------------------------------------
+Access Policies tab gate / 403       Re-login admin; confirm data_access_policies:*
+                                     on role; migrate + ensurePermissionsSeeded
+prisma:// URL error on login         Stop Nest → npx prisma generate → restart
+                                     (never PRISMA_GENERATE_NO_ENGINE for PG URL)
+Out-of-scope write allowed           Policy not assigned; or user has no warehouse
+                                     scopes resolved; verify PUT policyIds
+Read still shows all warehouses      No policies on user → BE does not filter
+500 on login after pull              migrate deploy missing; or generate incomplete
+FE calls /permission-sets            FE should not — Permission Sets UI removed
+
+
+================================================================================
+RELATED DOCS
+================================================================================
+
+  docs/SECURITY-ORGANIZATION-V1-IMPLEMENTED.txt
+  docs/CURRENT-SECURITY-FIXES-IMPLEMENTED.txt
+  docs/FE-HANDOFF-INVITE-UNCHANGED.txt
+
+================================================================================
+END
+================================================================================

@@ -14,6 +14,29 @@ const PERMISSION_META = new Map(
   PERMISSIONS.map((row) => [row.code, { module: row.module, action: row.action }]),
 );
 
+/**
+ * Platform-owner seed / nav still uses short aliases (plans:view).
+ * Controllers require catalogue codes (subscription_plans:view).
+ */
+const PERMISSION_CODE_ALIASES: Record<string, string[]> = {
+  'subscription_plans:view': ['plans:view'],
+  'subscription_plans:create': ['plans:edit', 'plans:create'],
+  'subscription_plans:edit': ['plans:edit'],
+  'subscription_plans:delete': ['plans:edit', 'plans:delete'],
+  'subscription_modules:view': ['modules:view'],
+  'subscription_modules:create': ['modules:edit', 'modules:create'],
+  'subscription_modules:edit': ['modules:edit'],
+  'subscription_modules:delete': ['modules:edit', 'modules:delete'],
+  'plan_modules:view': ['plans:view'],
+  'plan_modules:manage': ['plans:edit'],
+};
+
+function userHasPermissionCode(user: AuthenticatedUser, permissionCode: string): boolean {
+  if (user.permissions.includes(permissionCode)) return true;
+  const aliases = PERMISSION_CODE_ALIASES[permissionCode];
+  return Boolean(aliases?.some((alias) => user.permissions.includes(alias)));
+}
+
 /** Legacy ERP API permission codes → Phase 1 module + action. */
 const LEGACY_PRODUCT_PERMISSION_MAP: Record<
   string,
@@ -95,10 +118,10 @@ export function checkPermissionCode(
 
   const meta = PERMISSION_META.get(permissionCode as (typeof PERMISSIONS)[number]['code']);
   if (!meta) {
-    return user.permissions.includes(permissionCode);
+    return userHasPermissionCode(user, permissionCode);
   }
 
-  if (!user.permissions.includes(permissionCode)) return false;
+  if (!userHasPermissionCode(user, permissionCode)) return false;
 
   if (ADMIN_MODULE_SET.has(meta.module)) {
     return true;

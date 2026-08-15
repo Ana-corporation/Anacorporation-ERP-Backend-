@@ -1,0 +1,213 @@
+================================================================================
+FE ↔ BE MATCH — WHAT BACKEND CHANGED (Data Access Policy V1 + related)
+Date:       2026-08-12
+Audience:   Frontend
+Base URL:   /api/v1
+Status:     BE ready — FE must update Access Policies clients to match
+================================================================================
+
+
+0) BIG PICTURE (for FE)
+--------------------------------------------------------------------------------
+
+  Role → Permissions     = WHAT the user can do   (unchanged; matrix only)
+  Data Access Policy     = WHERE they can do it   (branch / department / warehouse)
+
+  Permission Sets UI was removed on FE — BE APIs may still exist but FE
+  should NOT call them. Day-to-day FE uses:
+    - Roles matrix (role_permissions)
+    - Access Policies tab + user drawer assignment
+
+
+1) WHAT BE CHANGED RIGHT NOW (FE MUST MATCH)
+--------------------------------------------------------------------------------
+
+A) Access Policies create/update body — BREAKING vs older scopes[]
+
+  OLD (do not send):
+    scopes: [{ scopeType: "warehouse", scopeId: "3" }, ...]
+
+  NEW (required):
+    branchIds: string[]
+    departmentIds: string[]
+    warehouseIds: string[]
+    code: string          ← required on CREATE (was optional before)
+
+  Example CREATE:
+    POST /companies/:companyId/data-access-policies
+    {
+      "code": "CHENNAI_PURCHASE",
+      "name": "Chennai Purchase Access",
+      "description": "Purchase data access for Chennai",
+      "isActive": true,
+      "branchIds": ["1"],
+      "departmentIds": ["2"],
+      "warehouseIds": ["3"]
+    }
+
+  Example UPDATE (any field optional; only send ids you want to change):
+    PATCH /companies/:companyId/data-access-policies/:id
+    {
+      "name": "Chennai Purchase Access",
+      "branchIds": ["1", "4"],
+      "departmentIds": ["2"],
+      "warehouseIds": ["3"]
+    }
+
+
+B) Access Policies response shape — BREAKING
+
+  Response no longer returns scopes[].
+  Each policy now returns:
+
+    policyId, companyId, code, name, description, isActive,
+    createdAt, updatedAt, deletedAt,
+    branchIds: string[],
+    departmentIds: string[],
+    warehouseIds: string[]
+
+  Update FE forms/tables/drawers to read branchIds / departmentIds / warehouseIds.
+
+
+C) User policy assignment APIs
+
+  Spec V1 (preferred):
+    POST   /companies/:companyId/users/:userId/data-access-policies
+           body: { "policyId": "..." }
+
+    DELETE /companies/:companyId/users/:userId/data-access-policies/:policyId
+
+  Legacy still works (current FE drawer can keep this until you migrate):
+    PUT    /companies/:companyId/users/:userId/data-access-policies
+           body: { "policyIds": ["...", "..."] }
+
+  GET list (unchanged path):
+    GET    /companies/:companyId/users/:userId/data-access-policies
+           → assignments; nested policy uses NEW shape (branchIds etc.)
+
+
+2) ENDPOINTS FE SHOULD USE (Access Policies)
+--------------------------------------------------------------------------------
+
+  GET    /companies/:companyId/data-access-policies
+  POST   /companies/:companyId/data-access-policies
+  GET    /companies/:companyId/data-access-policies/:id
+  PATCH  /companies/:companyId/data-access-policies/:id
+  DELETE /companies/:companyId/data-access-policies/:id
+
+  GET    /companies/:companyId/users/:userId/data-access-policies
+  POST   /companies/:companyId/users/:userId/data-access-policies      { policyId }
+  DELETE /companies/:companyId/users/:userId/data-access-policies/:policyId
+  PUT    /companies/:companyId/users/:userId/data-access-policies      { policyIds[] }  (legacy)
+
+
+3) PERMISSION GATES (FE can() codes — unchanged)
+--------------------------------------------------------------------------------
+
+  data_access_policies:view
+  data_access_policies:create
+  data_access_policies:edit
+  data_access_policies:delete
+
+  After BE restart: ADMIN logout + login so permissions[] includes these
+  (BE backfills roleCode ADMIN on login /auth/me).
+
+  If tab still shows gate message → re-login ADMIN001.
+
+
+4) EMPTY SCOPE / BEHAVIOR FE SHOULD EXPECT
+--------------------------------------------------------------------------------
+
+  - Policy saved with empty branchIds + departmentIds + warehouseIds
+      → means NO data access (not “all data”)
+
+  - User with no policies assigned
+      → no WHERE restriction (full org data for that permission)
+
+  - User with one or more active policies
+      → effective scope = UNION of all assigned policies
+      → Items warehouse write out of scope → 403; FE toast via getApiErrorMessage
+
+  -   Soft-deleted / inactive policies do not grant scope
+
+  CREATE CODE UNIQUENESS (2026-08-13)
+  - Duplicate create code no longer 409
+  - BE appends _2, _3, … and returns the final code in the response
+  - Update with colliding code still 409 (no silent rename)
+  - Soft-deleted codes are reusable (delete renames stored code to free unique)
+
+
+5) WHAT FE SHOULD NOT CALL / NOT BUILD
+--------------------------------------------------------------------------------
+
+  - Permission Sets UI / API clients (removed on FE; optional on BE)
+  - Do not treat Data Access Policy as granting permissions
+  - Do not invent per-branch role clones (e.g. “Purchase Manager - Chennai”)
+
+
+6) UNCHANGED (no FE change needed)
+--------------------------------------------------------------------------------
+
+  - Roles → direct role_permissions matrix
+  - Login / me permissions[] shape (string codes array)
+  - Invite / temp-password / change-password flow
+  - Company org APIs (branches / departments / warehouses)
+  - assertCompanyAccess tenant isolation
+  - Base path still /api/v1
+
+
+7) FE FILE CHECKLIST (suggested)
+--------------------------------------------------------------------------------
+
+  [ ] data-access-policies-api.ts
+        - create/update: send branchIds, departmentIds, warehouseIds, code
+        - stop sending scopes[]
+        - parse branchIds / departmentIds / warehouseIds from responses
+        - optional: POST assign + DELETE unassign (or keep PUT replace)
+
+  [ ] Access Policies tab (?tab=access-policies)
+        - form fields for three id multi-selects
+        - require code on create
+
+  [ ] User drawer — policy assign/save
+        - works with PUT { policyIds } today
+        - or switch to POST/DELETE per policy
+
+  [ ] Error toasts for 403 warehouse scope deny (already via getApiErrorMessage)
+
+
+8) BE ROLLOUT (so FE can test against live API)
+--------------------------------------------------------------------------------
+
+  Stop Nest, then:
+
+    npx prisma generate          ← full engine (do NOT use NO_ENGINE)
+    npx prisma migrate deploy    ← includes 20260812190000_data_access_policy_v1
+    npm run start:dev
+
+  Then FE: restart if needed → ADMIN logout/login → Access Policies CRUD
+
+
+9) QUICK MATCH TABLE
+--------------------------------------------------------------------------------
+
+  Topic                         Old FE contract          New BE contract
+  ---------------------------   ----------------------   -------------------------
+  Policy scopes                 scopes[{scopeType,id}]   branchIds / departmentIds
+                                                         / warehouseIds
+  Create code                   optional                 required (FE auto from name)
+  Create duplicate code         409 Conflict             auto _2/_3… unique; response
+                                                         returns final code
+  Soft-deleted code             blocked by DB unique     reused (delete renames code)
+  Update colliding code         409                      409 (unchanged; no silent rename)
+  Policy response               scopes[]                 *Ids arrays
+  Assign user policy            PUT policyIds[] only     POST policyId + DELETE
+                                                         (+ PUT still OK)
+  Permission Sets               was optional UI          FE removed; ignore
+  ADMIN missing view code       403 / gate               fixed on login/me
+                                                         backfill
+
+
+================================================================================
+END
+================================================================================

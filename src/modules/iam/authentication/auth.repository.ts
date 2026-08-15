@@ -4,11 +4,14 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { ALL_MODULES } from '@/common/constants/modules.constant';
 import { PERMISSIONS } from '@/common/constants/permissions.constant';
 import { parseBigIntId } from '@/common/utils/bigint.util';
-import { slugify } from '@/common/utils/helpers';
 
 @Injectable()
 export class AuthRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Process-local cache so login+/me don't re-run heavy upserts every request. */
+  private static securityOrgSeedReady = false;
+  private static securityOrgSeedInFlight: Promise<void> | null = null;
 
   findUserByEmail(email: string) {
     return this.prisma.user.findFirst({
@@ -23,13 +26,69 @@ export class AuthRepository {
     });
   }
 
+  /** Catalog codes introduced in Security & Organization V1 — grant to existing ADMIN roles. */
+  private static readonly SECURITY_ORG_V1_ADMIN_CODES = [
+    'permission_sets:view',
+    'permission_sets:create',
+    'permission_sets:edit',
+    'permission_sets:delete',
+    'data_access_policies:view',
+    'data_access_policies:create',
+    'data_access_policies:edit',
+    'data_access_policies:delete',
+  ] as const;
+
+  /**
+   * Ensures permission catalog rows exist and grants Security Org V1 codes to
+   * every company role with roleCode === 'ADMIN' (DEMO_ACME ADMIN included).
+   * Idempotent + single-flight — safe on concurrent login /me / signup.
+   */
   async ensurePermissionsSeeded() {
-    const existingCount = await this.prisma.permission.count();
-    if (existingCount >= PERMISSIONS.length) {
+    if (AuthRepository.securityOrgSeedReady) return;
+    if (AuthRepository.securityOrgSeedInFlight) {
+      await AuthRepository.securityOrgSeedInFlight;
       return;
     }
 
-    for (const mod of ALL_MODULES) {
+    AuthRepository.securityOrgSeedInFlight = this.runSecurityOrgSeed()
+      .then(() => {
+        AuthRepository.securityOrgSeedReady = true;
+      })
+      .finally(() => {
+        AuthRepository.securityOrgSeedInFlight = null;
+      });
+
+    await AuthRepository.securityOrgSeedInFlight;
+  }
+
+  private async runSecurityOrgSeed() {
+    const v1Codes = AuthRepository.SECURITY_ORG_V1_ADMIN_CODES;
+    const existingV1 = await this.prisma.permission.findMany({
+      where: { permissionCode: { in: [...v1Codes] } },
+      select: { permissionCode: true },
+    });
+    const have = new Set(existingV1.map((p) => p.permissionCode));
+    const missingV1 = v1Codes.filter((code) => !have.has(code));
+
+    const existingCount = await this.prisma.permission.count();
+    if (existingCount < PERMISSIONS.length) {
+      await this.upsertModulesAndPermissions(PERMISSIONS);
+    } else if (missingV1.length > 0) {
+      const missingSet = new Set<string>(missingV1);
+      const securityOrgPerms = PERMISSIONS.filter((p) => missingSet.has(p.code));
+      await this.upsertModulesAndPermissions(securityOrgPerms);
+    }
+
+    await this.backfillAdminSecurityOrgPermissions();
+  }
+
+  private async upsertModulesAndPermissions(
+    perms: readonly { module: string; code: string; name: string; action: string }[],
+  ) {
+    const moduleCodes = [...new Set(perms.map((p) => p.module))];
+    const modulesToUpsert = ALL_MODULES.filter((m) => moduleCodes.includes(m.code));
+
+    for (const mod of modulesToUpsert) {
       await this.prisma.module.upsert({
         where: { moduleCode: mod.code },
         update: {
@@ -53,11 +112,11 @@ export class AuthRepository {
     }
 
     const modules = await this.prisma.module.findMany({
-      where: { moduleCode: { in: ALL_MODULES.map((m) => m.code) } },
+      where: { moduleCode: { in: moduleCodes } },
     });
     const moduleByCode = new Map(modules.map((m) => [m.moduleCode, m]));
 
-    for (const perm of PERMISSIONS) {
+    for (const perm of perms) {
       const mod = moduleByCode.get(perm.module);
       if (!mod) continue;
 
@@ -75,6 +134,41 @@ export class AuthRepository {
           permissionName: perm.name,
           action: perm.action as PermissionAction,
         },
+      });
+    }
+  }
+
+  /**
+   * Existing company ADMIN roles predate Security & Organization V1 codes.
+   * Idempotent: createMany skipDuplicates so tabs/APIs stop returning 403 after re-login.
+   */
+  private async backfillAdminSecurityOrgPermissions() {
+    const permissions = await this.prisma.permission.findMany({
+      where: {
+        permissionCode: {
+          in: [...AuthRepository.SECURITY_ORG_V1_ADMIN_CODES],
+        },
+      },
+      select: { permissionId: true, moduleId: true },
+    });
+    if (permissions.length === 0) return;
+
+    // Seed + signup create roleCode exactly 'ADMIN' (DEMO_ACME ADMIN001 included).
+    const adminRoles = await this.prisma.role.findMany({
+      where: { roleCode: 'ADMIN', deletedAt: null },
+      select: { roleId: true },
+    });
+    if (adminRoles.length === 0) return;
+
+    for (const role of adminRoles) {
+      await this.prisma.rolePermission.createMany({
+        data: permissions.map((permission) => ({
+          roleId: role.roleId,
+          moduleId: permission.moduleId,
+          permissionId: permission.permissionId,
+          isAllowed: true,
+        })),
+        skipDuplicates: true,
       });
     }
   }
@@ -196,6 +290,23 @@ export class AuthRepository {
               where: { isAllowed: true },
               include: { permission: true },
             },
+            rolePermissionSets: {
+              where: {
+                permissionSet: {
+                  deletedAt: null,
+                  isActive: true,
+                },
+              },
+              include: {
+                permissionSet: {
+                  include: {
+                    permissionSetPermissions: {
+                      include: { permission: true },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -204,7 +315,14 @@ export class AuthRepository {
     const permissions = [
       ...new Set(
         userRoles.flatMap((ur) =>
-          ur.role.rolePermissions.map((rp) => rp.permission.permissionCode),
+          [
+            ...ur.role.rolePermissions.map((rp) => rp.permission?.permissionCode),
+            ...ur.role.rolePermissionSets.flatMap((rps) =>
+              (rps.permissionSet?.permissionSetPermissions || []).map(
+                (psp) => psp.permission?.permissionCode,
+              ),
+            ),
+          ].filter((code): code is string => Boolean(code)),
         ),
       ),
     ];
@@ -228,102 +346,6 @@ export class AuthRepository {
         failedLoginCount: 0,
         updatedAt: new Date(),
       },
-    });
-  }
-
-  async createSignupTransaction(params: {
-    email: string;
-    passwordHash: string;
-    firstName: string;
-    lastName: string;
-    companyName: string;
-    adminPermissions: { permissionId: bigint; moduleId: bigint }[];
-  }) {
-    const username = params.email.split('@')[0];
-    let companyCode = slugify(params.companyName).toUpperCase().replace(/-/g, '_');
-    if (companyCode.length > 30) companyCode = companyCode.slice(0, 30);
-
-    return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          username,
-          email: params.email,
-          firstName: params.firstName,
-          lastName: params.lastName,
-          displayName: `${params.firstName} ${params.lastName}`.trim(),
-        },
-      });
-
-      await tx.userAuthentication.create({
-        data: {
-          userId: user.userId,
-          passwordHash: params.passwordHash,
-          isEmailVerified: false,
-        },
-      });
-
-      const company = await tx.company.create({
-        data: {
-          companyCode,
-          name: params.companyName,
-          status: 'trial',
-        },
-      });
-
-      const role = await tx.role.create({
-        data: {
-          companyId: company.companyId,
-          roleCode: 'ADMIN',
-          roleName: 'Administrator',
-          isSystem: true,
-          createdBy: user.userId,
-        },
-      });
-
-      if (params.adminPermissions.length > 0) {
-        await tx.rolePermission.createMany({
-          data: params.adminPermissions.map((permission) => ({
-            roleId: role.roleId,
-            moduleId: permission.moduleId,
-            permissionId: permission.permissionId,
-            isAllowed: true,
-            createdBy: user.userId,
-          })),
-        });
-      }
-
-      await tx.userCompany.create({
-        data: {
-          userId: user.userId,
-          companyId: company.companyId,
-          employeeId: `EMP-${String(user.userId).padStart(5, '0')}`,
-          status: 'active',
-          isDefault: true,
-          createdBy: user.userId,
-        },
-      });
-
-      await tx.userRole.create({
-        data: {
-          userId: user.userId,
-          companyId: company.companyId,
-          roleId: role.roleId,
-          assignedBy: user.userId,
-        },
-      });
-
-      await tx.companySecurityPolicy.create({
-        data: {
-          companyId: company.companyId,
-          createdBy: user.userId,
-        },
-      });
-
-      return {
-        user: { id: user.userId.toString(), email: user.email, firstName: user.firstName ?? '', lastName: user.lastName ?? '' },
-        company: { id: company.companyId.toString(), name: company.name, companyCode: company.companyCode },
-        role: { id: role.roleId.toString(), name: role.roleName },
-      };
     });
   }
 

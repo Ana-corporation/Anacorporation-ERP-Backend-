@@ -1,0 +1,114 @@
+================================================================================
+AFTER PULL — FIX TS ERRORS (terminus + supplierType)
+Date:       2026-08-08
+Repo:       Anacorporation-ERP-Backend-
+Branch:     development-anc
+================================================================================
+
+WHY YOU SEE THESE ERRORS
+------------------------
+After git pull, TypeScript may fail with:
+
+  1) Cannot find module '@nestjs/terminus'
+  2) 'supplierType' does not exist on Vendor create / vendor object
+
+These are NOT application bugs.
+They mean the local machine is missing:
+
+  - npm dependencies (node_modules)
+  - regenerated Prisma Client (from updated prisma schema)
+
+The pushed code already includes:
+  - @nestjs/terminus in package.json
+  - supplierType in prisma/purchase/vendors.prisma
+  - migration: prisma/migrations/20260806120000_vendor_supplier_type/
+
+
+FIX (RUN THESE IN ORDER)
+------------------------
+From the repo root (ERP-Backend):
+
+  1. Pull latest code
+       git pull
+
+  2. Install dependencies
+       npm install
+
+     → Fixes: Cannot find module '@nestjs/terminus'
+
+  3. Regenerate Prisma Client
+       npx prisma generate
+
+     → Fixes: supplierType does not exist on Vendor types
+
+  4. Apply DB migration (needed for runtime / create vendor)
+       npx prisma migrate deploy
+
+     → Adds vendors.supplier_type column in the database
+
+  5. Restart the app
+       npm run start:dev
+
+
+OPTIONAL / IF STILL FAILING
+---------------------------
+A) Clean reinstall (when node_modules looks corrupt):
+
+     Remove-Item -Recurse -Force node_modules
+     Remove-Item -Force package-lock.json   # only if team agrees
+     npm install
+     npx prisma generate
+     npx prisma migrate deploy
+     npm run start:dev
+
+   Or (keep lockfile — preferred):
+
+     Remove-Item -Recurse -Force node_modules
+     npm ci
+     npx prisma generate
+     npx prisma migrate deploy
+     npm run start:dev
+
+B) Confirm .env exists (do NOT commit .env):
+
+     Copy from .env.example and set at least:
+       DATABASE_URL=...
+       DIRECT_DATABASE_URL=...   (if your project uses it)
+       JWT secrets / Redis / etc.
+
+     Optional new key (default is 24 if missing):
+       TEMP_PASSWORD_TTL_HOURS=24
+
+C) Confirm Prisma schema was pulled:
+
+     Open: prisma/purchase/vendors.prisma
+     Must contain: supplierType String? @map("supplier_type")
+
+
+QUICK CHECK AFTER FIX
+---------------------
+  [ ] npm install completed without missing @nestjs/terminus
+  [ ] npx prisma generate completed successfully
+  [ ] npm run start:dev starts with 0 TypeScript errors
+  [ ] Creating a vendor with supplierType works (DB column exists)
+
+
+ONE-LINER (Windows PowerShell)
+------------------------------
+  git pull; npm install; npx prisma generate; npx prisma migrate deploy; npm run start:dev
+
+
+ONE-LINER (bash / mac / linux)
+------------------------------
+  git pull && npm install && npx prisma generate && npx prisma migrate deploy && npm run start:dev
+
+
+SUMMARY
+-------
+  terminus error      → npm install
+  supplierType error  → npx prisma generate
+  DB missing column   → npx prisma migrate deploy
+
+================================================================================
+END
+================================================================================

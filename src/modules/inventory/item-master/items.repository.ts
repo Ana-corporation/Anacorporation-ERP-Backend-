@@ -13,6 +13,7 @@ import {
   UpdateItemDto,
   UpsertItemWarehouseStockDto,
 } from './dto/item.dto';
+import { formatItemCode, parseItemAutoSequence } from './item-code.util';
 
 const ITEMS_LIST_FILTER: ListFilterOptions = {
   contains: {
@@ -54,6 +55,19 @@ type JsonBag = Record<string, unknown> | undefined;
 
 function toJson(value: JsonBag): Prisma.InputJsonValue | undefined {
   return value === undefined ? undefined : (value as Prisma.InputJsonValue);
+}
+
+/** Shallow-merge PATCH bag into existing JSON so FE can send only new keys. */
+function mergeJsonBag(
+  existing: unknown,
+  incoming: JsonBag,
+): Prisma.InputJsonValue | undefined {
+  if (incoming === undefined) return undefined;
+  const base =
+    existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? (existing as Record<string, unknown>)
+      : {};
+  return { ...base, ...incoming } as Prisma.InputJsonValue;
 }
 
 /** DTO carries dates as `YYYY-MM-DD` strings; anchor to UTC so the day never shifts. */
@@ -108,6 +122,82 @@ export class ItemsRepository {
     });
   }
 
+  /** Includes soft-deleted — needed for unique(companyId, itemCode) safety. */
+  findAnyByCode(companyId: string, itemCode: string) {
+    return this.prisma.item.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        itemCode,
+      },
+      select: { itemId: true, deletedAt: true },
+    });
+  }
+
+  async getOrCreateItemSettings(companyId: string, actorId?: string) {
+    const cid = parseBigIntId(companyId);
+    const existing = await this.prisma.companyItemSettings.findUnique({
+      where: { companyId: cid },
+    });
+    if (existing) return existing;
+
+    return this.prisma.companyItemSettings.create({
+      data: {
+        companyId: cid,
+        itemCodeMode: 'AUTO',
+        itemCodePrefix: 'ITM',
+        createdBy: actorId ? parseBigIntId(actorId) : undefined,
+      },
+    });
+  }
+
+  updateItemSettings(
+    companyId: string,
+    data: { itemCodeMode: 'AUTO' | 'MANUAL'; itemCodePrefix?: string },
+    actorId?: string,
+  ) {
+    const cid = parseBigIntId(companyId);
+    return this.prisma.companyItemSettings.upsert({
+      where: { companyId: cid },
+      create: {
+        companyId: cid,
+        itemCodeMode: data.itemCodeMode,
+        itemCodePrefix: (data.itemCodePrefix ?? 'ITM').toUpperCase(),
+        createdBy: actorId ? parseBigIntId(actorId) : undefined,
+      },
+      update: {
+        itemCodeMode: data.itemCodeMode,
+        ...(data.itemCodePrefix !== undefined
+          ? { itemCodePrefix: data.itemCodePrefix.toUpperCase() }
+          : {}),
+        updatedBy: actorId ? parseBigIntId(actorId) : undefined,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Next AUTO code for prefix (ITM-000001…). Scans all rows including soft-deleted
+   * so DB unique(companyId, itemCode) cannot collide.
+   */
+  async nextAutoItemCode(companyId: string, prefix: string) {
+    const p = prefix.trim().toUpperCase() || 'ITM';
+    const existing = await this.prisma.item.findMany({
+      where: {
+        companyId: parseBigIntId(companyId),
+        itemCode: { startsWith: `${p}-` },
+      },
+      select: { itemCode: true },
+    });
+
+    let maxSeq = 0;
+    for (const row of existing) {
+      const seq = parseItemAutoSequence(row.itemCode, p);
+      if (seq !== null && seq > maxSeq) maxSeq = seq;
+    }
+
+    return formatItemCode(p, maxSeq + 1);
+  }
+
   findVendorById(vendorId: string, companyId: string) {
     return this.prisma.vendor.findFirst({
       where: {
@@ -130,11 +220,11 @@ export class ItemsRepository {
     });
   }
 
-  create(companyId: string, dto: CreateItemDto, createdBy?: string) {
+  create(companyId: string, dto: CreateItemDto, itemCode: string, createdBy?: string) {
     return this.prisma.item.create({
       data: {
         companyId: parseBigIntId(companyId),
-        itemCode: dto.itemCode.trim().toUpperCase(),
+        itemCode: itemCode.trim().toUpperCase(),
         description: dto.description.trim(),
         oldCode: dto.oldCode ?? null,
         itemType: dto.itemType ?? 'item',
@@ -198,76 +288,105 @@ export class ItemsRepository {
     const set = <T>(value: T | undefined, mapped?: unknown) =>
       value === undefined ? {} : (mapped as object);
 
-    return this.prisma.item.update({
-      where: { itemId: parseBigIntId(id) },
-      data: {
-        ...set(dto.description, { description: dto.description?.trim() }),
-        ...set(dto.oldCode, { oldCode: dto.oldCode }),
-        ...set(dto.itemType, { itemType: dto.itemType }),
-        ...set(dto.itemGroup, { itemGroup: dto.itemGroup }),
-        ...set(dto.uomGroup, { uomGroup: dto.uomGroup }),
-        ...set(dto.barcode, { barcode: dto.barcode }),
-        ...set(dto.priceList, { priceList: dto.priceList }),
-        ...set(dto.unitPrice, { unitPrice: dto.unitPrice }),
-        ...set(dto.currencyCode, { currencyCode: dto.currencyCode }),
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.item.findUnique({
+        where: { itemId: parseBigIntId(id) },
+        select: {
+          purchaseJson: true,
+          salesJson: true,
+          inventoryJson: true,
+          planningJson: true,
+          productionJson: true,
+          propertiesJson: true,
+          metadata: true,
+        },
+      });
 
-        ...set(dto.isInventoryItem, { isInventoryItem: dto.isInventoryItem }),
-        ...set(dto.isSalesItem, { isSalesItem: dto.isSalesItem }),
-        ...set(dto.isPurchaseItem, { isPurchaseItem: dto.isPurchaseItem }),
+      return tx.item.update({
+        where: { itemId: parseBigIntId(id) },
+        data: {
+          ...set(dto.description, { description: dto.description?.trim() }),
+          ...set(dto.oldCode, { oldCode: dto.oldCode }),
+          ...set(dto.itemType, { itemType: dto.itemType }),
+          ...set(dto.itemGroup, { itemGroup: dto.itemGroup }),
+          ...set(dto.uomGroup, { uomGroup: dto.uomGroup }),
+          ...set(dto.barcode, { barcode: dto.barcode }),
+          ...set(dto.priceList, { priceList: dto.priceList }),
+          ...set(dto.unitPrice, { unitPrice: dto.unitPrice }),
+          ...set(dto.currencyCode, { currencyCode: dto.currencyCode }),
 
-        ...set(dto.doNotApplyDiscountGroups, {
-          doNotApplyDiscountGroups: dto.doNotApplyDiscountGroups,
-        }),
-        ...set(dto.manufacturer, { manufacturer: dto.manufacturer }),
-        ...set(dto.additionalIdentifier, {
-          additionalIdentifier: dto.additionalIdentifier,
-        }),
-        ...set(dto.shippingType, { shippingType: dto.shippingType }),
-        ...set(dto.manageBy, { manageBy: dto.manageBy }),
-        ...set(dto.status, { status: dto.status }),
-        ...set(dto.activeFrom, { activeFrom: toDate(dto.activeFrom) }),
-        ...set(dto.activeTo, { activeTo: toDate(dto.activeTo) }),
+          ...set(dto.isInventoryItem, { isInventoryItem: dto.isInventoryItem }),
+          ...set(dto.isSalesItem, { isSalesItem: dto.isSalesItem }),
+          ...set(dto.isPurchaseItem, { isPurchaseItem: dto.isPurchaseItem }),
 
-        ...set(dto.netWeightKg, { netWeightKg: dto.netWeightKg }),
-        ...set(dto.grossWeightKg, { grossWeightKg: dto.grossWeightKg }),
-        ...set(dto.division, { division: dto.division }),
-        ...set(dto.coreActivity, { coreActivity: dto.coreActivity }),
-        ...set(dto.majorGroup, { majorGroup: dto.majorGroup }),
-        ...set(dto.brandName, { brandName: dto.brandName }),
-        ...set(dto.effectiveDate, { effectiveDate: toDate(dto.effectiveDate) }),
-        ...set(dto.customerStockNo, { customerStockNo: dto.customerStockNo }),
-        ...set(dto.stockToBe, { stockToBe: dto.stockToBe }),
-        ...set(dto.stockDioDays, { stockDioDays: dto.stockDioDays }),
-        ...set(dto.contractItemsFor, { contractItemsFor: dto.contractItemsFor }),
+          ...set(dto.doNotApplyDiscountGroups, {
+            doNotApplyDiscountGroups: dto.doNotApplyDiscountGroups,
+          }),
+          ...set(dto.manufacturer, { manufacturer: dto.manufacturer }),
+          ...set(dto.additionalIdentifier, {
+            additionalIdentifier: dto.additionalIdentifier,
+          }),
+          ...set(dto.shippingType, { shippingType: dto.shippingType }),
+          ...set(dto.manageBy, { manageBy: dto.manageBy }),
+          ...set(dto.status, { status: dto.status }),
+          ...set(dto.activeFrom, { activeFrom: toDate(dto.activeFrom) }),
+          ...set(dto.activeTo, { activeTo: toDate(dto.activeTo) }),
 
-        ...set(dto.preferredVendorId, {
-          preferredVendorId: dto.preferredVendorId
-            ? parseBigIntId(dto.preferredVendorId, 'preferredVendorId')
-            : null,
-        }),
-        ...set(dto.valuationMethod, { valuationMethod: dto.valuationMethod }),
-        ...set(dto.itemCost, { itemCost: dto.itemCost }),
-        ...set(dto.manageStockByWarehouse, {
-          manageStockByWarehouse: dto.manageStockByWarehouse,
-        }),
+          ...set(dto.netWeightKg, { netWeightKg: dto.netWeightKg }),
+          ...set(dto.grossWeightKg, { grossWeightKg: dto.grossWeightKg }),
+          ...set(dto.division, { division: dto.division }),
+          ...set(dto.coreActivity, { coreActivity: dto.coreActivity }),
+          ...set(dto.majorGroup, { majorGroup: dto.majorGroup }),
+          ...set(dto.brandName, { brandName: dto.brandName }),
+          ...set(dto.effectiveDate, { effectiveDate: toDate(dto.effectiveDate) }),
+          ...set(dto.customerStockNo, { customerStockNo: dto.customerStockNo }),
+          ...set(dto.stockToBe, { stockToBe: dto.stockToBe }),
+          ...set(dto.stockDioDays, { stockDioDays: dto.stockDioDays }),
+          ...set(dto.contractItemsFor, { contractItemsFor: dto.contractItemsFor }),
 
-        ...set(dto.remarks, { remarks: dto.remarks }),
-        ...set(dto.purchase, { purchaseJson: toJson(dto.purchase) }),
-        ...set(dto.sales, { salesJson: toJson(dto.sales) }),
-        ...set(dto.inventory, { inventoryJson: toJson(dto.inventory) }),
-        ...set(dto.planning, { planningJson: toJson(dto.planning) }),
-        ...set(dto.production, { productionJson: toJson(dto.production) }),
-        ...set(dto.properties, { propertiesJson: toJson(dto.properties) }),
-        ...set(dto.attachments, {
-          attachmentsJson: dto.attachments as Prisma.InputJsonValue | undefined,
-        }),
-        ...set(dto.metadata, { metadata: toJson(dto.metadata) }),
-        ...set(dto.isActive, { isActive: dto.isActive }),
+          ...set(dto.preferredVendorId, {
+            preferredVendorId: dto.preferredVendorId
+              ? parseBigIntId(dto.preferredVendorId, 'preferredVendorId')
+              : null,
+          }),
+          ...set(dto.valuationMethod, { valuationMethod: dto.valuationMethod }),
+          ...set(dto.itemCost, { itemCost: dto.itemCost }),
+          ...set(dto.manageStockByWarehouse, {
+            manageStockByWarehouse: dto.manageStockByWarehouse,
+          }),
 
-        updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
-        updatedAt: new Date(),
-      },
-      include: WAREHOUSE_STOCK_INCLUDE,
+          ...set(dto.remarks, { remarks: dto.remarks }),
+          ...set(dto.purchase, {
+            purchaseJson: mergeJsonBag(existing?.purchaseJson, dto.purchase),
+          }),
+          ...set(dto.sales, {
+            salesJson: mergeJsonBag(existing?.salesJson, dto.sales),
+          }),
+          ...set(dto.inventory, {
+            inventoryJson: mergeJsonBag(existing?.inventoryJson, dto.inventory),
+          }),
+          ...set(dto.planning, {
+            planningJson: mergeJsonBag(existing?.planningJson, dto.planning),
+          }),
+          ...set(dto.production, {
+            productionJson: mergeJsonBag(existing?.productionJson, dto.production),
+          }),
+          ...set(dto.properties, {
+            propertiesJson: mergeJsonBag(existing?.propertiesJson, dto.properties),
+          }),
+          ...set(dto.attachments, {
+            attachmentsJson: dto.attachments as Prisma.InputJsonValue | undefined,
+          }),
+          ...set(dto.metadata, {
+            metadata: mergeJsonBag(existing?.metadata, dto.metadata),
+          }),
+          ...set(dto.isActive, { isActive: dto.isActive }),
+
+          updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
+          updatedAt: new Date(),
+        },
+        include: WAREHOUSE_STOCK_INCLUDE,
+      });
     });
   }
 

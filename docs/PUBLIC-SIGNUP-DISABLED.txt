@@ -1,0 +1,34 @@
+================================================================================
+PUBLIC SIGNUP DISABLED — BE cleanup (2026-08-13)
+Status:     DONE
+================================================================================
+
+WHY
+  Users must enter only via company-admin invitation (or platform provisioning).
+  No public self-signup / Create Account.
+
+WHAT CHANGED
+  - DELETED POST /api/v1/auth/signup handler → clients get 404
+  - Removed AuthService.signUp()
+  - Removed SignUpDto / SignUpSchema
+  - Removed AuthRepository.createSignupTransaction()
+  - Swagger no longer lists public signup
+  - Docs updated: API-URL-INDEX, FRONTEND-INTEGRATION, CURRENT-MULTI-TENANT-FLOW
+
+KEPT (do not break)
+  - POST /auth/login, refresh, logout, me, companies, switch-company
+  - POST /auth/change-password
+  - POST /companies/:companyId/users/invite
+  - Employee create
+  - Platform / super-admin company provisioning
+  - ensurePermissionsSeeded (login/me)
+  - DEFAULT_ADMIN_PERMISSIONS constant (may be used by platform paths)
+
+ACCEPTANCE
+  [x] POST /auth/signup → 404 (route gone)
+  [x] Login / invite / change-password unchanged in code
+  [x] Unit check: auth.controller.signup.spec.ts
+
+================================================================================
+END
+================================================================================

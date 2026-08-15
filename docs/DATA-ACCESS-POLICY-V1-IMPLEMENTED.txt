@@ -1,0 +1,67 @@
+================================================================================
+BACKEND DELIVERY — DATA ACCESS POLICY V1 (spec alignment)
+Date:       2026-08-12
+================================================================================
+
+WHAT
+--------------------------------------------------------------------------------
+Aligned existing Access Policies feature to the ERP SaaS Data Access Policy
+V1 specification:
+
+  WHAT = Role → Permissions (unchanged)
+  WHERE = User → Data Access Policies → Branch / Department / Warehouse
+
+Permission Sets were NOT introduced or expanded for this work.
+
+
+SCHEMA
+--------------------------------------------------------------------------------
+Migration: prisma/migrations/20260812190000_data_access_policy_v1/
+
+  + data_access_policy_branches
+  + data_access_policy_departments
+  + data_access_policy_warehouses
+  - data_access_policy_scopes (data migrated then dropped)
+  - enum data_scope_type
+  * data_access_policies.code → NOT NULL
+  * user_data_access_policies.updated_at
+
+
+APIs
+--------------------------------------------------------------------------------
+  CRUD  /companies/:companyId/data-access-policies
+        body: code, name, description?, isActive?, branchIds[], departmentIds[], warehouseIds[]
+
+  GET   /companies/:companyId/users/:userId/data-access-policies
+  POST  /companies/:companyId/users/:userId/data-access-policies   { policyId }
+  DELETE .../users/:userId/data-access-policies/:policyId
+  PUT   .../users/:userId/data-access-policies   { policyIds[] }  (legacy replace)
+
+
+SERVICE
+--------------------------------------------------------------------------------
+  resolveUserDataScope() → { isRestricted, branchIds, departmentIds, warehouseIds }
+  canAccessRecord({ userId, companyId, branchId?, departmentId?, warehouseId? })
+  assertWarehouseScope() uses canAccessRecord
+
+  Items warehouse pilot uses isRestricted (empty union = no rows / write deny)
+
+
+TESTS
+--------------------------------------------------------------------------------
+  npx jest src/modules/iam/data-access-policies/data-access-policies.service.spec.ts
+
+
+ROLLOUT
+--------------------------------------------------------------------------------
+  1. Stop Nest
+  2. npx prisma generate
+  3. npx prisma migrate deploy
+  4. Start Nest
+  5. FE update to branchIds/departmentIds/warehouseIds (see FE-HANDOFF doc)
+  6. ADMIN logout/login for permission codes if needed
+
+
+================================================================================
+END
+================================================================================

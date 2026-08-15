@@ -1,0 +1,57 @@
+================================================================================
+FE ↔ BE MATCH — Item Code AUTO / MANUAL mode
+Date:       2026-08-13
+Status:     MATCHED / CLOSED (FE confirmed 2026-08-13)
+================================================================================
+
+
+1) COMPANY SETTING (default AUTO)
+--------------------------------------------------------------------------------
+
+  GET    /api/v1/companies/:companyId/items/settings
+  PATCH  /api/v1/companies/:companyId/items/settings
+
+  {
+    "itemCodeMode": "AUTO" | "MANUAL",
+    "itemCodePrefix": "ITM"
+  }
+
+  FE:
+    - Loads settings when Create Item opens → sets Auto / Manual toggle
+    - Toggle change → PATCH settings (company mode is source of truth)
+    - Shows prefix hint for AUTO: ITM-000001, …
+
+
+2) CREATE ITEM
+--------------------------------------------------------------------------------
+
+  POST /api/v1/companies/:companyId/items
+
+  AUTO (company setting):
+    - FE omits itemCode
+    - BE ignores any sent code; generates ITM-000001…
+    - Success toast shows final itemCode
+
+  MANUAL (company setting):
+    - FE requires + sends itemCode
+    - Missing → 400 field error
+    - Duplicate → 409 "Item code already exists" (inline on Item Code)
+
+
+3) UPDATE ITEM
+--------------------------------------------------------------------------------
+
+  PATCH never sends itemCode (immutable). FE edit shows locked chip.
+
+
+4) ROLLOUT (BE)
+--------------------------------------------------------------------------------
+
+  npx prisma generate
+  npx prisma migrate deploy   → 20260813184500_item_code_mode
+  Restart Nest
+
+
+================================================================================
+END
+================================================================================

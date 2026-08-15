@@ -1,0 +1,82 @@
+================================================================================
+BACKEND IMPLEMENTED — CURRENT SECURITY FIXES
+Date:       2026-08-11
+Status:     APPLIED (restart nest to load)
+Priority:   P0 isolation  |  P2 role-delete  |  P2 last-admin
+================================================================================
+
+FIX 1 — TENANT / COMPANY ISOLATION (P0)
+---------------------------------------
+  Helper:
+    src/common/utils/company-access.util.ts
+    src/common/utils/company-access.util.spec.ts
+
+  Rule:
+    if (user.companyId && pathCompanyId !== user.companyId)
+      → 403 "Company context mismatch"
+    no JWT companyId (platform / super-admin) → ALLOW
+    repositories still query by path companyId
+
+  Wired on every verb of:
+    GET/POST/PATCH/PUT/DELETE
+      /companies/:companyId/roles
+      /companies/:companyId/branches
+      /companies/:companyId/departments
+      /companies/:companyId/designations
+      /companies/:companyId/warehouses
+      /companies/:companyId/users   (shared helper, not a private method)
+
+
+FIX 4 — ROLE DELETE SAFETY (P2)
+-------------------------------
+  DELETE /companies/:companyId/roles/:id
+
+  Before soft-delete:
+    1. isSystem → 409 "System roles cannot be deleted"
+    2. active assignees (user_roles isActive + user.deletedAt null) > 0
+         → 409 "This role is currently assigned to N user(s).
+                Reassign the users before deleting this role."
+
+
+FIX 5 — LAST ADMIN PROTECTION (P2)
+----------------------------------
+  Admin = company roleCode === 'ADMIN'  (not designation, not tenantAdmin)
+
+  Blocked with 409
+    "You cannot remove or deactivate the last administrator of this company."
+  when this user is ADMIN and other active admins === 0:
+
+    DELETE  /companies/:companyId/users/:userId
+    PUT     /companies/:companyId/users/:userId/role
+            if current is ADMIN AND next roleCode !== 'ADMIN'
+            (includes roleId: null)
+    PATCH   /companies/:companyId/users/:userId/status
+            if status === 'suspended'
+
+  status = active is always allowed.
+  DELETE also requires the user to be a member of that company.
+
+
+NOT CHANGED
+-----------
+  Permission catalog / JWT / new routes
+  Role vs designation models
+  Invite / list item shape
+  Membership PATCH does not change role
+
+
+VERIFY
+------
+  [ ] Tenant JWT companyId=15 → /companies/99/roles → 403
+  [ ] Same user → /companies/15/roles → 200
+  [ ] Platform user (no companyId) → /companies/15/roles → 200
+  [ ] Delete custom role with assignees → 409 (count in message)
+  [ ] Delete unused custom role → 200
+  [ ] Last ADMIN remove / change role / suspend → 409
+  [ ] Second ADMIN exists → those actions → 200
+
+  Restart: npm run start:dev
+
+================================================================================
+END
+================================================================================

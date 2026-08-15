@@ -10,7 +10,6 @@ import {
   LoginDto,
   RefreshTokenDto,
   ResolveCompanyDto,
-  SignUpDto,
   SwitchCompanyDto,
 } from './dto/auth.dto';
 import { REFRESH_COOKIE_OPTIONS, REFRESH_TOKEN_COOKIE } from './auth.constants';
@@ -44,18 +43,6 @@ export class AuthController {
   @ApiOperation({ summary: 'Resolve company by code (pre-login)' })
   resolveCompany(@Query() query: ResolveCompanyDto) {
     return this.authService.getPublicCompanyByCode(query.companyCode);
-  }
-
-  @Public()
-  @Post('signup')
-  @ApiOperation({ summary: 'Sign up — create user and company' })
-  async signUp(@Body() dto: SignUpDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.signUp(dto, clientMeta(req));
-    if (result.refreshToken) {
-      setRefreshCookie(res, result.refreshToken);
-    }
-    const { refreshToken: _rt, ...body } = result;
-    return body;
   }
 
   @Public()

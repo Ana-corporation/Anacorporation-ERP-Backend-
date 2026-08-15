@@ -4,6 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CreateDepartmentDto, UpdateDepartmentDto } from './dto/department.dto';
 import { DepartmentsService } from './departments.service';
 
@@ -16,14 +17,24 @@ export class DepartmentsController {
   @Get()
   @RequirePermissions('departments:view')
   @ApiOperation({ summary: 'List departments for company' })
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.departmentsService.findAll(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('departments:view')
   @ApiOperation({ summary: 'Get department by ID' })
-  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.departmentsService.findOne(id, companyId);
   }
 
@@ -35,6 +46,7 @@ export class DepartmentsController {
     @Body() dto: CreateDepartmentDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.departmentsService.create(companyId, dto, user.sub);
   }
 
@@ -47,6 +59,7 @@ export class DepartmentsController {
     @Body() dto: UpdateDepartmentDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.departmentsService.update(id, companyId, dto, user.sub);
   }
 
@@ -58,6 +71,7 @@ export class DepartmentsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.departmentsService.remove(id, companyId, user.sub);
   }
 }

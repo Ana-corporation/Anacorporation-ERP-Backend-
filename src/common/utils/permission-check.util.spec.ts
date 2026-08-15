@@ -115,5 +115,14 @@ describe('permission-check.util', () => {
       });
       expect(checkPermissionCode(user, 'users:read')).toBe(false);
     });
+
+    it('accepts platform-owner plans:view as subscription_plans:view', () => {
+      const user = makeUser({
+        role: 'PLATFORM_OWNER',
+        permissions: ['plans:view', 'modules:view'],
+      });
+      expect(checkPermissionCode(user, 'subscription_plans:view')).toBe(true);
+      expect(checkPermissionCode(user, 'subscription_modules:view')).toBe(true);
+    });
   });
 });

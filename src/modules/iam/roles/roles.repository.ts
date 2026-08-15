@@ -196,4 +196,15 @@ export class RolesRepository {
       select: { userId: true },
     });
   }
+
+  countActiveAssignees(companyId: string, roleId: string) {
+    return this.prisma.userRole.count({
+      where: {
+        companyId: parseBigIntId(companyId),
+        roleId: parseBigIntId(roleId),
+        isActive: true,
+        user: { deletedAt: null },
+      },
+    });
+  }
 }

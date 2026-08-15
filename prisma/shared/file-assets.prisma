@@ -1,0 +1,23 @@
+// shared | file_assets (provider-agnostic file metadata)
+
+model FileAsset {
+  id             String     @id @default(uuid()) @map("id") @db.Uuid
+  organizationId String     @map("organization_id") @db.VarChar(40)
+  fileName       String     @map("file_name") @db.VarChar(255)
+  originalName   String     @map("original_name") @db.VarChar(255)
+  mimeType       String     @map("mime_type") @db.VarChar(120)
+  sizeBytes      Int        @map("size_bytes")
+  storageKey     String     @map("storage_key") @db.VarChar(500)
+  bucket         String     @db.VarChar(120)
+  publicUrl      String?    @map("public_url") @db.VarChar(1000)
+  status         FileStatus @default(PENDING)
+  entityType     String?    @map("entity_type") @db.VarChar(40)
+  entityId       String?    @map("entity_id") @db.VarChar(40)
+  uploadedById   String?    @map("uploaded_by_id") @db.VarChar(40)
+  createdAt      DateTime   @default(now()) @map("created_at")
+  deletedAt      DateTime?  @map("deleted_at")
+
+  @@index([organizationId])
+  @@index([organizationId, entityType, entityId])
+  @@map("file_assets")
+}

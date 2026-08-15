@@ -25,9 +25,34 @@ export const bigintIdSchema = z.preprocess((value) => {
   return value;
 }, z.string().regex(/^\d+$/, 'Invalid id'));
 
+/** Required field that may be null — coerces number→string; '' / null → null. */
+export const nullableBigintIdSchema = z.preprocess((value) => {
+  if (value === '' || value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0) {
+    return String(value);
+  }
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'string') return value.trim();
+  return value;
+}, z.union([z.string().regex(/^\d+$/, 'Invalid id'), z.null()]));
+
 /** Optional/nullable id — coerces number→string; '' / null / undefined → null. */
 export const optionalNullableBigintIdSchema = z.preprocess((value) => {
   if (value === '' || value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0) {
+    return String(value);
+  }
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'string') return value.trim();
+  return value;
+}, z.union([z.string().regex(/^\d+$/, 'Invalid id'), z.null()]).optional());
+
+/**
+ * PATCH-safe optional id: omit = leave unchanged, null/'' = clear, number/string = set.
+ */
+export const optionalPatchBigintIdSchema = z.preprocess((value) => {
+  if (value === undefined) return undefined;
+  if (value === '' || value === null) return null;
   if (typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0) {
     return String(value);
   }

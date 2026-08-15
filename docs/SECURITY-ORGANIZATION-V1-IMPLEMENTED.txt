@@ -1,0 +1,174 @@
+================================================================================
+BACKEND DELIVERY — SECURITY & ORGANIZATION V1
+Date:       2026-08-12
+Scope:      Backend only
+Status:     Implemented (build passing)
+================================================================================
+
+1) SCHEMA MIGRATIONS LIST
+--------------------------------------------------------------------------------
+
+Added migration:
+  - prisma/migrations/20260812153000_security_org_v1/migration.sql
+    Creates:
+      permission_sets
+      permission_set_permissions
+      role_permission_sets
+      data_access_policies
+      data_access_policy_scopes
+      user_data_access_policies
+    Adds enum:
+      data_scope_type (branch | department | warehouse)
+
+Already present employee migration remains:
+  - prisma/migrations/20260812120000_employees/migration.sql
+
+Prisma model updates:
+  - prisma/enums.prisma
+  - prisma/iam/roles.prisma
+  - prisma/iam/permissions.prisma
+  - prisma/iam/users.prisma
+  - prisma/organization/companies.prisma
+  - prisma/organization/employees.prisma
+  - prisma/iam/permission-sets.prisma
+  - prisma/iam/permission-set-permissions.prisma
+  - prisma/iam/role-permission-sets.prisma
+  - prisma/iam/data-access-policies.prisma
+  - prisma/iam/data-access-policy-scopes.prisma
+  - prisma/iam/user-data-access-policies.prisma
+
+
+2) API ENDPOINTS ADDED / CHANGED
+--------------------------------------------------------------------------------
+
+Added — Permission Sets
+  GET    /api/v1/companies/:companyId/permission-sets
+  POST   /api/v1/companies/:companyId/permission-sets
+  GET    /api/v1/companies/:companyId/permission-sets/:id
+  PATCH  /api/v1/companies/:companyId/permission-sets/:id
+  DELETE /api/v1/companies/:companyId/permission-sets/:id
+
+Added — Role -> Permission Sets
+  GET    /api/v1/companies/:companyId/roles/:roleId/permission-sets
+  PUT    /api/v1/companies/:companyId/roles/:roleId/permission-sets
+
+Added — Data Access Policies
+  GET    /api/v1/companies/:companyId/data-access-policies
+  POST   /api/v1/companies/:companyId/data-access-policies
+  GET    /api/v1/companies/:companyId/data-access-policies/:id
+  PATCH  /api/v1/companies/:companyId/data-access-policies/:id
+  DELETE /api/v1/companies/:companyId/data-access-policies/:id
+
+Added — User Policy Assignment
+  GET    /api/v1/companies/:companyId/users/:userId/data-access-policies
+  PUT    /api/v1/companies/:companyId/users/:userId/data-access-policies
+
+Changed — Effective permission computation
+  - Auth permission union now includes:
+      direct role_permissions + permission sets linked to the role
+  - Affects login/me context and guard permission source (permissions[] remains same shape)
+
+Changed — Tenant isolation hardening (assertCompanyAccess applied)
+  - subscription company modules/subscriptions controllers
+  - purchase vendors controller
+  - inventory item-master controller
+  - organization company security policies controller
+  - shared custom-fields company scoped controllers
+  - existing org/iam company controllers remain enforced
+
+Changed — Scope pilot integration
+  - inventory item-master:
+      * write: warehouse stock upsert/remove denied when warehouse out-of-scope
+      * read: item warehouseStock filtered by warehouse scope when policies exist
+
+
+3) PERMISSION CODES ADDED
+--------------------------------------------------------------------------------
+
+Added to catalog:
+  - permission_sets:view
+  - permission_sets:create
+  - permission_sets:edit
+  - permission_sets:delete
+  - data_access_policies:view
+  - data_access_policies:create
+  - data_access_policies:edit
+  - data_access_policies:delete
+
+No existing permission codes removed.
+
+
+4) FILES CHANGED (THIS IMPLEMENTATION)
+--------------------------------------------------------------------------------
+
+Core auth/effective permissions:
+  - src/modules/iam/authentication/auth.repository.ts
+  - src/modules/iam/authentication/company-access-context.repository.ts
+  - src/modules/iam/authentication/company-access-context.service.ts
+
+IAM modules:
+  - src/modules/iam/iam.module.ts
+  - src/modules/iam/permission-sets/*
+  - src/modules/iam/data-access-policies/*
+
+Tenant isolation hardening:
+  - src/modules/subscription/company-modules/company-modules.controller.ts
+  - src/modules/subscription/company-subscriptions/company-subscriptions.controller.ts
+  - src/modules/purchase/vendors/vendors.controller.ts
+  - src/modules/inventory/item-master/items.controller.ts
+  - src/modules/organization/company-security-policies/company-security-policies.controller.ts
+  - src/modules/shared/custom-fields/custom-fields-definitions.controller.ts
+  - src/modules/shared/custom-fields/form-schema.controller.ts
+
+Scope pilot wiring:
+  - src/modules/inventory/item-master/items.module.ts
+  - src/modules/inventory/item-master/items.service.ts
+
+Permission catalog:
+  - src/common/constants/permissions.constant.ts
+
+Prisma:
+  - files listed in section (1)
+
+
+5) TEST RESULTS
+--------------------------------------------------------------------------------
+
+Executed:
+  - npm run build                                  ✅ PASS
+  - npx jest src/common/utils/company-access.util.spec.ts --no-coverage  ✅ PASS
+
+Notes:
+  - Prisma client generation done with PRISMA_GENERATE_NO_ENGINE=1 in this environment
+    due Windows file lock on query_engine DLL. Types generated successfully.
+
+
+6) MIGRATION / BACKFILL NOTES
+--------------------------------------------------------------------------------
+
+Required rollout steps:
+  1. npx prisma generate
+  2. npx prisma migrate deploy
+  3. Restart backend
+
+Backfill:
+  - No destructive backfill required for existing roles/users.
+  - Existing role_permissions remain intact (V1 requirement kept).
+  - Permission sets and data policies are additive and start empty.
+  - Existing invite/login/temp-password flow remains unchanged.
+  - ensurePermissionsSeeded() runs on:
+      * signup (via getAllPermissions)
+      * login / refresh / switch-company (createAuthSession)  ← P0 FE fix 2026-08-12
+      * GET /auth/me
+    It upserts Security Org V1 catalog rows and grants the 8 codes to every
+    role with roleCode === 'ADMIN' (skipDuplicates). DEMO_ACME ADMIN001 uses
+    roleCode 'ADMIN'. After BE restart: logout + login ADMIN001 → permissions[]
+    includes data_access_policies:view|create|edit|delete.
+
+FE ↔ BE MATCH (2026-08-12): Confirmed MATCHED
+  - Paths, bodies (permissionCodes / permissionSetIds / scopes / policyIds),
+    gates, and permissions[] shape align with FE clients. No path drift.
+
+================================================================================
+END
+================================================================================

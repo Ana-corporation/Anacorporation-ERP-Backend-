@@ -4,6 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CreateCompanySubscriptionDto, UpdateCompanySubscriptionDto } from './dto/company-subscription.dto';
 import { CompanySubscriptionsService } from './company-subscriptions.service';
 
@@ -16,14 +17,24 @@ export class CompanySubscriptionsController {
   @Get()
   @RequirePermissions('company_subscriptions:view')
   @ApiOperation({ summary: 'List subscriptions for company' })
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.companySubscriptionsService.findAll(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('company_subscriptions:view')
   @ApiOperation({ summary: 'Get company subscription by ID' })
-  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.companySubscriptionsService.findOne(id, companyId);
   }
 
@@ -35,6 +46,7 @@ export class CompanySubscriptionsController {
     @Body() dto: CreateCompanySubscriptionDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companySubscriptionsService.create(companyId, dto, user.sub);
   }
 
@@ -47,6 +59,7 @@ export class CompanySubscriptionsController {
     @Body() dto: UpdateCompanySubscriptionDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companySubscriptionsService.update(id, companyId, dto, user.sub);
   }
 
@@ -58,6 +71,7 @@ export class CompanySubscriptionsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companySubscriptionsService.remove(id, companyId, user.sub);
   }
 }

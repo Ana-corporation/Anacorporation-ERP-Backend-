@@ -15,18 +15,24 @@
 1. BACKEND STATUS — WHAT IS READY
 ================================================================================
 
-All endpoints required for Phase 1 tenant login/signup/session are live:
+All endpoints required for Phase 1 tenant login/session are live:
 
   #   Method   Endpoint                  Auth        Status
   --  -------  ------------------------  ----------  ------
   1   GET      /auth/company             Public      READY
   2   POST     /auth/login               Public      READY
-  3   POST     /auth/signup              Public      READY
-  4   GET      /auth/me                  Bearer      READY
-  5   GET      /auth/companies           Bearer      READY
-  6   POST     /auth/switch-company      Bearer      READY
-  7   POST     /auth/refresh             Cookie      READY
-  8   POST     /auth/logout              Bearer      READY
+  3   GET      /auth/me                  Bearer      READY
+  4   GET      /auth/companies           Bearer      READY
+  5   POST     /auth/switch-company      Bearer      READY
+  6   POST     /auth/refresh             Cookie      READY
+  7   POST     /auth/logout              Bearer      READY
+  8   POST     /auth/change-password     Bearer      READY
+
+  REMOVED (2026-08-13): POST /auth/signup
+    Public self-signup is disabled. Route deleted → 404.
+    Replacement: company-admin invite
+      POST /companies/:companyId/users/invite
+    Then: login → change-password if mustChangePassword
 
 Optional (not needed for Phase 1 tenant UI):
   - Super admin:  POST /super-admins/auth/login, GET/PATCH /super-admin/companies/*

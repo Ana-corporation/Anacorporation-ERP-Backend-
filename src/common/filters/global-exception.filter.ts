@@ -40,8 +40,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         extra = rest;
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
-      this.logger.error(exception.message, exception.stack);
+      const multerCode =
+        typeof exception === 'object' && exception !== null && 'code' in exception
+          ? String((exception as { code?: unknown }).code ?? '')
+          : '';
+
+      if (multerCode === 'LIMIT_FILE_SIZE') {
+        status = HttpStatus.BAD_REQUEST;
+        message = 'File too large (max 10 MB)';
+      } else if (multerCode.startsWith('LIMIT_')) {
+        status = HttpStatus.BAD_REQUEST;
+        message = exception.message || 'Invalid file upload';
+      } else {
+        message = exception.message;
+        this.logger.error(exception.message, exception.stack);
+      }
     }
 
     response.status(status).json({

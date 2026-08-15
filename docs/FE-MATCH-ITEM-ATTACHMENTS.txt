@@ -1,0 +1,93 @@
+================================================================================
+FE ↔ BE MATCH — Item Master file attachments (real upload)
+Date:       2026-08-13
+Status:     COMPLETED / CLOSED (FE matched 2026-08-13)
+================================================================================
+
+
+0) STATUS
+--------------------------------------------------------------------------------
+
+  BE implemented + FE wired. Feed closed.
+  FE status note: docs/company-setup/tes/FE-ITEM-ATTACHMENTS-MATCH-STATUS.txt
+    (FE repo)
+
+  Confirmed flows:
+    Create: POST item → POST attachments → PATCH attachments metadata
+    Edit:   upload on pick → Save PATCH metadata
+    Download: GET …/attachments/:fileAssetId/url when fileAssetId present
+
+
+1) APIs (live)
+--------------------------------------------------------------------------------
+
+  POST   /api/v1/companies/:companyId/items/:itemId/attachments
+         multipart/form-data
+         fields: files (repeatable) and/or file
+         Permission: supply-chain edit
+         Max 10 MB / file
+         Allowed: pdf, doc, docx, xls, xlsx, csv, jpg, jpeg, png, webp
+
+  Response data:
+  {
+    "attachments": [
+      {
+        "fileAssetId": "uuid",
+        "fileName": "datasheet.pdf",
+        "mimeType": "application/pdf",
+        "fileSize": 123456,
+        "storageKey": "...",
+        "publicUrl": "..." | null,
+        "attachmentDate": "YYYY-MM-DD",
+        "status": "uploaded"
+      }
+    ]
+  }
+
+  DELETE /api/v1/companies/:companyId/items/:itemId/attachments/:fileAssetId
+         Permission: supply-chain edit
+         → { success: true, message: "Attachment deleted", data: null }
+
+  GET    /api/v1/companies/:companyId/items/:itemId/attachments/:fileAssetId/url
+         Permission: supply-chain view
+         → { url: "<signed>" }
+
+
+2) FE FLOW
+--------------------------------------------------------------------------------
+
+  Create:
+    1. POST /items
+    2. POST /items/:id/attachments  (multipart)
+    3. PATCH /items/:id { attachments: [ metadata with fileAssetId… ] }
+
+  Edit:
+    1. POST attachments when user picks files
+    2. Include metadata on Save (PATCH)
+
+  attachments[] on create/PATCH remains open JSON array (keys not stripped).
+
+
+3) BE INTERNALS
+--------------------------------------------------------------------------------
+
+  - Reuses StorageService + StorageProvider (GCS behind interface)
+  - New table: file_assets (+ enum file_status)
+  - Migration: prisma/migrations/20260813160000_file_assets/
+  - StorageModule registered in AppModule
+
+
+4) ROLLOUT (if not already applied)
+--------------------------------------------------------------------------------
+
+  Stop Nest, then:
+    npx prisma generate
+    npx prisma migrate deploy
+    npm run start:dev
+
+  Requires GCS_* env (project, bucket, key file) for real uploads.
+
+
+================================================================================
+END
+================================================================================

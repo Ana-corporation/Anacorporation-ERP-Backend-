@@ -23,8 +23,8 @@ export class UsersController {
   @Get(':id')
   @RequirePermissions('users:view')
   @ApiOperation({ summary: 'Get user by ID' })
-  findOne(@Param('id') id: string) {
-    return this.usersService.findOne(id);
+  findOne(@Param('id') id: string, @CompanyId() companyId: string) {
+    return this.usersService.findOne(id, companyId);
   }
 
   @Post()

@@ -1,0 +1,44 @@
+// organization | employees
+// Employee is an HR/org entity and can exist before login user.
+// userId stays nullable by design.
+
+model Employee {
+  employeeId                  BigInt           @id @default(autoincrement()) @map("employee_id")
+  companyId                   BigInt           @map("company_id")
+  userId                      BigInt?          @map("user_id")
+  employeeCode                String           @map("employee_code") @db.VarChar(40)
+  firstName                   String           @map("first_name") @db.VarChar(100)
+  lastName                    String?          @map("last_name") @db.VarChar(100)
+  email                       String?          @db.VarChar(255)
+  mobile                      String?          @db.VarChar(30)
+  branchId                    BigInt?          @map("branch_id")
+  departmentId                BigInt?          @map("department_id")
+  designationId               BigInt?          @map("designation_id")
+  reportingManagerId          BigInt?          @map("reporting_manager_id")
+  joiningDate                 DateTime?        @map("joining_date") @db.Date
+  employmentType              EmploymentType?  @map("employment_type")
+  employmentStatus            EmploymentStatus @default(active) @map("employment_status")
+  profilePhoto                String?          @map("profile_photo") @db.VarChar(500)
+  profileCompletionPercentage Int              @default(0) @map("profile_completion_percentage") @db.SmallInt
+  createdBy                   BigInt?          @map("created_by")
+  createdAt                   DateTime         @default(now()) @map("created_at")
+  updatedBy                   BigInt?          @map("updated_by")
+  updatedAt                   DateTime?        @map("updated_at")
+  deletedBy                   BigInt?          @map("deleted_by")
+  deletedAt                   DateTime?        @map("deleted_at")
+  rowVersion                  Int              @default(1) @map("row_version")
+
+  company          Company      @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  user             User?        @relation(fields: [userId], references: [userId], onDelete: SetNull)
+  branch           Branch?      @relation(fields: [branchId], references: [branchId])
+  department       Department?  @relation(fields: [departmentId], references: [departmentId])
+  designation      Designation? @relation(fields: [designationId], references: [designationId])
+  reportingManager Employee?    @relation("EmployeeReporting", fields: [reportingManagerId], references: [employeeId])
+  directReports    Employee[]   @relation("EmployeeReporting")
+
+  @@unique([companyId, employeeCode])
+  @@index([companyId])
+  @@index([userId])
+  @@index([companyId, employmentStatus])
+  @@map("employees")
+}

@@ -18,6 +18,7 @@ model Role {
 
   company         Company?         @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   rolePermissions RolePermission[]
+  rolePermissionSets RolePermissionSet[]
   userRoles       UserRole[]
 
   @@unique([companyId, roleCode])

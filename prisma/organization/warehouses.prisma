@@ -21,6 +21,7 @@ model Warehouse {
   userCompanies        UserCompany[]
   userPreferences      UserPreference[]
   itemStock            ItemWarehouseStock[]
+  dataAccessPolicyWarehouses DataAccessPolicyWarehouse[]
 
   @@unique([companyId, warehouseCode])
   @@index([companyId])

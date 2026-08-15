@@ -64,7 +64,7 @@ export class CompanySecurityPoliciesRepository {
         lockoutDurationMin: dto.lockoutDurationMin ?? 30,
         allowMultipleLogins: dto.allowMultipleLogins ?? true,
         maxConcurrentSessions: dto.maxConcurrentSessions,
-        sessionTimeoutMin: dto.sessionTimeoutMin ?? 60,
+        sessionTimeoutMin: dto.sessionTimeoutMin ?? 480,
         licenseType: dto.licenseType ?? 'named',
         totalLicenses: dto.totalLicenses,
         createdBy: createdBy ? parseBigIntId(createdBy) : undefined,

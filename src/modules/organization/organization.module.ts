@@ -5,6 +5,7 @@ import { BranchesModule } from './branches/branches.module';
 import { DepartmentsModule } from './departments/departments.module';
 import { DesignationsModule } from './designations/designations.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
+import { EmployeesModule } from './employees/employees.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { WarehousesModule } from './warehouses/warehouses.module';
     DepartmentsModule,
     DesignationsModule,
     WarehousesModule,
+    EmployeesModule,
     CompanySecurityPoliciesModule,
   ],
   exports: [
@@ -21,6 +23,7 @@ import { WarehousesModule } from './warehouses/warehouses.module';
     DepartmentsModule,
     DesignationsModule,
     WarehousesModule,
+    EmployeesModule,
     CompanySecurityPoliciesModule,
   ],
 })

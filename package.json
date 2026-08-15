@@ -31,6 +31,7 @@
     "seed:erp-modules": "node scripts/seed-erp-product-modules.js",
     "seed:phase1-login": "node scripts/seed-phase1-login-user.js",
     "seed:client-logins": "node scripts/seed-client-login-samples.js",
+    "seed:demo-items": "node scripts/seed-demo-items-post.js",
     "seed:org-permissions": "node scripts/sync-org-structure-permissions.js"
   },
   "dependencies": {
@@ -68,6 +69,7 @@
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.10.2",
     "@types/passport-jwt": "^4.0.1",
     "@types/uuid": "^10.0.0",

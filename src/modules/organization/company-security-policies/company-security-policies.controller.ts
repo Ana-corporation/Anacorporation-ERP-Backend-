@@ -4,6 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CreateCompanySecurityPolicyDto, UpdateCompanySecurityPolicyDto } from './dto/company-security-policy.dto';
 import { CompanySecurityPoliciesService } from './company-security-policies.service';
 
@@ -16,14 +17,24 @@ export class CompanySecurityPoliciesController {
   @Get()
   @RequirePermissions('company_security_policies:view')
   @ApiOperation({ summary: 'List security policies for company' })
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.companySecurityPoliciesService.findAll(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('company_security_policies:view')
   @ApiOperation({ summary: 'Get company security policy by ID' })
-  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.companySecurityPoliciesService.findOne(id, companyId);
   }
 
@@ -35,6 +46,7 @@ export class CompanySecurityPoliciesController {
     @Body() dto: CreateCompanySecurityPolicyDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companySecurityPoliciesService.create(companyId, dto, user.sub);
   }
 
@@ -47,6 +59,7 @@ export class CompanySecurityPoliciesController {
     @Body() dto: UpdateCompanySecurityPolicyDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companySecurityPoliciesService.update(id, companyId, dto, user.sub);
   }
 
@@ -58,6 +71,7 @@ export class CompanySecurityPoliciesController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companySecurityPoliciesService.remove(id, companyId, user.sub);
   }
 }

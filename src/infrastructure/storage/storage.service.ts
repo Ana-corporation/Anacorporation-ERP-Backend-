@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { FileStatus } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { StorageProvider } from './storage-provider.interface';
 import { GcsStorageProvider } from './gcs-storage.provider';
 import { v4 as uuidv4 } from 'uuid';
-import { AuditAction, FileStatus } from '@prisma/client';
 
 export interface StoreFileInput {
   organizationId: string;
@@ -72,21 +72,34 @@ export class StorageService {
     }
   }
 
-  async getSignedUrl(organizationId: string, fileId: string) {
-    const file = await this.prisma.fileAsset.findFirst({
-      where: { id: fileId, organizationId, deletedAt: null },
+  async findFile(
+    organizationId: string,
+    fileId: string,
+    opts?: { entityType?: string; entityId?: string },
+  ) {
+    return this.prisma.fileAsset.findFirst({
+      where: {
+        id: fileId,
+        organizationId,
+        deletedAt: null,
+        ...(opts?.entityType ? { entityType: opts.entityType } : {}),
+        ...(opts?.entityId ? { entityId: opts.entityId } : {}),
+      },
     });
+  }
 
+  async getSignedUrl(organizationId: string, fileId: string) {
+    const file = await this.findFile(organizationId, fileId);
     if (!file) return null;
-
     return this.storageProvider.getSignedUrl({ key: file.storageKey });
   }
 
-  async deleteFile(organizationId: string, fileId: string) {
-    const file = await this.prisma.fileAsset.findFirst({
-      where: { id: fileId, organizationId, deletedAt: null },
-    });
-
+  async deleteFile(
+    organizationId: string,
+    fileId: string,
+    opts?: { entityType?: string; entityId?: string },
+  ) {
+    const file = await this.findFile(organizationId, fileId, opts);
     if (!file) return null;
 
     await this.storageProvider.delete(file.storageKey);

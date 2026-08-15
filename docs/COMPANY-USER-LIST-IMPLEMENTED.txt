@@ -1,0 +1,66 @@
+================================================================================
+BACKEND IMPLEMENTED — COMPANY USER LIST
+Date:       2026-08-11
+Status:     APPLIED
+Related:    FE handoff COMPANY USER LIST (P0)
+================================================================================
+
+WHAT CHANGED
+------------
+Same endpoint. New item shape = invite `data.user`.
+
+  GET /api/v1/companies/:companyId/users?page=1&limit=100
+  Permission: users:view
+
+Each item now includes:
+  userId, username, displayName, firstName, lastName, email, mobile, isActive
+  membership { userCompanyId, employeeId, departmentId, designationId,
+               branchId, warehouseId, status, isDefault }
+  role      { roleId, roleCode, roleName }  or null
+
+IDs are strings. Paginated wrapper unchanged:
+  { items, total, page, limit, totalPages }
+
+
+FILES
+-----
+  src/modules/iam/users/users.repository.ts
+    findManyByCompany() now includes THIS company's membership + active role
+
+  src/modules/iam/users/users.service.ts
+    findAll() maps with toInviteUserPayload() — same helper as invite
+    findOne() (company-scoped) also returns that same object
+
+  src/modules/iam/users/company-users.controller.ts
+    GET :userId now passes companyId into findOne
+
+  src/modules/iam/users/users.controller.ts
+    GET /users/:id also uses company-scoped payload
+
+
+NOT CHANGED
+-----------
+  POST   /companies/:companyId/users/invite
+  PATCH  /companies/:companyId/users/:userId
+  PUT    /companies/:companyId/users/:userId/role
+  DELETE /companies/:companyId/users/:userId
+
+  No username/password on invite.
+  List is all company members (not only the caller).
+  Invited users are included.
+  No extra roleId query filter (FE filters in browser).
+
+
+TEST
+----
+  1. Restart backend: npm run start:dev
+  2. Login as Demo Admin (DEMO_ACME)
+  3. GET /api/v1/companies/15/users?page=1&limit=100
+       Expect total >= 14
+       Each item has membership + role (or role: null)
+  4. Users tab shows all members, Role + Employee ID columns filled
+  5. Invite still works; new user appears on list refresh
+
+================================================================================
+END
+================================================================================

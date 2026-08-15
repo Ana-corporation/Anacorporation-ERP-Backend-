@@ -25,6 +25,7 @@ export interface CompanyAccessSubscriptionSummary {
   status: string;
   planCode: string | null;
   planName: string | null;
+  startDate: string | null;
   endDate: string | null;
   isCustom: boolean;
 }

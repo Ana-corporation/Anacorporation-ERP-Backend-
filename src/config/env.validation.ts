@@ -15,6 +15,7 @@ const envSchema = z
     GCS_BUCKET: z.string().optional(),
     GCS_KEY_FILE_PATH: z.string().optional(),
     USE_MEMORY_SESSION: z.string().optional(),
+    SESSION_IDLE_FLOOR_MIN: z.coerce.number().int().positive().optional(),
     TEMP_PASSWORD_TTL_HOURS: z.coerce.number().int().optional(),
   })
   .superRefine((data, ctx) => {

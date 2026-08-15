@@ -18,7 +18,9 @@ model Department {
   company        Company      @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   parent         Department?  @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [departmentId])
   children       Department[] @relation("DepartmentHierarchy")
+  employees      Employee[]
   userCompanies  UserCompany[]
+  dataAccessPolicyDepartments DataAccessPolicyDepartment[]
 
   @@unique([companyId, departmentCode])
   @@index([companyId])

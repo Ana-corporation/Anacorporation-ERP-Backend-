@@ -1,0 +1,25 @@
+// iam | permission_sets
+
+model PermissionSet {
+  permissionSetId BigInt    @id @default(autoincrement()) @map("permission_set_id")
+  companyId       BigInt    @map("company_id")
+  code            String    @db.VarChar(60)
+  name            String    @db.VarChar(120)
+  description     String?
+  isActive        Boolean   @default(true) @map("is_active")
+  createdBy       BigInt?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedBy       BigInt?   @map("updated_by")
+  updatedAt       DateTime? @map("updated_at")
+  deletedBy       BigInt?   @map("deleted_by")
+  deletedAt       DateTime? @map("deleted_at")
+  rowVersion      Int       @default(1) @map("row_version")
+
+  company                  Company                  @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  permissionSetPermissions PermissionSetPermission[]
+  rolePermissionSets       RolePermissionSet[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("permission_sets")
+}

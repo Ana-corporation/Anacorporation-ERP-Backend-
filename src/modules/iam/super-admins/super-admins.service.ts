@@ -142,7 +142,7 @@ export class SuperAdminAuthService {
     };
 
     const accessToken = this.jwtService.sign(payload);
-    const expiresIn = this.configService.get<string>('jwt.accessExpiration') || '15m';
+    const expiresIn = this.configService.get<string>('jwt.accessExpiration') || '8h';
 
     return {
       accessToken,

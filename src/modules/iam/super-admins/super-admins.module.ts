@@ -14,7 +14,7 @@ import { SuperAdminAuthService, SuperAdminsService } from './super-admins.servic
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('jwt.secret'),
         signOptions: {
-          expiresIn: configService.get<string>('jwt.accessExpiration') || '15m',
+          expiresIn: configService.get<string>('jwt.accessExpiration') || '8h',
         } as Record<string, unknown>,
       }),
     }),

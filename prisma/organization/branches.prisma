@@ -20,8 +20,10 @@ model Branch {
 
   company         Company          @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   warehouses      Warehouse[]
+  employees       Employee[]
   userCompanies   UserCompany[]
   userPreferences UserPreference[]
+  dataAccessPolicyBranches DataAccessPolicyBranch[]
 
   @@unique([companyId, branchCode])
   @@index([companyId])

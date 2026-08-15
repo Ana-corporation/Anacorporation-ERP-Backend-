@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 import Redis from 'ioredis';
 import { getRedisConnectionOptions } from './redis.utils';
 
@@ -8,12 +10,16 @@ interface MemoryEntry {
   expiresAt?: number;
 }
 
+/** Survives Nest hot-reload when Redis is unavailable (dev). */
+const MEMORY_SESSION_FILE = path.join(process.cwd(), '.erp-memory-sessions.json');
+
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private useMemory: boolean;
   private client: Redis | null = null;
   private readonly memoryStore = new Map<string, MemoryEntry>();
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly configService: ConfigService) {
     this.useMemory = this.configService.get<boolean>('redis.useMemory') ?? false;
@@ -21,7 +27,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     if (this.useMemory) {
-      this.logger.warn('Session store: in-memory (USE_MEMORY_SESSION=true)');
+      this.loadMemoryStoreFromDisk();
+      this.logger.warn(
+        'Session store: in-memory + disk persist (USE_MEMORY_SESSION=true). Start Redis for production.',
+      );
       return;
     }
 
@@ -38,8 +47,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       await this.client.quit().catch(() => undefined);
       this.client = null;
       this.useMemory = true;
+      this.loadMemoryStoreFromDisk();
       this.logger.warn(
-        'Session store: Redis unavailable — using in-memory fallback. Start Docker Redis and set USE_MEMORY_SESSION=false for production.',
+        'Session store: Redis unavailable — using in-memory + disk persist. Start Docker Redis and set USE_MEMORY_SESSION=false for production.',
       );
     }
   }
@@ -52,9 +62,13 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.useMemory;
   }
 
+  /** For health / ops: how sessions are actually stored right now. */
+  getSessionStoreMode(): 'redis' | 'memory-disk' {
+    return this.useMemory ? 'memory-disk' : 'redis';
+  }
+
   async ping(): Promise<boolean> {
-    if (this.useMemory) return true;
-    if (!this.client) return false;
+    if (this.useMemory || !this.client) return false;
 
     try {
       const result = await this.client.ping();
@@ -70,6 +84,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       if (!entry) return null;
       if (entry.expiresAt && entry.expiresAt < Date.now()) {
         this.memoryStore.delete(key);
+        this.schedulePersist();
         return null;
       }
       return entry.value;
@@ -89,6 +104,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         value,
         expiresAt: ttlSeconds ? Date.now() + ttlSeconds * 1000 : undefined,
       });
+      this.schedulePersist();
       return;
     }
 
@@ -103,6 +119,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async del(key: string): Promise<void> {
     if (this.useMemory) {
       this.memoryStore.delete(key);
+      this.schedulePersist();
       return;
     }
 
@@ -129,8 +146,52 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    if (this.useMemory) {
+      this.flushMemoryStoreToDisk();
+    }
     if (this.client) {
       await this.client.quit();
+    }
+  }
+
+  private loadMemoryStoreFromDisk() {
+    try {
+      if (!fs.existsSync(MEMORY_SESSION_FILE)) return;
+      const raw = fs.readFileSync(MEMORY_SESSION_FILE, 'utf8');
+      const parsed = JSON.parse(raw) as Record<string, MemoryEntry>;
+      const now = Date.now();
+      let loaded = 0;
+      for (const [key, entry] of Object.entries(parsed)) {
+        if (!entry || typeof entry.value !== 'string') continue;
+        if (entry.expiresAt && entry.expiresAt < now) continue;
+        this.memoryStore.set(key, entry);
+        loaded += 1;
+      }
+      this.logger.log(`Restored ${loaded} session key(s) from disk`);
+    } catch (error) {
+      this.logger.warn(`Could not restore memory sessions: ${(error as Error).message}`);
+    }
+  }
+
+  private schedulePersist() {
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => this.flushMemoryStoreToDisk(), 250);
+  }
+
+  private flushMemoryStoreToDisk() {
+    try {
+      const now = Date.now();
+      const payload: Record<string, MemoryEntry> = {};
+      for (const [key, entry] of this.memoryStore.entries()) {
+        if (entry.expiresAt && entry.expiresAt < now) {
+          this.memoryStore.delete(key);
+          continue;
+        }
+        payload[key] = entry;
+      }
+      fs.writeFileSync(MEMORY_SESSION_FILE, JSON.stringify(payload), 'utf8');
+    } catch (error) {
+      this.logger.warn(`Could not persist memory sessions: ${(error as Error).message}`);
     }
   }
 }

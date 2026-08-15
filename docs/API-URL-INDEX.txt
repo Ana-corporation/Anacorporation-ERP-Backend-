@@ -27,19 +27,26 @@ AUTH HEADER (protected routes):
 
 
 ================================================================================
-2. AUTH (login, signup, session)
+2. AUTH (login, session — NO public signup)
 ================================================================================
   Controller: src/modules/iam/authentication/auth.controller.ts
   Service:    src/modules/iam/authentication/auth.service.ts
   DTO:        src/modules/iam/authentication/dto/auth.dto.ts
 
-  POST   /api/v1/auth/signup
+  GET    /api/v1/auth/company
   POST   /api/v1/auth/login
   POST   /api/v1/auth/refresh
   GET    /api/v1/auth/me
   GET    /api/v1/auth/companies
+  POST   /api/v1/auth/change-password
   POST   /api/v1/auth/logout
   POST   /api/v1/auth/switch-company
+
+  REMOVED (2026-08-13): POST /api/v1/auth/signup
+    → 404 Not Found (route deleted)
+    User entry = company-admin invite:
+      POST /api/v1/companies/:companyId/users/invite
+    Tenant onboard = platform/super-admin company provisioning (not public signup)
 
 
 ================================================================================

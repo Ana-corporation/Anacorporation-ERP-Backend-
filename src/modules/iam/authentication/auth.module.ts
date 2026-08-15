@@ -26,7 +26,7 @@ import { RoleLoginResponseBuilder } from './role-access/role-login-response.buil
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('jwt.secret'),
         signOptions: {
-          expiresIn: configService.get<string>('jwt.accessExpiration') || '15m',
+          expiresIn: configService.get<string>('jwt.accessExpiration') || '8h',
         } as Record<string, unknown>,
       }),
     }),

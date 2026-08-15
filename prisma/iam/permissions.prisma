@@ -10,6 +10,7 @@ model Permission {
 
   module          Module           @relation(fields: [moduleId], references: [moduleId], onDelete: Cascade)
   rolePermissions RolePermission[]
+  permissionSetPermissions PermissionSetPermission[]
 
   @@unique([moduleId, permissionCode])
   @@index([moduleId])

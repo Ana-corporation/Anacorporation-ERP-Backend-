@@ -1,0 +1,15 @@
+// iam | permission_set_permissions
+
+model PermissionSetPermission {
+  permissionSetPermissionId BigInt   @id @default(autoincrement()) @map("permission_set_permission_id")
+  permissionSetId           BigInt   @map("permission_set_id")
+  permissionId              BigInt   @map("permission_id")
+  createdAt                 DateTime @default(now()) @map("created_at")
+
+  permissionSet PermissionSet @relation(fields: [permissionSetId], references: [permissionSetId], onDelete: Cascade)
+  permission    Permission    @relation(fields: [permissionId], references: [permissionId], onDelete: Cascade)
+
+  @@unique([permissionSetId, permissionId])
+  @@index([permissionSetId])
+  @@map("permission_set_permissions")
+}

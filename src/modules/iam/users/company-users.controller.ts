@@ -3,9 +3,16 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
-import { ForbiddenException } from '@/common/exceptions/business.exception';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
-import { AssignUserRoleDto, InviteUserDto, UpdateUserDto } from './dto/user.dto';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
+import {
+  AssignUserRoleDto,
+  InviteUserDto,
+  ReplaceModuleAccessDto,
+  UpdateMembershipDto,
+  UpdateMembershipStatusDto,
+  UpdateUserDto,
+} from './dto/user.dto';
 import { UsersService } from './users.service';
 
 /**
@@ -18,12 +25,6 @@ import { UsersService } from './users.service';
 export class CompanyUsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  private assertCompanyAccess(pathCompanyId: string, user: AuthenticatedUser) {
-    if (user.companyId && pathCompanyId !== user.companyId) {
-      throw new ForbiddenException('Company context mismatch');
-    }
-  }
-
   @Get()
   @RequirePermissions('users:view')
   @ApiOperation({ summary: 'List users in company' })
@@ -32,7 +33,7 @@ export class CompanyUsersController {
     @Query() query: PaginationQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    this.assertCompanyAccess(companyId, user);
+    assertCompanyAccess(companyId, user);
     return this.usersService.findAll(companyId, query);
   }
 
@@ -44,7 +45,7 @@ export class CompanyUsersController {
     @Body() dto: InviteUserDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    this.assertCompanyAccess(companyId, user);
+    assertCompanyAccess(companyId, user);
     return this.usersService.invite(companyId, dto, user.sub);
   }
 
@@ -56,8 +57,8 @@ export class CompanyUsersController {
     @Param('userId') userId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    this.assertCompanyAccess(companyId, user);
-    return this.usersService.findOne(userId);
+    assertCompanyAccess(companyId, user);
+    return this.usersService.findOne(userId, companyId);
   }
 
   @Patch(':userId')
@@ -69,21 +70,60 @@ export class CompanyUsersController {
     @Body() dto: UpdateUserDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    this.assertCompanyAccess(companyId, user);
+    assertCompanyAccess(companyId, user);
     return this.usersService.update(userId, companyId, dto, user.sub);
   }
 
   @Put(':userId/role')
   @RequirePermissions('roles:edit')
-  @ApiOperation({ summary: 'Assign / replace primary role for user in company' })
+  @ApiOperation({ summary: 'Replace primary role for user in company (roleId null clears)' })
   assignRole(
     @Param('companyId') companyId: string,
     @Param('userId') userId: string,
     @Body() dto: AssignUserRoleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    this.assertCompanyAccess(companyId, user);
+    assertCompanyAccess(companyId, user);
     return this.usersService.assignRole(userId, companyId, dto, user.sub);
+  }
+
+  @Patch(':userId/membership')
+  @RequirePermissions('users:edit')
+  @ApiOperation({ summary: 'Update company membership (employeeId, dept, branch, warehouse)' })
+  updateMembership(
+    @Param('companyId') companyId: string,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateMembershipDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.usersService.updateMembership(userId, companyId, dto, user.sub);
+  }
+
+  @Patch(':userId/status')
+  @RequirePermissions('users:edit')
+  @ApiOperation({ summary: 'Update membership status (active | suspended)' })
+  updateMembershipStatus(
+    @Param('companyId') companyId: string,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateMembershipStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.usersService.updateMembershipStatus(userId, companyId, dto, user.sub);
+  }
+
+  @Put(':userId/module-access')
+  @RequirePermissions('user_module_access:edit')
+  @ApiOperation({ summary: 'Replace user module-access overrides (omit = inherit role)' })
+  replaceModuleAccess(
+    @Param('companyId') companyId: string,
+    @Param('userId') userId: string,
+    @Body() dto: ReplaceModuleAccessDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.usersService.replaceModuleAccess(userId, companyId, dto, user.sub);
   }
 
   @Delete(':userId')
@@ -94,7 +134,7 @@ export class CompanyUsersController {
     @Param('userId') userId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    this.assertCompanyAccess(companyId, user);
+    assertCompanyAccess(companyId, user);
     return this.usersService.remove(userId, companyId, user.sub);
   }
 }

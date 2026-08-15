@@ -1,0 +1,215 @@
+================================================================================
+FE ↔ BE MATCH — Item Master missing fields (SAP gap feed 2026-08-13)
+Date:       2026-08-13
+Status:     MATCHED — no Prisma migration required for Phase A
+================================================================================
+
+
+0) VERDICT
+--------------------------------------------------------------------------------
+
+  FE missing-field feed needs almost NO schema work.
+  BE already stores tab payloads in open JSON bags and warehouse columns.
+
+  | Area                            | Schema change? | BE status                          |
+  | ------------------------------- | -------------- | ---------------------------------- |
+  | Purchase Factor 1–4             | NO             | Accepted in purchase (open bag)    |
+  | Sales packaging + dimensions    | NO             | Accepted in sales (open bag)       |
+  | Sales Factor 1–4                | NO             | Accepted in sales (open bag)       |
+  | Inventory weight                | NO             | Accepted in inventory (open bag)   |
+  | Planning Order Interval         | NO             | Accepted in planning (open bag)    |
+  | Production BOM Type             | NO             | Accepted in production (open bag)  |
+  | Properties P1–P64               | NO             | Open map; no 32-key limit          |
+  | Warehouse Locked/Required/bins  | NO             | Columns + DTO already present      |
+  | Lookup masters / file uploads   | Later only     | Out of scope                       |
+
+  Extra BE hardening (2026-08-13):
+    PATCH bag merge — when FE sends only new keys inside purchase/sales/…,
+    BE shallow-merges into existing *Json so other bag keys are not wiped.
+
+
+1) HOW BAGS WORK
+--------------------------------------------------------------------------------
+
+  Request field     → DB column
+  ----------------    -------------------
+  purchase          → purchase_json
+  sales             → sales_json
+  inventory         → inventory_json
+  planning          → planning_json
+  production        → production_json
+  properties        → properties_json
+  attachments       → attachments_json
+  metadata          → metadata
+
+  DTO validation:
+    z.record(z.string(), z.unknown()).optional()
+    → NO allow-list → unknown keys are NOT stripped
+
+  Response echoes Prisma fields as camelCase:
+    purchaseJson, salesJson, inventoryJson, planningJson,
+    productionJson, propertiesJson, attachmentsJson, metadata
+
+
+2) CONFIRMED KEYS FE WILL SEND (all optional)
+--------------------------------------------------------------------------------
+
+  purchase:
+    factor1, factor2, factor3, factor4
+    (+ existing: mfrCatalogNo, purchasingUomName, itemsPerPurchaseUnit,
+       packagingUomName, quantityPerPackage, length, width, height, volume,
+       volumeUnit, weight, customsGroup, customsPercent, taxGroup, taxPercent)
+
+  sales:
+    packagingUomName, length, width, height, volume, volumeUnit, weight,
+    factor1, factor2, factor3, factor4
+    (+ existing: salesUomName, itemsPerSalesUnit, quantityPerPackage,
+       taxGroup, taxPercent)
+
+  inventory:
+    weight
+    (+ existing: setGlAccountsBy, uomName, requiredQty, minimumQty, maximumQty)
+
+  planning:
+    orderInterval
+    (+ existing: planningMethod, procurementMethod, orderMultiple,
+       minimumOrderQty, leadTimeDays, toleranceDays)
+
+  production:
+    bomType
+    optional later: itemComponentCount, resourceComponentCount
+    (+ existing: phantomItem, issueMethod, productionStdCost,
+       includeInStdCostRollup)
+
+  properties:
+    "P1" … "P64" → boolean (arbitrary string keys OK)
+
+  NOTE — warehouse stock is NOT part of Item Master JSON bags:
+    Locked / Required qty / bins / on-hand per warehouse live in
+    item_warehouse_stock (separate table + APIs). FE Item Master form
+    does NOT show that grid (2026-08-13); future Warehouse module will.
+
+
+3) WAREHOUSE STOCK — BE ONLY (NOT ON ITEM MASTER FE)
+--------------------------------------------------------------------------------
+
+  FE removed warehouse grid from Item Master UI. BE keeps schema + APIs for a
+  future Warehouse / Inventory stock module. Item Master FE should ignore
+  warehouseStock[] on GET unless/until that module ships.
+
+  Separate endpoints (still live, not called from Item Master form):
+    PUT    /api/v1/companies/:companyId/items/:itemId/warehouses
+    DELETE /api/v1/companies/:companyId/items/:itemId/warehouses/:warehouseId
+
+  Body/row fields (item_warehouse_stock — NOT in purchase/sales/inventory bags):
+    warehouseId, isLocked, requiredQty, firstBinLocation, defaultBinLocation,
+    enforceDefaultBin, qtyOnHand, qtyCommitted, qtyOrdered, minimumQty, maximumQty
+
+  Item header only (still on create/update item — SAP item setting, not grid):
+    manageStockByWarehouse   boolean
+
+  GET /items/:id still includes warehouseStock[] (FE may ignore).
+  Data Access Policy may filter warehouseStock rows for restricted users.
+
+
+4) ALL ITEM MASTER APIs (current)
+--------------------------------------------------------------------------------
+
+  Base: /api/v1/companies/:companyId/items
+  Guard: assertCompanyAccess + supply-chain module permission
+
+  GET    /companies/:companyId/items
+         List (pagination/filters)
+         Permission: supply-chain view
+
+  GET    /companies/:companyId/items/:id
+         Get one + warehouseStock[]
+         Warehouse rows filtered by Data Access Policy when user is restricted
+         Permission: supply-chain view
+
+  POST   /companies/:companyId/items
+         Create (header columns + JSON bags)
+         Permission: supply-chain create
+
+  PATCH  /companies/:companyId/items/:id
+         Update (partial). JSON bags shallow-merged.
+         Permission: supply-chain edit
+
+  DELETE /companies/:companyId/items/:id
+         Soft delete
+         Permission: supply-chain delete
+
+  POST   /companies/:companyId/items/:id/attachments
+         Multipart upload (files|file). Max 10MB. Returns fileAsset metadata.
+         Permission: supply-chain edit
+         See docs/FE-MATCH-ITEM-ATTACHMENTS.txt
+
+  GET    /companies/:companyId/items/:id/attachments/:fileAssetId/url
+         Signed download URL
+         Permission: supply-chain view
+
+  DELETE /companies/:companyId/items/:id/attachments/:fileAssetId
+         Delete uploaded file from storage + soft-delete file_assets row
+         Permission: supply-chain edit
+
+  PUT    /companies/:companyId/items/:id/warehouses
+         Upsert warehouse stock row (scope-checked)
+         Permission: supply-chain edit
+         Out-of-scope warehouse → 403
+
+  DELETE /companies/:companyId/items/:id/warehouses/:warehouseId
+         Remove warehouse stock row (scope-checked)
+         Permission: supply-chain delete
+
+
+5) SAMPLE PATCH (FE may send only new keys)
+--------------------------------------------------------------------------------
+
+  PATCH /api/v1/companies/{companyId}/items/{itemId}
+
+  {
+    "purchase": { "factor1": 1, "factor2": 1, "factor3": 1, "factor4": 1 },
+    "sales": {
+      "packagingUomName": "Box",
+      "length": 10, "width": 10, "height": 12,
+      "volume": 1.2, "volumeUnit": "cf", "weight": 1.5,
+      "factor1": 1, "factor2": 1, "factor3": 1, "factor4": 1
+    },
+    "inventory": { "weight": 1.5 },
+    "planning": { "orderInterval": "Weekly" },
+    "production": { "bomType": "Production" },
+    "properties": { "P1": true, "P33": true, "P64": false }
+  }
+
+  Response: same keys visible inside purchaseJson / salesJson / …
+
+
+6) WHAT BE DID NOT / WILL NOT DO (this phase)
+--------------------------------------------------------------------------------
+
+  - No new Prisma migration for these bag keys
+  - No 64 boolean property columns
+  - No rename of *Ids / bag contract
+  - No BOM / G/L / serial-batch engines
+  - No lookup master tables / file attachment storage (later optional)
+
+
+7) FE CAN SHIP (Item Master form only)
+--------------------------------------------------------------------------------
+
+  Purchasing Factor 1–4
+  Sales packaging / LWH / volume / weight / Factor 1–4
+  Inventory weight (item settings bag — NOT warehouse grid)
+  Planning Order Interval
+  Production BOM Type
+  Properties P1–P64
+
+  Do NOT wire Item Master form to warehouse stock APIs or warehouseStock[] grid.
+
+  Restart Nest only if you need the bag-merge change live; bag key accept
+  already worked before.
+
+
+================================================================================
+END
+================================================================================

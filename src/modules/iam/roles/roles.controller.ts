@@ -4,6 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import {
   CloneRoleDto,
   CreateRoleDto,
@@ -21,14 +22,24 @@ export class RolesController {
   @Get()
   @RequirePermissions('roles:view')
   @ApiOperation({ summary: 'List roles for company' })
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.rolesService.findAll(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('roles:view')
   @ApiOperation({ summary: 'Get role by ID' })
-  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.rolesService.findOne(id, companyId);
   }
 
@@ -40,6 +51,7 @@ export class RolesController {
     @Body() dto: CreateRoleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.rolesService.create(companyId, dto, user.sub);
   }
 
@@ -52,6 +64,7 @@ export class RolesController {
     @Body() dto: CloneRoleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.rolesService.clone(id, companyId, dto, user.sub);
   }
 
@@ -64,6 +77,7 @@ export class RolesController {
     @Body() dto: UpdateRoleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.rolesService.update(id, companyId, dto, user.sub);
   }
 
@@ -75,6 +89,7 @@ export class RolesController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.rolesService.remove(id, companyId, user.sub);
   }
 
@@ -89,6 +104,7 @@ export class RolesController {
     @Body() dto: SetRolePermissionsDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.rolesService.setPermissions(id, companyId, dto, user.sub);
   }
 }

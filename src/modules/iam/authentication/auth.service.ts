@@ -3,6 +3,7 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -11,13 +12,11 @@ import { UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
 import { AuthenticatedUser, JwtPayload } from '@/common/interfaces/auth.interface';
 import {
-  ConflictException,
   ForbiddenException,
   NotFoundException,
   UnauthorizedException,
 } from '@/common/exceptions/business.exception';
-import { DEFAULT_ADMIN_PERMISSIONS } from '@/common/constants/permissions.constant';
-import { LoginDto, SignUpDto, ChangePasswordDto } from './dto/auth.dto';
+import { LoginDto, ChangePasswordDto } from './dto/auth.dto';
 import { AuthRepository } from './auth.repository';
 import { CompanyAccessContextService } from './company-access-context.service';
 import { AuthSessionService } from './auth-session.service';
@@ -32,6 +31,8 @@ export interface AuthClientMeta {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly authRepository: AuthRepository,
     private readonly companyAccessContextService: CompanyAccessContextService,
@@ -43,6 +44,18 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly auditService: AuditService,
   ) {}
+
+  /** Never fail auth because catalog backfill hiccuped — log and continue. */
+  private async safeEnsurePermissionsSeeded(context: string) {
+    try {
+      await this.authRepository.ensurePermissionsSeeded();
+    } catch (err) {
+      this.logger.error(
+        `ensurePermissionsSeeded failed during ${context}; continuing without blocking auth`,
+        err instanceof Error ? err.stack : err,
+      );
+    }
+  }
 
   async resolveCompanyForLogin(companyId?: string, companyCode?: string) {
     let company = null as Awaited<ReturnType<AuthRepository['findCompanyByCode']>>;
@@ -78,50 +91,6 @@ export class AuthService {
       name: company.name,
       status: company.status,
     };
-  }
-
-  async signUp(dto: SignUpDto, meta: AuthClientMeta = {}) {
-    if (dto.password !== dto.confirmPassword) {
-      throw new BadRequestException('Password and confirm password do not match');
-    }
-
-    const email = dto.email.trim().toLowerCase();
-    const existing = await this.authRepository.findUserByEmail(email);
-    if (existing) {
-      throw new ConflictException('Email is already registered');
-    }
-
-    const permissions = await this.authRepository.getAllPermissions();
-    const adminPermissions = permissions
-      .filter((p) =>
-        DEFAULT_ADMIN_PERMISSIONS.includes(
-          p.permissionCode as (typeof DEFAULT_ADMIN_PERMISSIONS)[number],
-        ),
-      )
-      .map((p) => ({ permissionId: p.permissionId, moduleId: p.moduleId }));
-
-    const passwordHash = await bcrypt.hash(dto.password, 12);
-
-    const result = await this.authRepository.createSignupTransaction({
-      email,
-      passwordHash,
-      firstName: dto.firstName.trim(),
-      lastName: dto.lastName.trim(),
-      companyName: dto.companyName.trim(),
-      adminPermissions,
-    });
-
-    await this.auditService.log({
-      companyId: result.company.id,
-      userId: result.user.id,
-      performedBy: result.user.id,
-      action: UserAuditAction.create,
-      entityName: 'User',
-      entityId: result.user.id,
-      newValue: { email, companyId: result.company.id },
-    });
-
-    return this.createAuthSession(result.user.id, result.company.id, undefined, meta);
   }
 
   async login(dto: LoginDto, meta: AuthClientMeta = {}) {
@@ -307,6 +276,10 @@ export class AuthService {
   }
 
   async getMe(userId: string, companyId: string) {
+    // Backfill Security Org V1 codes onto existing ADMIN roles before reading permissions[].
+    // Must not throw — concurrent login+/me previously timed out /me with 500.
+    await this.safeEnsurePermissionsSeeded('GET /auth/me');
+
     const accessContext = await this.companyAccessContextService.buildCompanyAccessContext(
       userId,
       companyId,
@@ -446,6 +419,10 @@ export class AuthService {
     meta: AuthClientMeta = {},
     existingFamilyId?: string,
   ) {
+    // Login / refresh / switch-company: seed catalog + grant V1 codes to roleCode ADMIN
+    // before permissions[] is built (existing DEMO admins never went through signup seed).
+    await this.safeEnsurePermissionsSeeded('createAuthSession');
+
     const policy = await this.securityPolicyService.getPolicyForCompany(companyId);
 
     await this.authSessionService.enforceConcurrentSessionPolicy(
@@ -488,7 +465,7 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload);
-    const expiresIn = this.configService.get<string>('jwt.accessExpiration') || '15m';
+    const expiresIn = this.configService.get<string>('jwt.accessExpiration') || '8h';
 
     await this.authRepository.createSession({
       userId: BigInt(userId),

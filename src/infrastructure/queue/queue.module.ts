@@ -11,6 +11,11 @@ export const QUEUE_NAMES = {
 
 const logger = new Logger('QueueModule');
 
+/**
+ * BullMQ job queues — deferred for local/dev.
+ * Not imported by AppModule until cloud deploy; keep this module for later:
+ *   imports: [QueueModule.register()],
+ */
 @Module({})
 export class QueueModule {
   static register(): DynamicModule {
@@ -27,7 +32,10 @@ export class QueueModule {
         BullModule.forRootAsync({
           inject: [ConfigService],
           useFactory: (configService: ConfigService) => ({
-            connection: getRedisConnectionOptions(configService),
+            connection: {
+              ...getRedisConnectionOptions(configService),
+              family: 4,
+            },
             prefix: configService.get<string>('bullmq.prefix'),
           }),
         }),

@@ -4,6 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CreateCompanyModuleDto, UpdateCompanyModuleDto } from './dto/company-module.dto';
 import { CompanyModulesService } from './company-modules.service';
 
@@ -16,14 +17,24 @@ export class CompanyModulesController {
   @Get()
   @RequirePermissions('company_modules:view')
   @ApiOperation({ summary: 'List modules for company' })
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.companyModulesService.findAll(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('company_modules:view')
   @ApiOperation({ summary: 'Get company module by ID' })
-  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.companyModulesService.findOne(id, companyId);
   }
 
@@ -35,6 +46,7 @@ export class CompanyModulesController {
     @Body() dto: CreateCompanyModuleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companyModulesService.create(companyId, dto, user.sub);
   }
 
@@ -47,6 +59,7 @@ export class CompanyModulesController {
     @Body() dto: UpdateCompanyModuleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companyModulesService.update(id, companyId, dto, user.sub);
   }
 
@@ -58,6 +71,7 @@ export class CompanyModulesController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.companyModulesService.remove(id, companyId, user.sub);
   }
 }

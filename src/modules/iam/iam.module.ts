@@ -14,6 +14,8 @@ import { UserDevicesModule } from './user-devices/user-devices.module';
 import { UserLoginHistoryModule } from './user-login-history/user-login-history.module';
 import { UserMfaModule } from './user-mfa/user-mfa.module';
 import { UserModuleAccessModule } from './user-module-access/user-module-access.module';
+import { PermissionSetsModule } from './permission-sets/permission-sets.module';
+import { DataAccessPoliciesModule } from './data-access-policies/data-access-policies.module';
 import { UserNotificationsModule } from './user-notifications/user-notifications.module';
 import { UserPreferencesModule } from './user-preferences/user-preferences.module';
 import { UserSessionsModule } from './user-sessions/user-sessions.module';
@@ -36,6 +38,8 @@ import { UserSignaturesModule } from './user-signatures/user-signatures.module';
     UserLoginHistoryModule,
     UserMfaModule,
     UserModuleAccessModule,
+    PermissionSetsModule,
+    DataAccessPoliciesModule,
     UserNotificationsModule,
     UserPreferencesModule,
     UserSessionsModule,
@@ -57,6 +61,8 @@ import { UserSignaturesModule } from './user-signatures/user-signatures.module';
     UserLoginHistoryModule,
     UserMfaModule,
     UserModuleAccessModule,
+    PermissionSetsModule,
+    DataAccessPoliciesModule,
     UserNotificationsModule,
     UserPreferencesModule,
     UserSessionsModule,

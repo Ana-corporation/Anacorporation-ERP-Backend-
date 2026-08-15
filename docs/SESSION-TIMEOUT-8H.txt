@@ -1,0 +1,70 @@
+================================================================================
+SESSION TIMEOUT — BE alignment (8 hours)
+Date:       2026-08-13
+Status:     ALIGNED
+================================================================================
+
+SOURCE OF TRUTH = BACKEND (FE only refreshes on 401; no idle logout timer)
+
+
+1) ACCESS JWT
+--------------------------------------------------------------------------------
+  Env:     JWT_ACCESS_EXPIRATION=8h   (.env + .env.example)
+  Code:    src/config/jwt.config.ts → default '8h'
+
+
+2) REFRESH TOKEN
+--------------------------------------------------------------------------------
+  Env:     JWT_REFRESH_EXPIRATION=7d
+  Cookie:  REFRESH_COOKIE_OPTIONS.maxAge = 7 days (auth.constants.ts)
+
+
+3) IDLE SESSION (Redis / memory)
+--------------------------------------------------------------------------------
+  DEFAULT_POLICY.sessionTimeoutMin = 480
+    → company-security-policy.service.ts
+
+  Create DTO / repository default = 480
+  Prisma @default(480) + migration 20260813173000_session_timeout_8h
+    → updates existing rows still at 60 only
+
+  Idle floor (legacy session upgrade): SESSION_IDLE_FLOOR_MIN (default 480)
+    → auth-session.service.ts assertSessionNotIdle + validateCompanySession
+
+
+4) LOCAL / OPS — Redis required for stable sessions
+--------------------------------------------------------------------------------
+  Prefer Redis locally (Docker Desktop must be running):
+
+    docker start erp-redis
+    # or first time:
+    docker run -d --name erp-redis -p 6379:6379 redis:7
+    USE_MEMORY_SESSION=false
+
+  Nest log should show: "Session store: Redis connected"
+  Health: GET /api/v1/health → { sessionStore, redisOk }
+
+  If Docker Desktop is stopped → nothing listens on :6379 → ECONNREFUSED.
+  Bootstrap then falls back to memory sessions and disables BullMQ
+  (main.ts probes Redis BEFORE importing AppModule).
+
+  USE_MEMORY_SESSION=true is emergency/dev-only.
+  Disk file .erp-memory-sessions.json is NOT for production.
+
+  Production MUST:
+    USE_MEMORY_SESSION=false
+    Redis reachable
+    (env.validation rejects memory sessions in production)
+
+
+5) AFTER DEPLOY
+--------------------------------------------------------------------------------
+  1. npx prisma migrate deploy
+  2. Ensure Redis up + USE_MEMORY_SESSION=false
+  3. Restart Nest
+  4. Logout + Login (old JWTs keep old expiry)
+
+
+================================================================================
+END
+================================================================================

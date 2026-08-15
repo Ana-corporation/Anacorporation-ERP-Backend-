@@ -4,6 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CreateDesignationDto, UpdateDesignationDto } from './dto/designation.dto';
 import { DesignationsService } from './designations.service';
 
@@ -16,14 +17,24 @@ export class DesignationsController {
   @Get()
   @RequirePermissions('designations:view')
   @ApiOperation({ summary: 'List designations for company' })
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.designationsService.findAll(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('designations:view')
   @ApiOperation({ summary: 'Get designation by ID' })
-  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.designationsService.findOne(id, companyId);
   }
 
@@ -35,6 +46,7 @@ export class DesignationsController {
     @Body() dto: CreateDesignationDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.designationsService.create(companyId, dto, user.sub);
   }
 
@@ -47,6 +59,7 @@ export class DesignationsController {
     @Body() dto: UpdateDesignationDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.designationsService.update(id, companyId, dto, user.sub);
   }
 
@@ -58,6 +71,7 @@ export class DesignationsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.designationsService.remove(id, companyId, user.sub);
   }
 }

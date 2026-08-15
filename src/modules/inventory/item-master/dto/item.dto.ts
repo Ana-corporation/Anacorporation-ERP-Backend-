@@ -30,6 +30,18 @@ const optionalDate = z.preprocess(
 
 const jsonBag = z.record(z.string(), z.unknown()).optional();
 
+/**
+ * JSON bags are OPEN records (no key allow-list / no strip).
+ * FE Item Master SAP gap fields are accepted as-is, including:
+ *   purchase:   factor1..4 (+ existing purchasing keys)
+ *   sales:      packagingUomName, length/width/height, volume, volumeUnit,
+ *               weight, factor1..4 (+ existing sales keys)
+ *   inventory:  weight (+ existing inventory keys)
+ *   planning:   orderInterval (+ existing planning keys)
+ *   production: bomType, itemComponentCount?, resourceComponentCount?
+ *   properties: P1..P64 boolean map (no max-32 limit)
+ */
+
 export const ITEM_TYPES = ['item', 'service', 'labor', 'travel'] as const;
 export const ITEM_MANAGE_BY = ['none', 'serial', 'batch'] as const;
 export const ITEM_STATUSES = ['active', 'inactive', 'advanced'] as const;
@@ -99,13 +111,19 @@ const itemBaseShape = {
 };
 
 export const CreateItemSchema = z.object({
-  itemCode: z.string().trim().min(1).max(50),
+  // Optional: required only when company itemCodeMode = MANUAL (validated in service).
+  // AUTO mode ignores any client-supplied code and generates ITM-###### on BE.
+  itemCode: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().min(1).max(50).optional(),
+  ),
   ...itemBaseShape,
 });
 
 export const UpdateItemSchema = z.object({
   ...itemBaseShape,
   description: z.string().trim().min(1).max(255).optional(),
+  // itemCode intentionally omitted — immutable after create (no silent renames).
 });
 
 export const UpsertItemWarehouseStockSchema = z.object({
@@ -122,8 +140,20 @@ export const UpsertItemWarehouseStockSchema = z.object({
   enforceDefaultBin: z.boolean().optional(),
 });
 
+export const UpdateItemSettingsSchema = z.object({
+  itemCodeMode: z.enum(['AUTO', 'MANUAL']),
+  itemCodePrefix: z
+    .string()
+    .trim()
+    .min(1)
+    .max(10)
+    .regex(/^[A-Za-z0-9]+$/, 'itemCodePrefix must be alphanumeric')
+    .optional(),
+});
+
 export class CreateItemDto extends createZodDto(CreateItemSchema) {}
 export class UpdateItemDto extends createZodDto(UpdateItemSchema) {}
 export class UpsertItemWarehouseStockDto extends createZodDto(
   UpsertItemWarehouseStockSchema,
 ) {}
+export class UpdateItemSettingsDto extends createZodDto(UpdateItemSettingsSchema) {}

@@ -1,0 +1,181 @@
+================================================================================
+FRONTEND HANDOFF — WHAT STAYED UNCHANGED (INVITE / USERS)
+Date:       2026-08-12
+From:       ERP-Backend
+Purpose:    Feed this to FE. No FE invite rewrite required for this release.
+================================================================================
+
+
+0. SHORT ANSWER
+--------------------------------------------------------------------------------
+
+  Invite flow for Frontend is UNCHANGED.
+
+  Company Admin → Invite User still:
+    1. POST invite
+    2. Backend returns temporaryPassword
+    3. FE shows / copies temp password
+    4. User logs in with companyCode + employeeCode + temp password
+    5. mustChangePassword forces permanent password
+
+  Do NOT switch FE to email-token accept yet.
+  Do NOT remove temp password UI.
+
+
+================================================================================
+1. UNCHANGED APIs (KEEP CALLING THESE)
+================================================================================
+
+  POST   /api/v1/companies/:companyId/users/invite
+         Permission: users:create
+
+  Request body (same as today — still valid):
+  {
+    "firstName": "Tom",
+    "lastName": "Ben",
+    "email": "tom@gmail.com",
+    "mobile": "7576877657",
+    "employeeId": "0095",
+    "roleId": "42",
+    "sendInviteEmail": true
+  }
+
+  Success response (same shape):
+  {
+    "success": true,
+    "data": {
+      "user": {
+        "userId": "...",
+        "username": "...",
+        "displayName": "Tom Ben",
+        "firstName": "Tom",
+        "lastName": "Ben",
+        "email": "tom@gmail.com",
+        "mobile": "...",
+        "isActive": true,
+        "membership": {
+          "userCompanyId": "...",
+          "employeeId": "0095",
+          "departmentId": null,
+          "designationId": null,
+          "branchId": null,
+          "warehouseId": null,
+          "status": "active",
+          "isDefault": true
+        },
+        "role": {
+          "roleId": "42",
+          "roleCode": "...",
+          "roleName": "..."
+        }
+      },
+      "temporaryPassword": "Ab12xyZ!"
+    }
+  }
+
+  Rules FE already relies on (still true):
+    - New user  → temporaryPassword = string
+    - Existing user added to company → temporaryPassword = null
+    - roleId optional (null/omit = no role yet)
+    - roleId may be string OR number (BE coerces)
+    - sendInviteEmail does NOT send real email yet (BE stub only)
+
+
+  GET    /api/v1/companies/:companyId/users?page=1&limit=100
+         Permission: users:view
+         Item shape STILL: { userId, membership, role, ... }
+
+
+  PATCH  /api/v1/companies/:companyId/users/:userId
+         users:edit   { firstName, lastName, mobile }
+         Returns list-item shape
+
+
+  PUT    /api/v1/companies/:companyId/users/:userId/role
+         roles:edit   { "roleId": "42" }  or null to clear
+         Returns list-item shape
+
+
+  PATCH  /api/v1/companies/:companyId/users/:userId/membership
+         users:edit
+         { employeeId, departmentId, designationId, branchId, warehouseId }
+
+
+  PATCH  /api/v1/companies/:companyId/users/:userId/status
+         users:edit   { "status": "active" | "suspended" }
+
+
+  DELETE /api/v1/companies/:companyId/users/:userId
+         users:delete
+
+
+  Auth (unchanged):
+    POST /api/v1/auth/login
+    GET  /api/v1/auth/me          → mustChangePassword
+    POST /api/v1/auth/change-password
+
+
+================================================================================
+2. UNCHANGED FE UX
+================================================================================
+
+  ✓ Invite dialog fields: name, email, mobile, employeeId, role
+  ✓ Show / Copy temporary password after invite success
+  ✓ Message: user must change password after first login
+  ✓ Login with companyCode + employeeCode + password
+  ✓ Force change-password screen when mustChangePassword=true
+  ✓ Users list Role + Employee ID columns from membership/role
+  ✓ No public self-registration
+
+
+================================================================================
+3. WHAT FE SHOULD NOT BUILD YET
+================================================================================
+
+  ✗ Invitation email accept link / token page
+  ✗ POST /invitations/:token/accept
+  ✗ Real email “invite sent” dependency
+  ✗ Remove temp password copy UI
+  ✗ Treat Designation as Role (still separate)
+
+
+================================================================================
+4. OPTIONAL NEW (FE CAN IGNORE FOR NOW)
+================================================================================
+
+  Backend added Employees master APIs (org HR person ≠ login User).
+
+  GET/POST   /api/v1/companies/:companyId/employees
+  GET/PATCH/DELETE /api/v1/companies/:companyId/employees/:id
+  Perms: users:view | users:create | users:edit | users:delete
+
+  Invite optional extra fields (backward compatible — old body still works):
+    "personType": "EMPLOYEE" | "EXTERNAL"
+    "employeeRecordId": "123"     // existing employees.employee_id
+
+  If FE does nothing with these, current invite keeps working.
+
+
+================================================================================
+5. SECURITY RULES FE SHOULD EXPECT (ALREADY LIVE)
+================================================================================
+
+  - Wrong companyId in URL vs JWT → 403 Company context mismatch
+  - Delete custom role with assignees → 409 (reassign first)
+  - Last ADMIN remove / demote / suspend → 409
+
+
+================================================================================
+6. FE ACCEPTANCE (THIS RELEASE)
+================================================================================
+
+  [ ] Invite still returns temporaryPassword
+  [ ] Copy temp password still works
+  [ ] Login with temp password still works
+  [ ] mustChangePassword flow unchanged
+  [ ] Users list still shows membership + role
+  [ ] No FE change required for invite path
+
+================================================================================
+END
+================================================================================

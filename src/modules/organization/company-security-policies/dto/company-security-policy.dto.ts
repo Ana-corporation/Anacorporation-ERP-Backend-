@@ -14,7 +14,7 @@ export const CreateCompanySecurityPolicySchema = z.object({
   lockoutDurationMin: z.coerce.number().int().positive().optional().default(30),
   allowMultipleLogins: z.boolean().optional().default(true),
   maxConcurrentSessions: z.coerce.number().int().positive().optional(),
-  sessionTimeoutMin: z.coerce.number().int().positive().optional().default(60),
+  sessionTimeoutMin: z.coerce.number().int().positive().optional().default(480),
   licenseType: licenseTypeSchema.optional().default('named'),
   totalLicenses: z.coerce.number().int().positive().optional(),
 });

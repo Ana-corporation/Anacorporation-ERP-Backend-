@@ -12,13 +12,21 @@ import {
 } from '@/common/exceptions/business.exception';
 import { serialize } from '@/common/utils/bigint.util';
 import { toPaginatedResult } from '@/common/utils/pagination.util';
+import { UserContextCacheService } from '@/modules/iam/authentication/user-context-cache.service';
+import { EmployeesService } from '@/modules/organization/employees/employees.service';
 import {
   AssignUserRoleDto,
   CreateUserDto,
   InviteUserDto,
+  ReplaceModuleAccessDto,
+  UpdateMembershipDto,
+  UpdateMembershipStatusDto,
   UpdateUserDto,
 } from './dto/user.dto';
 import { UsersRepository } from './users.repository';
+
+const LAST_ADMIN_MESSAGE =
+  'You cannot remove or deactivate the last administrator of this company.';
 
 @Injectable()
 export class UsersService {
@@ -29,6 +37,8 @@ export class UsersService {
     private readonly repository: UsersRepository,
     private readonly auditService: AuditService,
     private readonly configService: ConfigService,
+    private readonly userContextCache: UserContextCacheService,
+    private readonly employeesService: EmployeesService,
   ) {
     const raw = this.configService.get<number>('auth.tempPasswordTtlHours');
     this.tempPasswordTtlHours =
@@ -36,10 +46,23 @@ export class UsersService {
   }
   async findAll(companyId: string, query: PaginationQueryDto) {
     const { items, total, page, limit } = await this.repository.findManyByCompany(companyId, query);
-    return serialize(toPaginatedResult(items, total, page, limit));
+    return serialize(
+      toPaginatedResult(
+        items.map((item) => this.toInviteUserPayload(item)),
+        total,
+        page,
+        limit,
+      ),
+    );
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, companyId?: string) {
+    if (companyId) {
+      const detail = await this.repository.findCompanyUserDetail(id, companyId);
+      if (!detail) throw new NotFoundException('User');
+      return serialize(this.toInviteUserPayload(detail));
+    }
+
     const user = await this.repository.findById(id);
     if (!user) throw new NotFoundException('User');
     return serialize(user);
@@ -138,6 +161,40 @@ export class UsersService {
       await this.repository.assignRole(userId, companyId, roleId, actorId);
     }
 
+    // Keep current temp-password invite. Optionally sync employees master.
+    const personType =
+      dto.personType ??
+      (dto.employeeRecordId || dto.employeeId ? 'EMPLOYEE' : 'EXTERNAL');
+    if (personType === 'EMPLOYEE') {
+      if (!dto.employeeRecordId && !dto.employeeId) {
+        throw new BusinessException(
+          'EMPLOYEE invite requires employeeId (code) or employeeRecordId',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'employeeId', message: 'Required for employee invite' }],
+        );
+      }
+      const employee = await this.employeesService.ensureLinkedForInvite({
+        companyId,
+        userId,
+        actorId,
+        employeeRecordId: dto.employeeRecordId ?? null,
+        employeeCode: dto.employeeId ?? null,
+        firstName: dto.firstName.trim(),
+        lastName: (dto.lastName ?? '').trim() || null,
+        email,
+        mobile: dto.mobile ?? null,
+      });
+      // If existing employee was selected, keep membership login code in sync.
+      if (employee && !dto.employeeId) {
+        await this.repository.updateMembership(
+          userId,
+          companyId,
+          { employeeId: employee.employeeCode },
+          actorId,
+        );
+      }
+    }
+
     if (dto.sendInviteEmail) {
       this.logger.log(
         `Invite email stub → ${email} (company ${companyId})${
@@ -171,10 +228,13 @@ export class UsersService {
   }
 
   async update(id: string, companyId: string, dto: UpdateUserDto, actorId: string) {
-    const existing = await this.repository.findById(id);
-    if (!existing) throw new NotFoundException('User');
+    const existing = await this.requireCompanyUser(id, companyId);
+    const firstName = dto.firstName !== undefined ? dto.firstName : existing.firstName;
+    const lastName = dto.lastName !== undefined ? dto.lastName : existing.lastName;
+    const displayName =
+      [firstName, lastName].filter(Boolean).join(' ').trim() || existing.username;
 
-    const user = await this.repository.update(id, dto, actorId);
+    await this.repository.update(id, dto, actorId, displayName);
 
     await this.auditService.log({
       companyId,
@@ -186,12 +246,12 @@ export class UsersService {
       newValue: dto as Record<string, unknown>,
     });
 
-    return serialize(user);
+    return this.serializeCompanyUser(id, companyId);
   }
 
   async remove(id: string, companyId: string, actorId: string) {
-    const existing = await this.repository.findById(id);
-    if (!existing) throw new NotFoundException('User');
+    await this.requireCompanyUser(id, companyId);
+    await this.assertNotLastAdmin(id, companyId);
 
     await this.repository.softDelete(id, actorId);
 
@@ -213,17 +273,32 @@ export class UsersService {
     dto: AssignUserRoleDto,
     actorId: string,
   ) {
-    const user = await this.repository.findById(userId);
-    if (!user) throw new NotFoundException('User');
+    await this.requireCompanyUser(userId, companyId);
 
-    const role = await this.repository.findCompanyRole(companyId, dto.roleId);
-    if (!role) {
-      throw new BusinessException('roleId must belong to this company', HttpStatus.BAD_REQUEST, [
-        { field: 'roleId', message: 'Invalid role for company' },
-      ]);
+    const roleId = dto.roleId ?? null;
+    let nextRoleCode: string | null = null;
+    if (roleId) {
+      const role = await this.repository.findCompanyRole(companyId, roleId);
+      if (!role) {
+        throw new BusinessException('roleId must belong to this company', HttpStatus.BAD_REQUEST, [
+          { field: 'roleId', message: 'Invalid role for company' },
+        ]);
+      }
+      nextRoleCode = role.roleCode;
     }
 
-    const assignment = await this.repository.assignRole(userId, companyId, dto.roleId, actorId);
+    const currentAdmin = await this.repository.findActiveAdminRole(userId, companyId);
+    if (currentAdmin && nextRoleCode !== 'ADMIN') {
+      await this.assertNotLastAdmin(userId, companyId);
+    }
+
+    const assignment = await this.repository.replacePrimaryRole(
+      userId,
+      companyId,
+      roleId,
+      actorId,
+    );
+    await this.userContextCache.invalidate(userId, companyId);
 
     await this.auditService.log({
       companyId,
@@ -231,11 +306,150 @@ export class UsersService {
       performedBy: actorId,
       action: UserAuditAction.role_change,
       entityName: 'UserRole',
-      entityId: assignment.userRoleId.toString(),
-      newValue: { roleId: dto.roleId },
+      entityId: assignment?.userRoleId.toString() ?? userId,
+      newValue: { roleId },
     });
 
-    return serialize(assignment);
+    return this.serializeCompanyUser(userId, companyId);
+  }
+
+  async updateMembership(
+    userId: string,
+    companyId: string,
+    dto: UpdateMembershipDto,
+    actorId: string,
+  ) {
+    await this.requireCompanyUser(userId, companyId);
+    await this.assertMembershipOrgRefs(companyId, dto);
+
+    const result = await this.repository.updateMembership(
+      userId,
+      companyId,
+      {
+        employeeId: dto.employeeId,
+        departmentId: dto.departmentId,
+        designationId: dto.designationId,
+        branchId: dto.branchId,
+        warehouseId: dto.warehouseId,
+      },
+      actorId,
+    );
+    if (result.count === 0) throw new NotFoundException('User');
+
+    await this.auditService.log({
+      companyId,
+      userId,
+      performedBy: actorId,
+      action: UserAuditAction.update,
+      entityName: 'UserCompany',
+      entityId: userId,
+      newValue: dto as Record<string, unknown>,
+    });
+
+    return this.serializeCompanyUser(userId, companyId);
+  }
+
+  async updateMembershipStatus(
+    userId: string,
+    companyId: string,
+    dto: UpdateMembershipStatusDto,
+    actorId: string,
+  ) {
+    await this.requireCompanyUser(userId, companyId);
+
+    if (dto.status === 'suspended') {
+      await this.assertNotLastAdmin(userId, companyId);
+    }
+
+    const result = await this.repository.updateMembership(
+      userId,
+      companyId,
+      { status: dto.status },
+      actorId,
+    );
+    if (result.count === 0) throw new NotFoundException('User');
+
+    await this.userContextCache.invalidate(userId, companyId);
+    await this.auditService.log({
+      companyId,
+      userId,
+      performedBy: actorId,
+      action: UserAuditAction.update,
+      entityName: 'UserCompany',
+      entityId: userId,
+      newValue: { status: dto.status },
+    });
+
+    return this.serializeCompanyUser(userId, companyId);
+  }
+
+  async replaceModuleAccess(
+    userId: string,
+    companyId: string,
+    dto: ReplaceModuleAccessDto,
+    actorId: string,
+  ) {
+    await this.requireCompanyUser(userId, companyId);
+
+    const items = dto.items ?? [];
+    if (items.length > 0) {
+      const uniqueIds = [...new Set(items.map((item) => item.moduleId))];
+      const found = await this.repository.findModulesByIds(uniqueIds);
+      if (found.length !== uniqueIds.length) {
+        throw new BusinessException('One or more moduleId values are invalid', HttpStatus.BAD_REQUEST, [
+          { field: 'items.moduleId', message: 'Module not found' },
+        ]);
+      }
+    }
+
+    await this.repository.replaceModuleAccess(userId, companyId, items, actorId);
+    await this.userContextCache.invalidate(userId, companyId);
+
+    await this.auditService.log({
+      companyId,
+      userId,
+      performedBy: actorId,
+      action: UserAuditAction.update,
+      entityName: 'UserModuleAccess',
+      entityId: userId,
+      newValue: { items },
+    });
+
+    return this.serializeCompanyUser(userId, companyId);
+  }
+
+  private async requireCompanyUser(userId: string, companyId: string) {
+    const detail = await this.repository.findCompanyUserDetail(userId, companyId);
+    if (!detail) throw new NotFoundException('User');
+    return detail;
+  }
+
+  private async serializeCompanyUser(userId: string, companyId: string) {
+    const detail = await this.requireCompanyUser(userId, companyId);
+    return serialize(this.toInviteUserPayload(detail));
+  }
+
+  private async assertMembershipOrgRefs(companyId: string, dto: UpdateMembershipDto) {
+    const checks: Array<{
+      kind: 'department' | 'designation' | 'branch' | 'warehouse';
+      id?: string | null;
+      field: string;
+    }> = [
+      { kind: 'department', id: dto.departmentId, field: 'departmentId' },
+      { kind: 'designation', id: dto.designationId, field: 'designationId' },
+      { kind: 'branch', id: dto.branchId, field: 'branchId' },
+      { kind: 'warehouse', id: dto.warehouseId, field: 'warehouseId' },
+    ];
+
+    for (const check of checks) {
+      if (!check.id) continue;
+      const found = await this.repository.findCompanyOrgRef(check.kind, check.id, companyId);
+      if (!found) {
+        throw new BusinessException(`${check.field} must belong to this company`, HttpStatus.BAD_REQUEST, [
+          { field: check.field, message: 'Invalid id for company' },
+        ]);
+      }
+    }
   }
 
   private async allocateUsername(email: string): Promise<string> {
@@ -304,7 +518,10 @@ export class UsersService {
     return {
       userId: detail.userId.toString(),
       username: detail.username,
-      displayName: detail.displayName,
+      displayName:
+        detail.displayName?.trim() ||
+        [detail.firstName, detail.lastName].filter(Boolean).join(' ').trim() ||
+        detail.username,
       firstName: detail.firstName,
       lastName: detail.lastName,
       email: detail.email,
@@ -330,5 +547,14 @@ export class UsersService {
           }
         : null,
     };
+  }
+
+  private async assertNotLastAdmin(userId: string, companyId: string) {
+    const adminRole = await this.repository.findActiveAdminRole(userId, companyId);
+    if (!adminRole) return;
+    const others = await this.repository.countOtherActiveAdmins(companyId, userId);
+    if (others === 0) {
+      throw new ConflictException(LAST_ADMIN_MESSAGE);
+    }
   }
 }

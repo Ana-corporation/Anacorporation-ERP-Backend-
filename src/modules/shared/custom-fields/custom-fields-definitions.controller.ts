@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CustomFieldsDefinitionsService } from './custom-fields.service';
 import {
   CreateCustomFieldDefinitionDto,
@@ -22,14 +23,21 @@ export class CustomFieldsDefinitionsController {
   findAll(
     @Param('companyId') companyId: string,
     @Query() query: CustomFieldDefinitionsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.definitionsService.findAll(companyId, query);
   }
 
   @Get(':fieldId')
   @RequirePermissions('custom_fields:view')
   @ApiOperation({ summary: 'Get custom field definition by ID' })
-  findOne(@Param('companyId') companyId: string, @Param('fieldId') fieldId: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('fieldId') fieldId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.definitionsService.findOne(fieldId, companyId);
   }
 
@@ -43,6 +51,7 @@ export class CustomFieldsDefinitionsController {
     @Body() dto: CreateCustomFieldDefinitionDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.definitionsService.create(companyId, dto, user.sub);
   }
 
@@ -55,6 +64,7 @@ export class CustomFieldsDefinitionsController {
     @Body() dto: UpdateCustomFieldDefinitionDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.definitionsService.update(fieldId, companyId, dto, user.sub);
   }
 
@@ -66,6 +76,7 @@ export class CustomFieldsDefinitionsController {
     @Param('fieldId') fieldId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.definitionsService.remove(fieldId, companyId, user.sub);
   }
 }

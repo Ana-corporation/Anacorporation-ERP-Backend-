@@ -4,6 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CreateBranchDto, UpdateBranchDto } from './dto/branch.dto';
 import { BranchesService } from './branches.service';
 
@@ -16,14 +17,24 @@ export class BranchesController {
   @Get()
   @RequirePermissions('branches:view')
   @ApiOperation({ summary: 'List branches for company' })
-  findAll(@Param('companyId') companyId: string, @Query() query: PaginationQueryDto) {
+  findAll(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.branchesService.findAll(companyId, query);
   }
 
   @Get(':id')
   @RequirePermissions('branches:view')
   @ApiOperation({ summary: 'Get branch by ID' })
-  findOne(@Param('companyId') companyId: string, @Param('id') id: string) {
+  findOne(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
     return this.branchesService.findOne(id, companyId);
   }
 
@@ -35,6 +46,7 @@ export class BranchesController {
     @Body() dto: CreateBranchDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.branchesService.create(companyId, dto, user.sub);
   }
 
@@ -47,6 +59,7 @@ export class BranchesController {
     @Body() dto: UpdateBranchDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.branchesService.update(id, companyId, dto, user.sub);
   }
 
@@ -58,6 +71,7 @@ export class BranchesController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    assertCompanyAccess(companyId, user);
     return this.branchesService.remove(id, companyId, user.sub);
   }
 }

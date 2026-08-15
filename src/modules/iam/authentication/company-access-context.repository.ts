@@ -95,15 +95,75 @@ export class CompanyAccessContextRepository {
   }
 
   findRolePermissionsByModule(roleId: bigint) {
-    return this.prisma.rolePermission.findMany({
+    return this.prisma.role.findUnique({
       where: {
         roleId,
-        isAllowed: true,
       },
       include: {
-        permission: true,
-        module: true,
+        rolePermissions: {
+          where: { isAllowed: true },
+          include: { permission: true, module: true },
+        },
+        rolePermissionSets: {
+          where: {
+            permissionSet: {
+              deletedAt: null,
+              isActive: true,
+            },
+          },
+          include: {
+            permissionSet: {
+              include: {
+                permissionSetPermissions: {
+                  include: {
+                    permission: {
+                      include: { module: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
+    }).then((role) => {
+      if (!role) return [];
+      const direct = role.rolePermissions;
+      const fromSets = role.rolePermissionSets.flatMap((rps) =>
+        (rps.permissionSet?.permissionSetPermissions || []).map((psp) => ({
+          permission: psp.permission,
+          module: psp.permission?.module,
+        })),
+      );
+
+      const seen = new Set<string>();
+      const merged: Array<{
+        permission: { action: string; permissionCode: string };
+        module: { moduleType: string };
+        moduleId: bigint;
+      }> = [];
+
+      for (const row of [
+        ...direct.map((d) => ({
+          permission: d.permission,
+          module: d.module,
+          moduleId: d.moduleId,
+        })),
+        ...fromSets
+          .filter((s) => s.permission && s.module)
+          .map((s) => ({
+            permission: s.permission!,
+            module: s.module!,
+            moduleId: s.permission!.moduleId,
+          })),
+      ]) {
+        const key = `${row.moduleId}:${row.permission.permissionCode}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(row);
+      }
+
+      return merged;
     });
   }
 

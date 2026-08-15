@@ -77,6 +77,15 @@ const TENANT_IAM_PERMISSION_CODES = [
   { module: 'iam', code: 'roles:create', name: 'Create Roles', action: 'create' },
   { module: 'iam', code: 'roles:edit', name: 'Edit Roles', action: 'edit' },
   { module: 'iam', code: 'roles:delete', name: 'Delete Roles', action: 'delete' },
+  // Security & Organization V1 — required for Permission Sets / Access Policies tabs
+  { module: 'iam', code: 'permission_sets:view', name: 'View Permission Sets', action: 'view' },
+  { module: 'iam', code: 'permission_sets:create', name: 'Create Permission Sets', action: 'create' },
+  { module: 'iam', code: 'permission_sets:edit', name: 'Edit Permission Sets', action: 'edit' },
+  { module: 'iam', code: 'permission_sets:delete', name: 'Delete Permission Sets', action: 'delete' },
+  { module: 'iam', code: 'data_access_policies:view', name: 'View Data Access Policies', action: 'view' },
+  { module: 'iam', code: 'data_access_policies:create', name: 'Create Data Access Policies', action: 'create' },
+  { module: 'iam', code: 'data_access_policies:edit', name: 'Edit Data Access Policies', action: 'edit' },
+  { module: 'iam', code: 'data_access_policies:delete', name: 'Delete Data Access Policies', action: 'delete' },
 ];
 
 /** Platform owner flat permissions expected by frontend Administration nav */
@@ -92,6 +101,14 @@ const PLATFORM_OWNER_PERMISSION_CODES = [
   { module: 'subscription', code: 'modules:edit', name: 'Edit Modules', action: 'edit' },
   { module: 'subscription', code: 'plans:view', name: 'View Plans', action: 'view' },
   { module: 'subscription', code: 'plans:edit', name: 'Edit Plans', action: 'edit' },
+  { module: 'subscription', code: 'subscription_plans:view', name: 'View Subscription Plans', action: 'view' },
+  { module: 'subscription', code: 'subscription_plans:create', name: 'Create Subscription Plans', action: 'create' },
+  { module: 'subscription', code: 'subscription_plans:edit', name: 'Edit Subscription Plans', action: 'edit' },
+  { module: 'subscription', code: 'subscription_plans:delete', name: 'Delete Subscription Plans', action: 'delete' },
+  { module: 'subscription', code: 'subscription_modules:view', name: 'View ERP Modules', action: 'view' },
+  { module: 'subscription', code: 'subscription_modules:create', name: 'Create ERP Modules', action: 'create' },
+  { module: 'subscription', code: 'subscription_modules:edit', name: 'Edit ERP Modules', action: 'edit' },
+  { module: 'subscription', code: 'subscription_modules:delete', name: 'Delete ERP Modules', action: 'delete' },
   ...CUSTOM_FIELDS_PERMISSION_CODES,
   ...ORG_STRUCTURE_PERMISSION_CODES,
 ];

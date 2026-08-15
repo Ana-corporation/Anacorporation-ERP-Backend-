@@ -1,0 +1,92 @@
+================================================================================
+FE HANDOFF — DATA ACCESS POLICY V1 (BE aligned to spec)
+Date:       2026-08-12
+================================================================================
+
+ARCHITECTURE (unchanged intent)
+--------------------------------------------------------------------------------
+  Role → Permissions  = WHAT
+  Data Access Policy  = WHERE (branch / department / warehouse)
+  Both must pass. Permission Sets are NOT part of this feature.
+
+
+API CONTRACT CHANGES (vs earlier scopes[] shape)
+--------------------------------------------------------------------------------
+
+CREATE / UPDATE body now uses explicit id arrays (not scopes[]):
+
+  POST   /api/v1/companies/:companyId/data-access-policies
+  PATCH  /api/v1/companies/:companyId/data-access-policies/:id
+
+  {
+    "code": "CHENNAI_PURCHASE",          // required on create
+    "name": "Chennai Purchase Access",
+    "description": "...",
+    "isActive": true,
+    "branchIds": ["1"],
+    "departmentIds": ["2"],
+    "warehouseIds": ["3"]
+  }
+
+Response policy shape:
+
+  {
+    "policyId": "...",
+    "code": "...",
+    "name": "...",
+    "branchIds": ["..."],
+    "departmentIds": ["..."],
+    "warehouseIds": ["..."],
+    ...
+  }
+
+  (scopes[] removed from responses)
+
+
+USER ASSIGNMENT
+--------------------------------------------------------------------------------
+
+Spec V1:
+  POST   /api/v1/companies/:companyId/users/:userId/data-access-policies
+         body: { "policyId": "..." }
+
+  DELETE /api/v1/companies/:companyId/users/:userId/data-access-policies/:policyId
+
+Legacy (still available for current FE drawer):
+  PUT    /api/v1/companies/:companyId/users/:userId/data-access-policies
+         body: { "policyIds": ["...", "..."] }
+
+
+EMPTY SCOPE RULE
+--------------------------------------------------------------------------------
+
+  Policy with no branch/department/warehouse rows
+    → contributes NO access (not "all data")
+
+  User with zero assigned policies
+    → unrestricted WHERE (admins without policies keep working)
+
+  User with ≥1 active policy
+    → isRestricted; effective scope = UNION of active policies
+    → out-of-scope warehouse write → 403
+
+
+MIGRATION
+--------------------------------------------------------------------------------
+
+  npx prisma generate
+  npx prisma migrate deploy
+    → 20260812190000_data_access_policy_v1
+  Restart BE
+  Re-login ADMIN (data_access_policies:* backfill on login/me)
+
+
+PERMISSION CODES (unchanged)
+--------------------------------------------------------------------------------
+
+  data_access_policies:view|create|edit|delete
+
+
+================================================================================
+END
+================================================================================

@@ -1,0 +1,108 @@
+================================================================================
+BACKEND IMPLEMENTED — USER DETAILS DRAWER (UPDATE USER)
+Date:       2026-08-11
+Status:     APPLIED
+Related:    FE handoff USER DETAILS DRAWER
+================================================================================
+
+RESPONSE SHAPE (all write APIs below)
+-------------------------------------
+Same as one list item (toInviteUserPayload):
+
+  {
+    userId, username, displayName, firstName, lastName, email, mobile, isActive,
+    membership: { userCompanyId, employeeId, departmentId, designationId,
+                  branchId, warehouseId, status, isDefault } | null,
+    role: { roleId, roleCode, roleName } | null
+  }
+
+IDs are strings.
+
+
+P0 — EXISTING ENDPOINTS FIXED
+-----------------------------
+  PATCH /api/v1/companies/:companyId/users/:userId
+    users:edit
+    Body: { firstName, lastName, mobile }
+    Now returns list-item (not raw Prisma user).
+    Also refreshes displayName from first + last.
+
+  PUT /api/v1/companies/:companyId/users/:userId/role
+    roles:edit
+    Body: { "roleId": "42" }   // or null to clear
+    REPLACE primary role:
+      1. Deactivate all other user_roles for (userId + companyId)
+      2. Upsert roleId as isActive=true
+      3. Return list-item
+    { "roleId": null } → all active roles cleared, role: null
+    Permission cache invalidated for that user/company.
+
+  DELETE /api/v1/companies/:companyId/users/:userId
+    Unchanged (soft-delete).
+
+
+P1 — MEMBERSHIP
+---------------
+  PATCH /api/v1/companies/:companyId/users/:userId/membership
+    users:edit
+    Body (all optional; omit = leave unchanged; null = clear):
+    {
+      "employeeId": "0093",
+      "departmentId": "12",
+      "designationId": "3",
+      "branchId": "1",
+      "warehouseId": "2"
+    }
+    Org IDs must belong to this company (else 400).
+    Returns list-item.
+
+
+P1 — STATUS
+-----------
+  PATCH /api/v1/companies/:companyId/users/:userId/status
+    users:edit
+    Body: { "status": "active" | "suspended" }
+    Updates user_companies.status only (not users.isActive).
+    "left" is not accepted (use DELETE).
+    Returns list-item.
+
+
+P2 — MODULE ACCESS ALIAS
+------------------------
+  PUT /api/v1/companies/:companyId/users/:userId/module-access
+    user_module_access:edit
+    Body:
+    {
+      "items": [
+        { "moduleId": "5", "accessType": "grant" },
+        { "moduleId": "8", "accessType": "deny" }
+      ]
+    }
+    items = full override set.
+    grant/deny = upsert override.
+    Omitted modules = inherit role (existing override deleted).
+    { "items": [] } clears all overrides.
+    Returns list-item.
+
+
+NOT CHANGED
+-----------
+  Invite contract
+  GET list query / item shape
+  Soft-delete on DELETE
+
+
+TEST
+----
+  1. Restart: npm run start:dev
+  2. Users → pencil on a member
+  3. Change Role → 200, Role column updates, old role no longer active
+  4. Save profile → list name updates
+  5. PATCH membership employeeId → list Employee ID updates
+  6. PATCH status suspended → Status column updates
+  7. Remove user → row disappears
+  8. GET .../users still returns membership + role for everyone
+
+================================================================================
+END
+================================================================================

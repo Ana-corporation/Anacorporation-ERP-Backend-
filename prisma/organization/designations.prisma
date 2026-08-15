@@ -16,6 +16,7 @@ model Designation {
   rowVersion      Int       @default(1) @map("row_version")
 
   company       Company       @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  employees     Employee[]
   userCompanies UserCompany[]
 
   @@unique([companyId, designationCode])

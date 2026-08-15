@@ -1,0 +1,16 @@
+// iam | data_access_policy_departments
+
+model DataAccessPolicyDepartment {
+  id           BigInt   @id @default(autoincrement()) @map("id")
+  policyId     BigInt   @map("policy_id")
+  departmentId BigInt   @map("department_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  policy     DataAccessPolicy @relation(fields: [policyId], references: [policyId], onDelete: Cascade)
+  department Department       @relation(fields: [departmentId], references: [departmentId], onDelete: Cascade)
+
+  @@unique([policyId, departmentId])
+  @@index([policyId])
+  @@index([departmentId])
+  @@map("data_access_policy_departments")
+}

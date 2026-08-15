@@ -100,6 +100,9 @@ export class CompanyAccessContextService {
           status: subscription?.status ?? 'none',
           planCode: subscription?.plan.planCode ?? null,
           planName: subscription?.plan.name ?? null,
+          startDate: subscription?.startDate
+            ? subscription.startDate.toISOString().slice(0, 10)
+            : null,
           endDate: subscription?.endDate
             ? subscription.endDate.toISOString().slice(0, 10)
             : null,
@@ -235,7 +238,7 @@ export class CompanyAccessContextService {
     });
   }
 
-  private isPhase1Action(action: PermissionAction): action is Phase1PermissionAction {
-    return PHASE1_ACTION_SET.has(action);
+  private isPhase1Action(action: PermissionAction | string): action is Phase1PermissionAction {
+    return PHASE1_ACTION_SET.has(String(action));
   }
 }

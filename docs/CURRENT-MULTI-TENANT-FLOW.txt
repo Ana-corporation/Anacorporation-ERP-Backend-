@@ -28,16 +28,20 @@ NOT:        Database-per-company (that is a future option, not current)
   │  Isolation = company_id on every tenant row + guards        │
   └─────────────────────────────────────────────────────────────┘
 
-  Company created (signup OR seed OR admin create)
+  Company created (platform/super-admin provision OR seed — NOT public signup)
            │
            ▼
-  Bootstrap for that company (signup path):
+  Bootstrap for that company (platform/seed path):
     - Company row
     - ADMIN role
     - Role permissions
     - Membership (employeeId)
     - UserRole
     - CompanySecurityPolicy
+           │
+           ▼
+  Additional users enter via company-admin invite
+    (temp password → mustChangePassword)
            │
            ▼
   User logs in with:
@@ -96,31 +100,22 @@ NOT:        Database-per-company (that is a future option, not current)
 3. HOW A COMPANY GETS CREATED
 --------------------------------------------------------------------------------
 
-  PATH A — Public Signup (main bootstrap)
+  PATH A — Public Signup — REMOVED (2026-08-13)
   ----------------------------------------
-  POST /api/v1/auth/signup
+  POST /api/v1/auth/signup → 404 (route deleted)
 
-  Automatically creates:
-    1. User + password hash
-    2. Company (status = trial, companyCode from company name)
-    3. System role ADMIN
-    4. Role permissions (DEFAULT_ADMIN_PERMISSIONS)
-    5. UserCompany membership (employeeId like EMP-00001)
-    6. UserRole → ADMIN
-    7. CompanySecurityPolicy (defaults)
-    8. Login session / JWT
-
-  Note: Signup does NOT always attach a subscription plan
-        (seeds do attach plan + modules).
+  Replacement user entry:
+    Company-admin invite → POST /companies/:companyId/users/invite
+    Then login + change-password if mustChangePassword
 
 
-  PATH B — Admin create company
+  PATH B — Platform / Admin create company
   ----------------------------------------
+  Platform/super-admin company provisioning OR
   POST /api/v1/companies
 
-  Creates company ROW only (+ audit).
-  Does NOT auto-create admin user / roles / subscription
-  (use seed or manual invite after).
+  Creates company ROW (+ audit).
+  Admin user/roles may come from platform bootstrap or seed/invite after.
 
 
   PATH C — Seed (local/demo)
@@ -260,7 +255,7 @@ NOT:        Database-per-company (that is a future option, not current)
     prisma/purchase/vendors.prisma
     prisma/shared/custom-fields.prisma
 
-  Auth / signup / login
+  Auth / login (no public signup)
     src/modules/iam/authentication/auth.controller.ts
     src/modules/iam/authentication/auth.service.ts
     src/modules/iam/authentication/auth.repository.ts

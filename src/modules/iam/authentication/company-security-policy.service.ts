@@ -14,7 +14,8 @@ export interface SecurityPolicySnapshot {
 const DEFAULT_POLICY: SecurityPolicySnapshot = {
   maxLoginAttempts: 5,
   lockoutDurationMin: 30,
-  sessionTimeoutMin: 60,
+  // Idle session window (minutes). Was 60 — too short for ERP desk work.
+  sessionTimeoutMin: 480,
   allowMultipleLogins: true,
   maxConcurrentSessions: null,
 };

@@ -1,0 +1,19 @@
+// iam | user_data_access_policies
+
+model UserDataAccessPolicy {
+  userDataAccessPolicyId BigInt    @id @default(autoincrement()) @map("user_data_access_policy_id")
+  companyId              BigInt    @map("company_id")
+  userId                 BigInt    @map("user_id")
+  policyId               BigInt    @map("policy_id")
+  isActive               Boolean   @default(true) @map("is_active")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime? @map("updated_at")
+
+  company Company          @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  user    User             @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  policy  DataAccessPolicy @relation(fields: [policyId], references: [policyId], onDelete: Cascade)
+
+  @@unique([companyId, userId, policyId])
+  @@index([companyId, userId])
+  @@map("user_data_access_policies")
+}

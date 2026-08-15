@@ -85,6 +85,13 @@ export class RolesService {
     if (!existing) throw new NotFoundException('Role');
     if (existing.isSystem) throw new ConflictException('System roles cannot be deleted');
 
+    const assignedCount = await this.repository.countActiveAssignees(companyId, id);
+    if (assignedCount > 0) {
+      throw new ConflictException(
+        `This role is currently assigned to ${assignedCount} user${assignedCount === 1 ? '' : 's'}. Reassign the users before deleting this role.`,
+      );
+    }
+
     await this.repository.softDelete(id, actorId);
 
     await this.auditService.log({

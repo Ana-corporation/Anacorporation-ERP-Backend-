@@ -25,9 +25,15 @@ export interface CreateSuperAdminSessionParams {
   existingFamilyId?: string;
 }
 
+function resolveIdleFloorMin(): number {
+  const raw = Number(process.env.SESSION_IDLE_FLOOR_MIN || 480);
+  return Number.isFinite(raw) && raw > 0 ? raw : 480;
+}
+
 @Injectable()
 export class AuthSessionService {
   readonly refreshTtlSeconds: number;
+  private readonly idleFloorMin: number;
 
   constructor(
     private readonly redisService: RedisService,
@@ -36,6 +42,7 @@ export class AuthSessionService {
     const refreshExpiration =
       configService.get<string>('jwt.refreshExpiration') || '7d';
     this.refreshTtlSeconds = parseDurationToSeconds(refreshExpiration, 7 * 86400);
+    this.idleFloorMin = resolveIdleFloorMin();
   }
 
   async createCompanySession(params: CreateCompanySessionParams) {
@@ -123,6 +130,10 @@ export class AuthSessionService {
     }
 
     session.lastActivityAt = Date.now();
+    // Upgrade legacy sessions that still carry a sub-floor idle stamp.
+    if (!session.sessionTimeoutMin || session.sessionTimeoutMin < this.idleFloorMin) {
+      session.sessionTimeoutMin = this.idleFloorMin;
+    }
     const ttl = this.resolveSessionTtl(session.sessionTimeoutMin);
     await this.redisService.setJson(AUTH_REDIS_KEYS.session(sessionId), session, ttl);
     return true;
@@ -282,7 +293,8 @@ export class AuthSessionService {
   }
 
   private async assertSessionNotIdle(session: CompanySessionData) {
-    const idleLimitMs = session.sessionTimeoutMin * 60 * 1000;
+    const timeoutMin = Math.max(session.sessionTimeoutMin || 0, this.idleFloorMin);
+    const idleLimitMs = timeoutMin * 60 * 1000;
     if (Date.now() - session.lastActivityAt > idleLimitMs) {
       throw new UnauthorizedException('Session idle timeout exceeded');
     }

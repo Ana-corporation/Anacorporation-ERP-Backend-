@@ -13,7 +13,7 @@ model CompanySecurityPolicy {
   lockoutDurationMin    Int         @default(30) @map("lockout_duration_min")
   allowMultipleLogins   Boolean     @default(true) @map("allow_multiple_logins")
   maxConcurrentSessions Int?        @map("max_concurrent_sessions") @db.SmallInt
-  sessionTimeoutMin     Int         @default(60) @map("session_timeout_min")
+  sessionTimeoutMin     Int         @default(480) @map("session_timeout_min")
   licenseType           LicenseType @default(named) @map("license_type")
   totalLicenses         Int?        @map("total_licenses")
   createdBy             BigInt?     @map("created_by")

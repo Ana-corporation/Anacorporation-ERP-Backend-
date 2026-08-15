@@ -44,6 +44,25 @@ enum MembershipStatus {
   @@map("membership_status")
 }
 
+enum EmploymentStatus {
+  active
+  inactive
+  terminated
+  on_leave
+
+  @@map("employment_status")
+}
+
+enum EmploymentType {
+  full_time
+  part_time
+  contract
+  intern
+  consultant
+
+  @@map("employment_type")
+}
+
 enum ModuleAccessType {
   grant
   deny
@@ -196,4 +215,20 @@ enum OAuthProvider {
   microsoft
 
   @@map("oauth_provider")
+}
+
+enum FileStatus {
+  PENDING
+  UPLOADED
+  FAILED
+  DELETED
+
+  @@map("file_status")
+}
+
+enum ItemCodeMode {
+  AUTO
+  MANUAL
+
+  @@map("item_code_mode")
 }

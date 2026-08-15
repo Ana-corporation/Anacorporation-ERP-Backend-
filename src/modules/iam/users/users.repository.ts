@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MembershipStatus, ModuleAccessType, Prisma } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { PaginationQueryDto, getPaginationParams } from '@/common/dto/pagination.dto';
 import { parseBigIntId } from '@/common/utils/bigint.util';
@@ -21,10 +21,11 @@ export class UsersRepository {
 
   findManyByCompany(companyId: string, query: PaginationQueryDto) {
     const { skip, limit, page } = getPaginationParams(query);
+    const cid = parseBigIntId(companyId);
     const where = buildListWhere(
       {
         deletedAt: null,
-        companies: { some: { companyId: parseBigIntId(companyId), deletedAt: null } },
+        companies: { some: { companyId: cid, deletedAt: null } },
       },
       query,
       USERS_LIST_FILTER,
@@ -36,6 +37,18 @@ export class UsersRepository {
         skip,
         take: limit,
         orderBy: resolveOrderBy(query, USERS_LIST_FILTER),
+        include: {
+          companies: {
+            where: { companyId: cid, deletedAt: null },
+            take: 1,
+          },
+          roles: {
+            where: { companyId: cid, isActive: true },
+            include: { role: true },
+            take: 1,
+            orderBy: { assignedDate: 'desc' },
+          },
+        },
       }),
       this.prisma.user.count({ where }),
     ]).then(([items, total]) => ({ items, total, page, limit }));
@@ -216,7 +229,7 @@ export class UsersRepository {
     });
   }
 
-  update(id: string, dto: UpdateUserDto, updatedBy?: string) {
+  update(id: string, dto: UpdateUserDto, updatedBy?: string, displayName?: string) {
     return this.prisma.user.update({
       where: { userId: parseBigIntId(id) },
       data: {
@@ -224,6 +237,7 @@ export class UsersRepository {
         ...(dto.lastName !== undefined ? { lastName: dto.lastName } : {}),
         ...(dto.mobile !== undefined ? { mobile: dto.mobile } : {}),
         ...(dto.timeZone !== undefined ? { timeZone: dto.timeZone } : {}),
+        ...(displayName !== undefined ? { displayName } : {}),
         updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
         updatedAt: new Date(),
       },
@@ -242,22 +256,239 @@ export class UsersRepository {
   }
 
   assignRole(userId: string, companyId: string, roleId: string, assignedBy?: string) {
-    return this.prisma.userRole.upsert({
-      where: {
-        userId_companyId_roleId: {
-          userId: parseBigIntId(userId),
-          companyId: parseBigIntId(companyId),
-          roleId: parseBigIntId(roleId),
+    return this.replacePrimaryRole(userId, companyId, roleId, assignedBy);
+  }
+
+  /**
+   * Replace the single active role for a user in a company.
+   * roleId=null deactivates all roles.
+   */
+  replacePrimaryRole(
+    userId: string,
+    companyId: string,
+    roleId: string | null,
+    assignedBy?: string,
+  ) {
+    const uid = parseBigIntId(userId);
+    const cid = parseBigIntId(companyId);
+    const nextRoleId = roleId ? parseBigIntId(roleId) : null;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.userRole.updateMany({
+        where: {
+          userId: uid,
+          companyId: cid,
+          ...(nextRoleId ? { roleId: { not: nextRoleId } } : {}),
         },
-      },
-      update: { isActive: true },
-      create: {
+        data: { isActive: false },
+      });
+
+      if (!nextRoleId) return null;
+
+      return tx.userRole.upsert({
+        where: {
+          userId_companyId_roleId: {
+            userId: uid,
+            companyId: cid,
+            roleId: nextRoleId,
+          },
+        },
+        update: {
+          isActive: true,
+          assignedBy: assignedBy ? parseBigIntId(assignedBy) : undefined,
+          assignedDate: new Date(),
+        },
+        create: {
+          userId: uid,
+          companyId: cid,
+          roleId: nextRoleId,
+          assignedBy: assignedBy ? parseBigIntId(assignedBy) : undefined,
+          isActive: true,
+        },
+        include: { role: true },
+      });
+    });
+  }
+
+  findCompanyOrgRef(
+    kind: 'department' | 'designation' | 'branch' | 'warehouse',
+    id: string,
+    companyId: string,
+  ) {
+    const cid = parseBigIntId(companyId);
+    const parsedId = parseBigIntId(id);
+    const scope = { companyId: cid, deletedAt: null };
+
+    if (kind === 'department') {
+      return this.prisma.department.findFirst({
+        where: { departmentId: parsedId, ...scope },
+        select: { departmentId: true },
+      });
+    }
+    if (kind === 'designation') {
+      return this.prisma.designation.findFirst({
+        where: { designationId: parsedId, ...scope },
+        select: { designationId: true },
+      });
+    }
+    if (kind === 'branch') {
+      return this.prisma.branch.findFirst({
+        where: { branchId: parsedId, ...scope },
+        select: { branchId: true },
+      });
+    }
+    return this.prisma.warehouse.findFirst({
+      where: { warehouseId: parsedId, ...scope },
+      select: { warehouseId: true },
+    });
+  }
+
+  updateMembership(
+    userId: string,
+    companyId: string,
+    data: {
+      employeeId?: string | null;
+      departmentId?: string | null;
+      designationId?: string | null;
+      branchId?: string | null;
+      warehouseId?: string | null;
+      status?: MembershipStatus;
+    },
+    updatedBy?: string,
+  ) {
+    return this.prisma.userCompany.updateMany({
+      where: {
         userId: parseBigIntId(userId),
         companyId: parseBigIntId(companyId),
-        roleId: parseBigIntId(roleId),
-        assignedBy: assignedBy ? parseBigIntId(assignedBy) : undefined,
+        deletedAt: null,
+      },
+      data: {
+        ...(data.employeeId !== undefined ? { employeeId: data.employeeId } : {}),
+        ...(data.departmentId !== undefined
+          ? { departmentId: data.departmentId ? parseBigIntId(data.departmentId) : null }
+          : {}),
+        ...(data.designationId !== undefined
+          ? { designationId: data.designationId ? parseBigIntId(data.designationId) : null }
+          : {}),
+        ...(data.branchId !== undefined
+          ? { branchId: data.branchId ? parseBigIntId(data.branchId) : null }
+          : {}),
+        ...(data.warehouseId !== undefined
+          ? { warehouseId: data.warehouseId ? parseBigIntId(data.warehouseId) : null }
+          : {}),
+        ...(data.status !== undefined ? { status: data.status } : {}),
+        updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  findModulesByIds(moduleIds: string[]) {
+    const ids = moduleIds.map((id) => parseBigIntId(id));
+    return this.prisma.module.findMany({
+      where: { moduleId: { in: ids }, deletedAt: null },
+      select: { moduleId: true },
+    });
+  }
+
+  /**
+   * Replace user_module_access overrides for a company user.
+   * items = full override set; omitted modules inherit the role default.
+   */
+  replaceModuleAccess(
+    userId: string,
+    companyId: string,
+    items: Array<{ moduleId: string; accessType: ModuleAccessType }>,
+    createdBy?: string,
+  ) {
+    const uid = parseBigIntId(userId);
+    const cid = parseBigIntId(companyId);
+    const byModule = new Map<string, ModuleAccessType>();
+    for (const item of items) {
+      byModule.set(item.moduleId, item.accessType);
+    }
+    const keepIds = [...byModule.keys()].map((id) => parseBigIntId(id));
+
+    return this.prisma.$transaction(async (tx) => {
+      if (keepIds.length === 0) {
+        await tx.userModuleAccess.deleteMany({
+          where: { userId: uid, companyId: cid },
+        });
+        return [];
+      }
+
+      await tx.userModuleAccess.deleteMany({
+        where: {
+          userId: uid,
+          companyId: cid,
+          moduleId: { notIn: keepIds },
+        },
+      });
+
+      const saved = [];
+      for (const [moduleId, accessType] of byModule) {
+        const mid = parseBigIntId(moduleId);
+        saved.push(
+          await tx.userModuleAccess.upsert({
+            where: {
+              userId_companyId_moduleId: {
+                userId: uid,
+                companyId: cid,
+                moduleId: mid,
+              },
+            },
+            update: { accessType, rowVersion: { increment: 1 } },
+            create: {
+              userId: uid,
+              companyId: cid,
+              moduleId: mid,
+              accessType,
+              createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
+            },
+            select: {
+              userModuleAccessId: true,
+              moduleId: true,
+              accessType: true,
+            },
+          }),
+        );
+      }
+      return saved;
+    });
+  }
+
+  findActiveAdminRole(userId: string, companyId: string) {
+    const cid = parseBigIntId(companyId);
+    return this.prisma.userRole.findFirst({
+      where: {
+        userId: parseBigIntId(userId),
+        companyId: cid,
+        isActive: true,
+        role: { roleCode: 'ADMIN', deletedAt: null },
       },
       include: { role: true },
+    });
+  }
+
+  countOtherActiveAdmins(companyId: string, excludeUserId: string) {
+    const cid = parseBigIntId(companyId);
+    return this.prisma.userRole.count({
+      where: {
+        companyId: cid,
+        isActive: true,
+        userId: { not: parseBigIntId(excludeUserId) },
+        role: { roleCode: 'ADMIN', deletedAt: null },
+        user: {
+          deletedAt: null,
+          companies: {
+            some: {
+              companyId: cid,
+              deletedAt: null,
+              status: MembershipStatus.active,
+            },
+          },
+        },
+      },
     });
   }
 }

@@ -4,13 +4,38 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import * as cookieParser from 'cookie-parser';
-import { AppModule } from './app.module';
+import * as fs from 'fs';
+import * as path from 'path';
 import { SimpleLogger } from './common/logger/simple.logger';
 import { requestLogger } from './common/logger/request-logger.middleware';
 import {
   getRedisConnectionOptionsFromEnv,
   probeRedisAvailability,
 } from './infrastructure/redis/redis.utils';
+
+/** Load .env before AppModule so Redis probe sees REDIS_* / USE_MEMORY_SESSION. */
+function loadEnvFile() {
+  const envPath = path.join(process.cwd(), '.env');
+  if (!fs.existsSync(envPath)) return;
+
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
 
 async function ensureRedisOrFallback(logger: Logger) {
   if (process.env.USE_MEMORY_SESSION === 'true') {
@@ -20,6 +45,7 @@ async function ensureRedisOrFallback(logger: Logger) {
   const reachable = await probeRedisAvailability(getRedisConnectionOptionsFromEnv());
 
   if (reachable) {
+    logger.log('Redis reachable — auth sessions will use Redis');
     return;
   }
 
@@ -31,13 +57,18 @@ async function ensureRedisOrFallback(logger: Logger) {
 
   process.env.USE_MEMORY_SESSION = 'true';
   logger.warn(
-    'Redis unavailable — using in-memory sessions. BullMQ job queues are disabled until Redis is running.',
+    'Redis unavailable — using in-memory auth sessions (dev). Start Docker Redis when you want shared sessions.',
   );
 }
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+  loadEnvFile();
   await ensureRedisOrFallback(logger);
+
+  // Dynamic import after Redis probe so Config/redis.useMemory matches fallback.
+  const { AppModule } = await import('./app.module');
+
   const app = await NestFactory.create(AppModule, {
     logger: new SimpleLogger(),
   });
