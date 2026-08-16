@@ -3,9 +3,11 @@ import { z } from 'zod';
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-    PORT: z.coerce.number().int().min(1).default(3000),
+    PORT: z.coerce.number().int().min(1).default(3002),
     DATABASE_URL: z.string().min(1),
     JWT_SECRET: z.string().min(1),
+    FRONTEND_ORIGIN: z.string().optional(),
+    CORS_ORIGIN: z.string().optional(),
     JWT_ACCESS_EXPIRATION: z.string().optional(),
     JWT_REFRESH_EXPIRATION: z.string().optional(),
     REDIS_HOST: z.string().optional(),
@@ -26,7 +28,8 @@ const envSchema = z
         path: ['TEMP_PASSWORD_TTL_HOURS'],
       });
     }
-    if (data.NODE_ENV === 'production') {      if (
+    if (data.NODE_ENV === 'production') {
+      if (
         data.JWT_SECRET.length < 32 ||
         data.JWT_SECRET.includes('change-me') ||
         data.JWT_SECRET.includes('dev-jwt')
@@ -36,7 +39,8 @@ const envSchema = z
           message: 'JWT_SECRET must be a strong random string (32+ chars) in production',
         });
       }
-      if (data.USE_MEMORY_SESSION === 'true') {
+      // Cloud Run sets K_SERVICE. Memory sessions are allowed there until Redis/Memorystore is wired.
+      if (data.USE_MEMORY_SESSION === 'true' && !process.env.K_SERVICE) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'USE_MEMORY_SESSION must be false in production — start Redis',
