@@ -19,5 +19,25 @@
     "paths": {
       "@/*": ["./src/*"]
     }
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "**/*spec.ts",
+    "src/modules/crm/**",
+    "src/modules/inventory/items/**",
+    "src/modules/inventory/stock/**",
+    "src/modules/manufacturing/**",
+    "src/modules/assets/**",
+    "src/modules/sales/**",
+    "src/modules/reports/**",
+    "src/modules/accounting/**",
+    "src/modules/hrms/**",
+    "src/modules/helpdesk/**",
+    "src/modules/projects/**",
+    "src/infrastructure/storage/**",
+    "src/infrastructure/websocket/**"
+  ]
 }

@@ -69,7 +69,6 @@ jobs:
               pair("API_PREFIX", "api/v1"),
               pair("FRONTEND_ORIGIN", frontend),
               pair("CORS_ORIGIN", frontend),
-              pair("USE_MEMORY_SESSION", "true"),
               pair("JWT_ACCESS_EXPIRATION", "8h"),
               pair("JWT_REFRESH_EXPIRATION", "7d"),
               pair("DATABASE_URL", os.environ["DATABASE_URL"]),

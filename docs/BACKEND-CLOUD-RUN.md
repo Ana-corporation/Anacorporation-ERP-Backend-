@@ -143,7 +143,6 @@ docker run --rm -p 8080:8080 \
   -e DIRECT_DATABASE_URL="..." \
   -e JWT_SECRET="at-least-32-characters-long-secret" \
   -e FRONTEND_ORIGIN="http://localhost:3001" \
-  -e USE_MEMORY_SESSION=true \
   -e K_SERVICE=local \
   anc-be
 ```
@@ -155,5 +154,5 @@ Then open `http://localhost:8080/api/v1/health`.
 ## Notes
 
 - First request can be slow (Cloud Run cold start + Neon). That is expected with `--min-instances 0`.
-- `USE_MEMORY_SESSION=true` is set on Cloud Run so the API starts without Memorystore. Add Redis later and turn that off.
+- Sessions are in-memory until you set `REDIS_HOST`.
 - Change `REGION` in `.github/workflows/deploy-cloud-run.yml` if the frontend is not in `asia-southeast1`.

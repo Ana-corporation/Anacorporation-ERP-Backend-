@@ -6,14 +6,10 @@ import { cleanupOpenApiDoc } from 'nestjs-zod';
 import * as cookieParser from 'cookie-parser';
 import * as fs from 'fs';
 import * as path from 'path';
+import { AppModule } from './app.module';
 import { SimpleLogger } from './common/logger/simple.logger';
 import { requestLogger } from './common/logger/request-logger.middleware';
-import {
-  getRedisConnectionOptionsFromEnv,
-  probeRedisAvailability,
-} from './infrastructure/redis/redis.utils';
 
-/** Load .env before AppModule so Redis probe sees REDIS_* / USE_MEMORY_SESSION. */
 function loadEnvFile() {
   const envPath = path.join(process.cwd(), '.env');
   if (!fs.existsSync(envPath)) return;
@@ -37,37 +33,9 @@ function loadEnvFile() {
   }
 }
 
-async function ensureRedisOrFallback(logger: Logger) {
-  if (process.env.USE_MEMORY_SESSION === 'true') {
-    return;
-  }
-
-  const reachable = await probeRedisAvailability(getRedisConnectionOptionsFromEnv());
-
-  if (reachable) {
-    logger.log('Redis reachable — auth sessions will use Redis');
-    return;
-  }
-
-  if (process.env.NODE_ENV === 'production' && !process.env.K_SERVICE) {
-    throw new Error(
-      'Redis is required in production but is not reachable. Start Redis before booting the app.',
-    );
-  }
-
-  process.env.USE_MEMORY_SESSION = 'true';
-  logger.warn(
-    'Redis unavailable — using in-memory auth sessions (dev). Start Docker Redis when you want shared sessions.',
-  );
-}
-
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   loadEnvFile();
-  await ensureRedisOrFallback(logger);
-
-  // Dynamic import after Redis probe so Config/redis.useMemory matches fallback.
-  const { AppModule } = await import('./app.module');
 
   const app = await NestFactory.create(AppModule, {
     logger: new SimpleLogger(),

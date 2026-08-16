@@ -535,12 +535,12 @@ export class CustomFieldsValuesService {
     const entries = Object.entries(cfFilters);
     if (entries.length === 0) return null;
 
-    const definitions = await this.repository.findDefinitionsByCompany(
+    const definitions: CustomFieldDefinition[] = await this.repository.findDefinitionsByCompany(
       companyId,
       entityType,
       false,
     );
-    const filterable = new Map(
+    const filterable = new Map<string, CustomFieldDefinition>(
       definitions.filter((d) => d.isFilterable).map((d) => [d.fieldName, d]),
     );
 
@@ -556,23 +556,12 @@ export class CustomFieldsValuesService {
         );
       }
 
-      const rows = await this.prisma.customFieldValue.findMany({
-        where: {
-          companyId: BigInt(companyId),
-          entityType,
-          fieldId: def.fieldId,
-          OR: [
-            { valueText: rawValue },
-            ...(def.fieldType === 'checkbox'
-              ? [{ valueBool: rawValue === 'true' || rawValue === '1' }]
-              : []),
-            ...(['number', 'decimal'].includes(def.fieldType) && !Number.isNaN(Number(rawValue))
-              ? [{ valueNumber: new Prisma.Decimal(rawValue) }]
-              : []),
-          ],
-        },
-        select: { recordId: true },
-      });
+      const rows = await this.repository.findRecordIdsMatchingFieldValue(
+        companyId,
+        entityType,
+        def,
+        rawValue,
+      );
 
       const ids = new Set(rows.map((r) => r.recordId.toString()));
       allowed = allowed === null ? ids : new Set([...allowed].filter((id) => ids.has(id)));

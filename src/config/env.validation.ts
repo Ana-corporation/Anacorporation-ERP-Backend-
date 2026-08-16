@@ -16,7 +16,6 @@ const envSchema = z
     GCS_PROJECT_ID: z.string().optional(),
     GCS_BUCKET: z.string().optional(),
     GCS_KEY_FILE_PATH: z.string().optional(),
-    USE_MEMORY_SESSION: z.string().optional(),
     SESSION_IDLE_FLOOR_MIN: z.coerce.number().int().positive().optional(),
     TEMP_PASSWORD_TTL_HOURS: z.coerce.number().int().optional(),
   })
@@ -37,13 +36,6 @@ const envSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'JWT_SECRET must be a strong random string (32+ chars) in production',
-        });
-      }
-      // Cloud Run sets K_SERVICE. Memory sessions are allowed there until Redis/Memorystore is wired.
-      if (data.USE_MEMORY_SESSION === 'true' && !process.env.K_SERVICE) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'USE_MEMORY_SESSION must be false in production — start Redis',
         });
       }
     }

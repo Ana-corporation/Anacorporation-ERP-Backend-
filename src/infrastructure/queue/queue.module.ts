@@ -19,7 +19,7 @@ const logger = new Logger('QueueModule');
 @Module({})
 export class QueueModule {
   static register(): DynamicModule {
-    const useMemory = process.env.USE_MEMORY_SESSION === 'true';
+    const useMemory = !process.env.REDIS_HOST;
 
     if (useMemory) {
       logger.log('BullMQ queues disabled (no Redis / in-memory mode)');

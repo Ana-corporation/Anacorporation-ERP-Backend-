@@ -28,9 +28,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     if (this.useMemory) {
       this.loadMemoryStoreFromDisk();
-      this.logger.warn(
-        'Session store: in-memory + disk persist (USE_MEMORY_SESSION=true). Start Redis for production.',
-      );
+      this.logger.log('Session store: in-memory + disk persist (Redis off until REDIS_HOST is set)');
       return;
     }
 
@@ -49,7 +47,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       this.useMemory = true;
       this.loadMemoryStoreFromDisk();
       this.logger.warn(
-        'Session store: Redis unavailable — using in-memory + disk persist. Start Docker Redis and set USE_MEMORY_SESSION=false for production.',
+        'Session store: REDIS_HOST set but Redis is unreachable — using in-memory + disk persist.',
       );
     }
   }

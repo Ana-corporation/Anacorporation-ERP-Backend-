@@ -17,20 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: erp-redis
-    restart: unless-stopped
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api:
     build:
       context: .
@@ -44,16 +30,11 @@ services:
     environment:
       PORT: '8080'
       DATABASE_URL: postgresql://erp:erp_secret@postgres:5432/erp_db?schema=public
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       - ./gcp-service-account.json:/app/gcp-service-account.json:ro
 
 volumes:
   postgres_data:
-  redis_data:

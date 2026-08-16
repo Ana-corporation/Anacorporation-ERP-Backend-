@@ -27,7 +27,7 @@ export class CustomFieldsRepository {
     companyId: string,
     entityType?: CustomFieldEntityType,
     includeInactive = false,
-  ) {
+  ): Promise<CustomFieldDefinition[]> {
     return this.prisma.customFieldDefinition.findMany({
       where: {
         companyId: parseBigIntId(companyId),
@@ -190,6 +190,31 @@ export class CustomFieldsRepository {
         updatedBy: deletedBy ? parseBigIntId(deletedBy) : undefined,
         updatedAt: new Date(),
       },
+    });
+  }
+
+  findRecordIdsMatchingFieldValue(
+    companyId: string,
+    entityType: CustomFieldEntityType,
+    def: CustomFieldDefinition,
+    rawValue: string,
+  ): Promise<Array<{ recordId: bigint }>> {
+    return this.prisma.customFieldValue.findMany({
+      where: {
+        companyId: parseBigIntId(companyId),
+        entityType,
+        fieldId: def.fieldId,
+        OR: [
+          { valueText: rawValue },
+          ...(def.fieldType === 'checkbox'
+            ? [{ valueBool: rawValue === 'true' || rawValue === '1' }]
+            : []),
+          ...(['number', 'decimal'].includes(def.fieldType) && !Number.isNaN(Number(rawValue))
+            ? [{ valueNumber: new Prisma.Decimal(rawValue) }]
+            : []),
+        ],
+      },
+      select: { recordId: true },
     });
   }
 
