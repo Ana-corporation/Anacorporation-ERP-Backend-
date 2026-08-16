@@ -25,16 +25,6 @@ function createPrismaClient() {
   const base = new PrismaClient();
 
   return base.$extends({
-    client: {
-      async isHealthy() {
-        try {
-          await base.$queryRaw`SELECT 1`;
-          return true;
-        } catch {
-          return false;
-        }
-      },
-    },
     query: {
       async $allOperations({ args, query }) {
         const maxAttempts = 4;
@@ -85,15 +75,6 @@ export class PrismaService
 
   async onModuleDestroy() {
     await this.$disconnect();
-  }
-
-  async isHealthy(): Promise<boolean> {
-    try {
-      await this.$queryRaw`SELECT 1`;
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   private async connectWithRetry(maxAttempts = 5): Promise<void> {

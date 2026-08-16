@@ -72,7 +72,7 @@ export class VendorsService {
     const { customFields, ...vendorDto } = dto;
 
     const vendor = await this.prisma.$transaction(async (tx) => {
-      const client = tx as Prisma.TransactionClient;
+      const client = tx as unknown as Prisma.TransactionClient;
       const vendorCode = await this.repository.nextVendorCode(companyId, prefix, client);
 
       if (await this.repository.findByCode(companyId, vendorCode, client)) {
@@ -121,7 +121,7 @@ export class VendorsService {
     const { customFields, ...vendorDto } = dto;
 
     await this.prisma.$transaction(async (tx) => {
-      const client = tx as Prisma.TransactionClient;
+      const client = tx as unknown as Prisma.TransactionClient;
       if (Object.keys(vendorDto).length > 0) {
         await this.repository.update(id, vendorDto, actorId, client);
       }

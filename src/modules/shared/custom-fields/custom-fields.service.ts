@@ -509,7 +509,7 @@ export class CustomFieldsValuesService {
       await run(tx);
     } else {
       await this.prisma.$transaction(async (client) => {
-        await run(client as Prisma.TransactionClient);
+        await run(client as unknown as Prisma.TransactionClient);
       });
     }
 
