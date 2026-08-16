@@ -84,7 +84,6 @@ jobs:
           frontend = os.environ["FRONTEND_ORIGIN"].rstrip("/")
           lines = [
               pair("NODE_ENV", "production"),
-              pair("PORT", "8080"),
               pair("API_PREFIX", "api/v1"),
               pair("FRONTEND_ORIGIN", frontend),
               pair("CORS_ORIGIN", frontend),
