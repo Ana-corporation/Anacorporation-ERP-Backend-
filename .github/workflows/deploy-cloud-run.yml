@@ -23,16 +23,35 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Check WIF_PROVIDER format
+        env:
+          WIF_PROVIDER: ${{ secrets.WIF_PROVIDER }}
+        run: |
+          # Must be: projects/NUMERIC_NUMBER/locations/global/workloadIdentityPools/POOL/providers/PROVIDER
+          # Project ID (project-b6b7f679-...) is invalid. Pool-only path is invalid.
+          if [[ ! "${WIF_PROVIDER}" =~ ^projects/[0-9]+/locations/global/workloadIdentityPools/[^/]+/providers/[^/]+$ ]]; then
+            echo "WIF_PROVIDER is not the full Identity Provider resource name."
+            echo "In Cloud Shell run:"
+            echo "  gcloud iam workload-identity-pools providers describe github-provider \\"
+            echo "    --project=project-b6b7f679-b5c2-42d8-bb4 \\"
+            echo "    --location=global \\"
+            echo "    --workload-identity-pool=github-pool \\"
+            echo "    --format='value(name)'"
+            echo "Paste that exact output into the WIF_PROVIDER GitHub secret (no quotes, no //iam.googleapis.com/ prefix)."
+            exit 1
+          fi
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
