@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger } from '@nestjs/common';
+import { Logger, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
@@ -48,12 +48,20 @@ async function bootstrap() {
   const port = Number(process.env.PORT) || configService.get<number>('app.port') || 3002;
   const apiPrefix = configService.get<string>('app.apiPrefix') ?? 'api/v1';
 
-  app.setGlobalPrefix(apiPrefix);
-  const corsOrigin = configService.get<string | string[]>('app.corsOrigin') ?? 'http://localhost:3001';
+  app.setGlobalPrefix(apiPrefix, {
+    exclude: [
+      { path: 'health', method: RequestMethod.GET },
+      { path: 'api/v1/health', method: RequestMethod.GET },
+    ],
+  });
+  const corsOrigin = configService.get<string[]>('app.corsOrigin') ?? [
+    'http://localhost:3001',
+  ];
   app.enableCors({
     origin: corsOrigin,
     credentials: true,
   });
+  logger.log(`CORS origins → ${corsOrigin.join(', ')}`);
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Manufacturing ERP API')

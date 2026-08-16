@@ -82,11 +82,13 @@ jobs:
               return f"{key}: {json.dumps(value)}"
 
           frontend = os.environ["FRONTEND_ORIGIN"].rstrip("/")
+          live = "https://anacorporation-erp-frontend-983704016599.europe-west1.run.app"
+          origins = ",".join(dict.fromkeys([frontend, live]))
           lines = [
               pair("NODE_ENV", "production"),
               pair("API_PREFIX", "api/v1"),
-              pair("FRONTEND_ORIGIN", frontend),
-              pair("CORS_ORIGIN", frontend),
+              pair("FRONTEND_ORIGIN", origins),
+              pair("CORS_ORIGIN", origins),
               pair("JWT_ACCESS_EXPIRATION", "8h"),
               pair("JWT_REFRESH_EXPIRATION", "7d"),
               pair("DATABASE_URL", os.environ["DATABASE_URL"]),

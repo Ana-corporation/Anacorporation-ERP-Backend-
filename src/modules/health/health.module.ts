@@ -4,7 +4,7 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { RedisService } from '@/infrastructure/redis/redis.service';
 import { Public } from '@/common/decorators/auth.decorators';
 
-@Controller('health')
+@Controller()
 class HealthController {
   constructor(
     private readonly prisma: PrismaService,
@@ -12,7 +12,7 @@ class HealthController {
   ) {}
 
   @Public()
-  @Get()
+  @Get('health')
   async check() {
     const dbStart = Date.now();
     const dbOk = await this.prisma.isHealthy();
@@ -22,13 +22,20 @@ class HealthController {
 
     return {
       status: dbOk ? 'ok' : 'degraded',
+      service: 'anacorporation-erp-backend',
       database: dbOk ? 'connected' : 'disconnected',
       databaseLatencyMs: dbLatencyMs,
       sessionStore,
       redisOk,
-      redis: sessionStore === 'memory-disk' ? 'memory-disk (dev)' : redisOk ? 'connected' : 'unavailable',
+      redis: sessionStore === 'memory-disk' ? 'memory' : redisOk ? 'connected' : 'unavailable',
       timestamp: new Date().toISOString(),
     };
+  }
+
+  @Public()
+  @Get('api/v1/health')
+  checkAlias() {
+    return this.check();
   }
 }
 

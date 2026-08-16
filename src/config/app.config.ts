@@ -1,10 +1,14 @@
-function parseCorsOrigin(): string | string[] {
-  const raw = process.env.FRONTEND_ORIGIN || process.env.CORS_ORIGIN || 'http://localhost:3001';
-  const origins = raw
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  return origins.length > 1 ? origins : (origins[0] ?? 'http://localhost:3001');
+const LIVE_FRONTEND_ORIGIN =
+  'https://anacorporation-erp-frontend-983704016599.europe-west1.run.app';
+
+function parseCorsOrigin(): string[] {
+  const raw = process.env.FRONTEND_ORIGIN || process.env.CORS_ORIGIN || '';
+  const origins = [
+    ...raw.split(',').map((origin) => origin.trim().replace(/\/$/, '')),
+    'http://localhost:3001',
+    LIVE_FRONTEND_ORIGIN,
+  ].filter(Boolean);
+  return [...new Set(origins)];
 }
 
 export const appConfig = () => ({
