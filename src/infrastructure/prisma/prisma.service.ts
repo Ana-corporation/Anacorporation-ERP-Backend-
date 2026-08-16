@@ -25,6 +25,16 @@ function createPrismaClient() {
   const base = new PrismaClient();
 
   return base.$extends({
+    client: {
+      async isHealthy() {
+        try {
+          await base.$queryRaw`SELECT 1`;
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    },
     query: {
       async $allOperations({ args, query }) {
         const maxAttempts = 4;

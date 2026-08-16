@@ -15,9 +15,20 @@ class HealthController {
   @Get('health')
   async check() {
     const dbStart = Date.now();
-    const dbOk = await this.prisma.isHealthy();
+    let dbOk = false;
+    try {
+      // PrismaService is an extended PrismaClient (constructor returns the client),
+      // so class methods like isHealthy() are not on the instance.
+      await this.prisma.$queryRaw`SELECT 1`;
+      dbOk = true;
+    } catch {
+      dbOk = false;
+    }
     const dbLatencyMs = Date.now() - dbStart;
-    const sessionStore = this.redis.getSessionStoreMode();
+    const sessionStore =
+      typeof this.redis.getSessionStoreMode === 'function'
+        ? this.redis.getSessionStoreMode()
+        : 'memory-disk';
     const redisOk = sessionStore === 'redis' ? await this.redis.ping() : false;
 
     return {
