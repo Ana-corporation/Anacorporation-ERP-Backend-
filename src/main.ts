@@ -23,7 +23,7 @@ async function ensureRedisOrFallback(logger: Logger) {
     return;
   }
 
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && !process.env.K_SERVICE) {
     throw new Error(
       'Redis is required in production but is not reachable. Start Redis before booting the app.',
     );
@@ -46,11 +46,11 @@ async function bootstrap() {
   app.use(requestLogger);
 
   const configService = app.get(ConfigService);
-  const port = configService.get<number>('app.port') ?? 3000;
+  const port = Number(process.env.PORT) || configService.get<number>('app.port') || 3002;
   const apiPrefix = configService.get<string>('app.apiPrefix') ?? 'api/v1';
 
   app.setGlobalPrefix(apiPrefix);
-  const corsOrigin = configService.get<string>('app.corsOrigin') ?? 'http://localhost:3001';
+  const corsOrigin = configService.get<string | string[]>('app.corsOrigin') ?? 'http://localhost:3001';
   app.enableCors({
     origin: corsOrigin,
     credentials: true,
@@ -98,21 +98,24 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
 
-  // Free PORT immediately before bind — Nest/Prisma boot can take seconds,
-  // so an earlier free-port at nodemon start is not enough (EADDRINUSE race).
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { freePort } = require('../scripts/free-port.js') as {
-      freePort: (port?: number | string) => { port: string; killed: number };
-    };
-    freePort(port);
-  } catch (err) {
-    logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
+  // Local only — never kill ports on Cloud Run (K_SERVICE is set there).
+  if (!process.env.K_SERVICE && process.env.NODE_ENV !== 'production') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { freePort } = require('../scripts/free-port.js') as {
+        freePort: (port?: number | string) => { port: string; killed: number };
+      };
+      freePort(port);
+    } catch (err) {
+      logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
+    }
   }
 
-  await app.listen(port);
-  logger.log(`Server running  → http://localhost:${port}/${apiPrefix}`);
-  logger.log(`Swagger docs    → http://localhost:${port}/docs`);
+  // Cloud Run sets PORT=8080 and rejects a localhost-only bind.
+  await app.listen(port, '0.0.0.0');
+  logger.log(`API listening on ${port}`);
+  logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
+  logger.log(`Swagger docs    → http://0.0.0.0:${port}/docs`);
 }
 
 bootstrap();

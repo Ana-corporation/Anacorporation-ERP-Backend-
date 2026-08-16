@@ -1,0 +1,102 @@
+# Creates / updates Cloud Run service anacorporation-erp-backend.
+# Do not create this service in the Cloud Console with
+# “Continuously deploy from a repository”.
+
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [development-anc]
+  workflow_dispatch:
+
+env:
+  REGION: asia-southeast1
+  SERVICE: anacorporation-erp-backend
+  REPOSITORY: anacorporation-erp-backend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Authorize Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${REPOSITORY}/${SERVICE}:${GITHUB_SHA}"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          docker build -t "${IMAGE}" -t "${REGION}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${REPOSITORY}/${SERVICE}:latest" .
+          docker push "${IMAGE}"
+          docker push "${REGION}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${REPOSITORY}/${SERVICE}:latest"
+
+      - name: Deploy Cloud Run service
+        env:
+          FRONTEND_ORIGIN: ${{ secrets.FRONTEND_ORIGIN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def pair(key: str, value: str) -> str:
+              return f"{key}: {json.dumps(value)}"
+
+          frontend = os.environ["FRONTEND_ORIGIN"].rstrip("/")
+          lines = [
+              pair("NODE_ENV", "production"),
+              pair("PORT", "8080"),
+              pair("API_PREFIX", "api/v1"),
+              pair("FRONTEND_ORIGIN", frontend),
+              pair("CORS_ORIGIN", frontend),
+              pair("USE_MEMORY_SESSION", "true"),
+              pair("JWT_ACCESS_EXPIRATION", "8h"),
+              pair("JWT_REFRESH_EXPIRATION", "7d"),
+              pair("DATABASE_URL", os.environ["DATABASE_URL"]),
+              pair("DIRECT_DATABASE_URL", os.environ["DIRECT_DATABASE_URL"]),
+              pair("JWT_SECRET", os.environ["JWT_SECRET"]),
+          ]
+          Path("cloud-run-env.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
+
+          gcloud run deploy "${SERVICE}" \
+            --image "${IMAGE}" \
+            --region "${REGION}" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --memory 1Gi \
+            --cpu 1 \
+            --timeout 300 \
+            --min-instances 0 \
+            --max-instances 5 \
+            --cpu-boost \
+            --env-vars-file cloud-run-env.yaml
+
+          rm -f cloud-run-env.yaml
+
+      - name: Print service URL
+        run: |
+          URL="$(gcloud run services describe "${SERVICE}" --region "${REGION}" --format='value(status.url)')"
+          echo "Backend URL: ${URL}"
+          echo "Put this value in the frontend GitHub secret BACKEND_URL, then re-run the frontend workflow."
