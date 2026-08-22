@@ -1,0 +1,116 @@
+================================================================================
+COPY — Role lifecycle logics (BE implemented) — FE HANDOFF
+Date: 2026-08-21 (updated after System deactivate + roleType)
+Use this OR: docs/FE-MATCH-ROLE-ASSIGNMENT-LIFECYCLE.txt
+            + docs/FE-MATCH-ROLE-SYSTEM-CUSTOM.txt
+================================================================================
+
+1) ROLE DEFINITION vs ASSIGNMENT
+   - Role = definition (catalogue)
+   - user_roles = who holds it now + history periods
+   - Do NOT mix with designations (org job title)
+
+2) ROLE TYPE (system / custom)
+   - BOTH fields in API (stay in sync):
+       isSystem: boolean
+       roleType: "SYSTEM" | "CUSTOM"
+   - SYSTEM also has systemTemplateKey (e.g. "MANAGER") — product identity
+   - CUSTOM → systemTemplateKey = null
+   - Company Admin MUST NOT send isSystem, roleType, or systemTemplateKey
+   - FE never converts Custom ↔ System
+   - Same systemTemplateKey across companies = same product template, different role rows
+
+3) SYSTEM vs CUSTOM RULES
+   SYSTEM ALLOW:
+     Assign / Reassign / Unassign / Clone / View
+     Deactivate (after 0 ACTIVE users) / Reactivate
+   SYSTEM BLOCK:
+     Delete          → code SYSTEM_ROLE_DELETE_BLOCKED
+     Rename          → code SYSTEM_ROLE_RENAME_BLOCKED
+     Edit permissions → code SYSTEM_ROLE_PERMISSIONS_LOCKED
+       (Clone to CUSTOM, then edit permissions)
+   CUSTOM ALLOW:
+     Create / Rename / Edit permissions / Assign / Reassign / Unassign
+     Clone / Deactivate / Reactivate / Soft-delete when safe
+
+4) ROLE STATUS
+   - ACTIVE   = assignable; default list filter
+   - INACTIVE = retired; no new assignments; history kept
+   - Soft-delete (deletedAt) = remove from catalogue (separate from INACTIVE)
+   - Valid: SYSTEM + INACTIVE + 0 users
+   - GET .../roles?status=ACTIVE|INACTIVE|ALL
+
+5) ONE PRIMARY ROLE PER USER (company)
+   - Only ONE ACTIVE user_role per (userId, companyId)
+   - Assigning a new role ENDS the previous ACTIVE role first
+   - Many users CAN share the same roleId
+
+6) ASSIGNMENT HISTORY (never overwrite period)
+   - ACTIVE: isActive=true, endedAt=null
+   - ENDED:  isActive=false, endedAt, endedBy, endReason
+   - endReason: REASSIGNED | UNASSIGNED | ROLE_DEACTIVATED | ROLE_DELETED
+   - Change = END old row + CREATE new row
+
+7) ASSIGN
+   - POST .../roles/:roleId/assign  { "userId": "<id>" }
+   - Role ACTIVE; user same company; roles:edit
+   - 409 DUPLICATE_ASSIGNMENT if already on this role
+
+8) REASSIGN
+   - POST .../roles/:roleId/reassign  { "toUserId", "fromUserId"? }
+   - fromUserId required if multiple ACTIVE assignees
+
+9) UNASSIGN
+   - POST .../roles/:roleId/unassign  { "userId"? }
+   - Role stays ACTIVE (vacant) — NOT deleted / NOT deactivated
+
+10) DEACTIVATE / REACTIVATE
+    - POST .../deactivate  { "reason"? } → INACTIVE (SYSTEM + CUSTOM)
+    - If ACTIVE users > 0 → 409 code ROLE_HAS_ACTIVE_ASSIGNEES
+      message: "This role has active users assigned. Reassign or unassign
+                all active users before deactivating the role."
+    - Does NOT auto-unassign
+    - POST .../reactivate → ACTIVE; no auto-assign
+
+11) DELETE (soft)
+    - SYSTEM → always 409 SYSTEM_ROLE_DELETE_BLOCKED
+    - CUSTOM: soft-delete when no ACTIVE assignees
+    - ACTIVE assignees: 409 or ?reassignToRoleId=
+
+12) USERS DRAWER
+    - PUT .../users/:userId/role  { "roleId": "<id>" | null }
+    - Same history rules as assign/unassign
+
+13) LIST / READ
+    - GET .../roles?status=&includeAssigneeSummary=true
+    - Extras: status, isSystem, roleType, assigneeCount, assignees[]
+    - GET .../roles/:roleId/assignments?history=true|false
+
+14) ERROR CODES (response field "code")
+    - ROLE_HAS_ACTIVE_ASSIGNEES
+    - SYSTEM_ROLE_DELETE_BLOCKED
+    - SYSTEM_ROLE_RENAME_BLOCKED
+    - SYSTEM_ROLE_PERMISSIONS_LOCKED
+    - ROLE_INACTIVE
+    - ROLE_CODE_EXISTS
+    - DUPLICATE_ASSIGNMENT
+
+15) PERMISSIONS (gates)
+    - roles:view | roles:create | roles:edit | roles:delete
+    - assign/reassign/unassign/deactivate → roles:edit
+    - Do NOT authorize by roleCode === "ADMIN"
+
+16) FE SENDS IDs ONLY
+    - userId, roleId, fromUserId, toUserId, reassignToRoleId
+    - BE does NOT auto-select person or role
+
+17) FE CARD HINTS
+    - ACTIVE + vacant   → Assign | Deactivate
+    - ACTIVE + assigned → Reassign | Unassign | Deactivate
+    - INACTIVE          → Reactivate
+    - SYSTEM            → no Delete / Rename / Edit perms (Clone instead)
+    - CUSTOM            → Edit perms / Rename / Delete when safe
+
+================================================================================
+END COPY — safe to feed FE
+================================================================================

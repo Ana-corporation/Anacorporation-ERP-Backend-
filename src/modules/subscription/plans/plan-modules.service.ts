@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
-import { ConflictException, NotFoundException } from '@/common/exceptions/business.exception';
+import {
+  BusinessException,
+  ConflictException,
+  NotFoundException,
+} from '@/common/exceptions/business.exception';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { serialize } from '@/common/utils/bigint.util';
 import { AddPlanModuleDto } from './dto/plan-module.dto';
@@ -34,6 +38,15 @@ export class PlanModulesService {
 
     const mod = await this.repository.moduleExists(dto.moduleId);
     if (!mod) throw new NotFoundException('Module');
+
+    if (mod.moduleType === 'admin') {
+      throw new BusinessException('Admin modules cannot be assigned to subscription plans');
+    }
+    if (mod.lifecycleStatus !== 'AVAILABLE') {
+      throw new BusinessException(
+        `Only AVAILABLE product modules can be assigned to plans (${mod.moduleCode}: ${mod.lifecycleStatus})`,
+      );
+    }
 
     const existing = await this.repository.findByPlanAndModule(planId, dto.moduleId);
     if (existing) throw new ConflictException('Module already assigned to this plan');

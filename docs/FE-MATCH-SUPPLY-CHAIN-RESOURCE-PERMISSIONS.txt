@@ -1,0 +1,116 @@
+================================================================================
+FE MATCH — Supply Chain resource permissions (Vendors / Items)
+Date:       2026-08-21
+Audience:   ERP-Frontend
+Backend:    ERP-Backend
+================================================================================
+
+
+NAMING CONVENTION (unchanged style)
+--------------------------------------------------------------------------------
+
+  Existing catalogue uses `resource:action` (e.g. users:view), not dotted codes.
+
+  New codes (module = supply-chain for entitlement):
+
+    vendors:view | vendors:create | vendors:edit | vendors:delete | vendors:approve
+    items:view   | items:create   | items:edit   | items:delete   | items:approve
+
+  Do NOT use supply_chain.vendors.view — that format is not in this backend.
+
+
+HIERARCHY
+--------------------------------------------------------------------------------
+
+  MODULE:   SUPPLY_CHAIN  (company entitlement / lifecycle — moduleCode "supply-chain")
+    RESOURCE: VENDORS
+      ACTIONS: VIEW CREATE EDIT DELETE APPROVE
+    RESOURCE: ITEMS
+      ACTIONS: VIEW CREATE EDIT DELETE APPROVE
+
+  Vendors and Items permissions are INDEPENDENT (no inheritance).
+
+
+AUTH / ME
+--------------------------------------------------------------------------------
+
+  Continue using Hybrid contract:
+
+    permissions: string[]     // flat effective codes, e.g. "vendors:view"
+    activeCompany.modules[]   // supply-chain present when entitled + any SC action
+
+  Authorization must use permission codes, not DB ids.
+
+  Example Vendor Staff:
+
+    permissions: ["vendors:view"]
+    // items:* absent → hide Items nav / block Items APIs
+
+
+PERMISSION CATALOGUE METADATA
+--------------------------------------------------------------------------------
+
+  GET permissions list/detail may include:
+
+    moduleCode
+    resource              // "vendors" | "items" | null
+    resourceDisplayName   // "Vendors" | "Items" | null
+    action                // view|create|edit|delete|approve|...
+    actionDisplayName     // "View" | ...
+    displayName           // human label
+    permissionCode
+
+  FE role matrix: group by module → resource → action checkboxes.
+
+
+API GATES (already on BE)
+--------------------------------------------------------------------------------
+
+  Vendors  GET/POST/PATCH/DELETE  → vendors:view|create|edit|delete
+  Items    GET/POST/PATCH/DELETE  → items:view|create|edit|delete
+  (approve codes reserved; wire when approve endpoints ship)
+
+  Tenant isolation unchanged: companyId path + assertCompanyAccess.
+
+
+BACKWARD COMPAT
+--------------------------------------------------------------------------------
+
+  Legacy module-level codes still exist:
+
+    supply-chain:view|create|edit|delete|approve
+
+  Until roles finish migrating:
+
+    - BE treats supply-chain:{action} as alias for BOTH vendors:{action}
+      AND items:{action} when checking resource gates.
+    - Migration script expands role_permissions (keeps legacy rows):
+        node scripts/seed-erp-product-modules.js
+        node scripts/migrate-supply-chain-resource-permissions.js
+
+  FE may keep accepting supply-chain:* temporarily, but should prefer
+  vendors:* / items:* for new UI and role editors.
+
+
+SYSTEM ROLE INTENT (demo seed)
+--------------------------------------------------------------------------------
+
+  ADMIN            — all vendors:* + items:*
+  MANAGER          — vendors/items view+create+edit
+  STAFF / SALES    — vendors:view + items:view
+  VENDOR           — vendors view/create/edit/delete only (no items)
+  INVENTORY_ADMIN  — items view/create/edit/delete only (no vendors)
+
+  Custom roles: assign Vendors vs Items independently.
+
+
+FE CHECKLIST
+--------------------------------------------------------------------------------
+
+  [ ] Role permission matrix shows Vendors and Items as separate resources
+  [ ] Nav: Vendors requires vendors:view; Items requires items:view
+  [ ] Do not gate both with supply-chain:view alone going forward
+  [ ] /auth/me permissions[] drives can() helpers
+  [ ] Never send permission IDs for authz
+
+================================================================================

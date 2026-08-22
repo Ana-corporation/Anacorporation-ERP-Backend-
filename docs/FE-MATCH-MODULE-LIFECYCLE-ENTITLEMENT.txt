@@ -1,0 +1,117 @@
+================================================================================
+FE MATCH — Module Lifecycle + Company Entitlement + User Access
+Date:       2026-08-20
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (shipped)
+Choice:     Option (b) — one AVAILABLE product module code: supply-chain
+================================================================================
+
+
+PRODUCT SURFACE (documented)
+--------------------------------------------------------------------------------
+
+  FE workspace nav for Vendors + Items continues to use moduleCode:
+      "supply-chain"
+
+  Catalogue lifecycle seed:
+      AVAILABLE:     supply-chain
+      DEVELOPMENT:   financials, hcm, manufacturing, crm, projects
+      INTERNAL:      admin catalogue modules (shared, organization, iam, …)
+
+  Do NOT expect separate vendors / items module codes yet.
+
+
+ALLOW RULE (unchanged Hybrid auth)
+--------------------------------------------------------------------------------
+
+  Workspace module appears in activeCompany.modules[] only when ALL true:
+
+    1) company_modules row exists for company
+    2) company_modules.isActive === true
+    3) modules.lifecycleStatus IN (AVAILABLE, DEPRECATED)
+    4) moduleType === product
+    5) user role has ≥1 Phase-1 action on that module (typically view)
+
+  API calls (Vendors / Items / inventory under supply-chain):
+
+    @RequireModulePermission('supply-chain', action)
+      → requires ACTIVE entitlement in JWT modules[] snapshot
+      → AND role action on that module
+
+  Hybrid login fields UNCHANGED:
+      permissions[] | tenantAdmin | platformOwner
+
+
+NEW / CHANGED APIs
+--------------------------------------------------------------------------------
+
+  Module catalogue responses include:
+      lifecycleStatus: DEVELOPMENT | TESTING | INTERNAL | AVAILABLE | DEPRECATED | DISABLED
+
+  Filters:
+      GET /api/v1/subscription/modules?lifecycleStatus=AVAILABLE&moduleType=product
+
+  Grantable catalogue (PO Company → Modules UI):
+      GET /api/v1/subscription/modules/grantable
+      → AVAILABLE product modules only (never DEVELOPMENT)
+
+  Update lifecycle (PO Modules page):
+      PATCH /api/v1/subscription/modules/:id
+      body: { "lifecycleStatus": "AVAILABLE" }
+
+  Company entitlement:
+      POST /api/v1/companies/:companyId/modules
+      → 400/422 if module is not AVAILABLE product
+         message includes: "Module is not available for customer entitlement"
+      → admin moduleType rejected
+      → DISABLED rejected
+
+      PATCH … isActive:true
+      → allowed for AVAILABLE or DEPRECATED only
+
+
+LOGIN /me EXPECTATION (DEMO_ACME)
+--------------------------------------------------------------------------------
+
+  Company Admin after fresh seed:
+      activeCompany.modules[] ≈ [{ moduleCode: "supply-chain", isActive: true, permissions: [...] }]
+      NOT financials / crm / hcm / manufacturing / projects
+
+  PLATFORM_OWNER:
+      product modules[] stays empty (Administration → Modules for catalogue)
+
+
+FE ACTIONS
+--------------------------------------------------------------------------------
+
+  [ ] Hide workspace nav unless module in activeCompany.modules[] AND can(permission)
+  [ ] PO Modules page: show + filter lifecycleStatus
+  [ ] PO Company → Modules & Entitlements: load grantable from
+        GET /subscription/modules/grantable
+      + current rows from GET /companies/:id/modules
+  [ ] Map Vendors + Items nav to moduleCode "supply-chain"
+
+
+SEED / MIGRATE
+--------------------------------------------------------------------------------
+
+  Migration: prisma/migrations/20260820180000_module_lifecycle_status
+  Seeds:     npm run seed:erp-modules
+             npm run seed:client-logins
+
+  DEMO_ACME company_modules: ACTIVE only for supply-chain
+
+
+ACCEPTANCE (FE verify)
+--------------------------------------------------------------------------------
+
+  [ ] DEMO_ACME ADMIN workspace shows only Supply Chain (Vendors/Items)
+  [ ] Cannot grant financials while DEVELOPMENT (API error)
+  [ ] Can grant supply-chain when AVAILABLE
+  [ ] Vendors API 403 without ACTIVE supply-chain entitlement
+  [ ] Vendors API OK when entitled + permission
+  [ ] Hybrid permissions[] / tenantAdmin / platformOwner unchanged
+
+================================================================================
+END
+================================================================================

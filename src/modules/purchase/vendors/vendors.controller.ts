@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { RequireModulePermission } from '@/common/decorators/auth.decorators';
+import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
@@ -15,7 +15,7 @@ export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
 
   @Get()
-  @RequireModulePermission('supply-chain', 'view')
+  @RequirePermissions('vendors:view')
   findAll(
     @Param('companyId') companyId: string,
     @Query() query: VendorListQueryDto,
@@ -26,7 +26,7 @@ export class VendorsController {
   }
 
   @Get(':id')
-  @RequireModulePermission('supply-chain', 'view')
+  @RequirePermissions('vendors:view')
   findOne(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
@@ -37,7 +37,7 @@ export class VendorsController {
   }
 
   @Post()
-  @RequireModulePermission('supply-chain', 'create')
+  @RequirePermissions('vendors:create')
   create(
     @Param('companyId') companyId: string,
     @Body() dto: CreateVendorDto,
@@ -48,7 +48,7 @@ export class VendorsController {
   }
 
   @Patch(':id')
-  @RequireModulePermission('supply-chain', 'edit')
+  @RequirePermissions('vendors:edit')
   update(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
@@ -60,7 +60,7 @@ export class VendorsController {
   }
 
   @Delete(':id')
-  @RequireModulePermission('supply-chain', 'delete')
+  @RequirePermissions('vendors:delete')
   remove(
     @Param('companyId') companyId: string,
     @Param('id') id: string,

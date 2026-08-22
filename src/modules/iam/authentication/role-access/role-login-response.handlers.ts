@@ -62,7 +62,13 @@ function keepViewableModules(snapshot: AuthRoleSnapshot): AuthRoleSnapshot {
 export const handlePlatformOwner: RoleLoginHandler = (input) => {
   const snapshot = cloneContext(input);
   snapshot.activeCompany.modules = [];
-  snapshot.permissions = input.rolePermissions.filter((code) => PLATFORM_NAV_SET.has(code));
+  // Always expose full platform nav contract (legacy + platform_companies + audit).
+  snapshot.permissions = [
+    ...new Set([
+      ...PLATFORM_NAV_PERMISSIONS,
+      ...input.rolePermissions.filter((code) => PLATFORM_NAV_SET.has(code)),
+    ]),
+  ];
   snapshot.tenantAdmin = false;
   snapshot.platformOwner = true;
   return scopeToActiveCompany(snapshot);

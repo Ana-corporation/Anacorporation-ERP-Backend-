@@ -56,6 +56,11 @@ export class UsersService {
     );
   }
 
+  /** Platform Owner Company Admins tab — ADMIN role only. */
+  async findAdmins(companyId: string, query: PaginationQueryDto) {
+    return this.findAll(companyId, { ...query, roleCode: 'ADMIN' } as PaginationQueryDto);
+  }
+
   async findOne(id: string, companyId?: string) {
     if (companyId) {
       const detail = await this.repository.findCompanyUserDetail(id, companyId);
@@ -207,7 +212,7 @@ export class UsersService {
       companyId,
       userId,
       performedBy: actorId,
-      action: UserAuditAction.create,
+      action: UserAuditAction.invite,
       entityName: 'UserInvite',
       entityId: userId,
       newValue: {
@@ -280,9 +285,11 @@ export class UsersService {
     if (roleId) {
       const role = await this.repository.findCompanyRole(companyId, roleId);
       if (!role) {
-        throw new BusinessException('roleId must belong to this company', HttpStatus.BAD_REQUEST, [
-          { field: 'roleId', message: 'Invalid role for company' },
-        ]);
+        throw new BusinessException(
+          'roleId must belong to this company and be ACTIVE',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'roleId', message: 'Invalid or inactive role for company' }],
+        );
       }
       nextRoleCode = role.roleCode;
     }
@@ -307,7 +314,11 @@ export class UsersService {
       action: UserAuditAction.role_change,
       entityName: 'UserRole',
       entityId: assignment?.userRoleId.toString() ?? userId,
-      newValue: { roleId },
+      newValue: {
+        roleId,
+        action: roleId ? 'ASSIGN' : 'UNASSIGN',
+        endReason: roleId ? 'REASSIGNED' : 'UNASSIGNED',
+      },
     });
 
     return this.serializeCompanyUser(userId, companyId);
@@ -511,9 +522,17 @@ export class UsersService {
     roles: Array<{
       role: { roleId: bigint; roleCode: string; roleName: string };
     }>;
+    loginHistory?: Array<{ loginDate: Date }>;
   }) {
     const membership = detail.companies[0] ?? null;
     const role = detail.roles[0]?.role ?? null;
+    const lastLoginAt = detail.loginHistory?.[0]?.loginDate?.toISOString() ?? null;
+    const inviteStatus =
+      membership?.status === 'invited'
+        ? 'pending'
+        : membership?.status === 'active'
+          ? 'accepted'
+          : membership?.status ?? null;
 
     return {
       userId: detail.userId.toString(),
@@ -527,6 +546,9 @@ export class UsersService {
       email: detail.email,
       mobile: detail.mobile,
       isActive: detail.isActive,
+      lastLoginAt,
+      inviteStatus,
+      isPrimaryAdmin: role?.roleCode === 'ADMIN' ? false : undefined,
       membership: membership
         ? {
             userCompanyId: membership.userCompanyId.toString(),

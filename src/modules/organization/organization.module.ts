@@ -6,6 +6,7 @@ import { DepartmentsModule } from './departments/departments.module';
 import { DesignationsModule } from './designations/designations.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { EmployeesModule } from './employees/employees.module';
+import { CompanyAuditModule } from './company-audit/company-audit.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { EmployeesModule } from './employees/employees.module';
     WarehousesModule,
     EmployeesModule,
     CompanySecurityPoliciesModule,
+    CompanyAuditModule,
   ],
   exports: [
     CompaniesModule,
@@ -25,6 +27,7 @@ import { EmployeesModule } from './employees/employees.module';
     WarehousesModule,
     EmployeesModule,
     CompanySecurityPoliciesModule,
+    CompanyAuditModule,
   ],
 })
 export class OrganizationModule {}

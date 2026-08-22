@@ -19,6 +19,9 @@ export const ListQuerySchema = z.object({
   country: z.string().optional(),
   fromDate: z.string().date().optional(),
   toDate: z.string().date().optional(),
+  /** Audit date aliases used by Platform Owner Activity tab */
+  from: z.string().optional(),
+  to: z.string().optional(),
   // entity-specific optional filters (ignored when not used by repo)
   documentType: z.string().optional(),
   consentType: z.string().optional(),
@@ -33,6 +36,11 @@ export const ListQuerySchema = z.object({
   deviceUuid: z.string().optional(),
   moduleId: bigintIdSchema.optional(),
   planId: bigintIdSchema.optional(),
+  /** ERP catalogue filters */
+  moduleType: z.enum(['admin', 'product']).optional(),
+  lifecycleStatus: z
+    .enum(['DEVELOPMENT', 'TESTING', 'INTERNAL', 'AVAILABLE', 'DEPRECATED', 'DISABLED'])
+    .optional(),
   isTrusted: z.coerce.boolean().optional(),
   isBlocked: z.coerce.boolean().optional(),
   isVerified: z.coerce.boolean().optional(),
@@ -42,6 +50,10 @@ export const ListQuerySchema = z.object({
   isDefault: z.coerce.boolean().optional(),
   action: z.string().optional(),
   entityName: z.string().optional(),
+  /** Filter company users by role code (e.g. ADMIN for Platform Owner Admins tab). */
+  roleCode: z.string().optional(),
+  /** Roles list: include slim assignees[] + drives richer mapping */
+  includeAssigneeSummary: z.coerce.boolean().optional(),
 });
 
 /** @deprecated alias — use ListQueryDto */

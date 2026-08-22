@@ -9,6 +9,8 @@ model Module {
   parentModuleId BigInt?   @map("parent_module_id")
   sortOrder      Int       @default(0) @map("sort_order")
   moduleType     ModuleType @default(admin) @map("module_type")
+  /** Customer entitlement gate — only AVAILABLE (and existing DEPRECATED) may be granted. */
+  lifecycleStatus ModuleLifecycleStatus @default(DEVELOPMENT) @map("lifecycle_status")
   isActive       Boolean   @default(true) @map("is_active")
   createdBy      BigInt?   @map("created_by")
   createdAt      DateTime  @default(now()) @map("created_at")

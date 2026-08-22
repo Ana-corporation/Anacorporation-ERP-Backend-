@@ -10,12 +10,14 @@ export class BusinessException extends HttpException {
     message: string,
     statusCode: HttpStatus = HttpStatus.BAD_REQUEST,
     errors?: FieldError[],
+    code?: string,
   ) {
     super(
       {
         message,
         statusCode,
         ...(errors?.length ? { errors } : {}),
+        ...(code ? { code } : {}),
       },
       statusCode,
     );
@@ -29,8 +31,8 @@ export class NotFoundException extends BusinessException {
 }
 
 export class ConflictException extends BusinessException {
-  constructor(message: string) {
-    super(message, HttpStatus.CONFLICT);
+  constructor(message: string, code?: string) {
+    super(message, HttpStatus.CONFLICT, undefined, code);
   }
 }
 

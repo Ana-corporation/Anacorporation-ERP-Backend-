@@ -1,0 +1,98 @@
+================================================================================
+FE MATCH — Role lifecycle (System deactivate + roleType) UPDATE
+Date:       2026-08-21
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (shipped)
+================================================================================
+
+
+ROLE TYPE
+--------------------------------------------------------------------------------
+
+  Response fields (both present; stay in sync):
+
+    isSystem: boolean
+    roleType: "SYSTEM" | "CUSTOM"
+
+  Mapping:
+    isSystem true  ↔ roleType SYSTEM
+    isSystem false ↔ roleType CUSTOM
+
+  Company Admin MUST NOT send isSystem or roleType on create/update.
+  FE never converts Custom ↔ System.
+
+
+SYSTEM ROLE RULES (updated)
+--------------------------------------------------------------------------------
+
+  ALLOW:
+    Assign / Reassign / Unassign
+    Clone → always creates CUSTOM
+    Deactivate (after 0 ACTIVE users)
+    Reactivate (no auto-assign)
+    View
+
+  BLOCK:
+    Delete          → code SYSTEM_ROLE_DELETE_BLOCKED
+    Rename          → code SYSTEM_ROLE_RENAME_BLOCKED
+    Edit permissions → code SYSTEM_ROLE_PERMISSIONS_LOCKED
+      Message: clone to custom, then edit permissions
+
+
+DEACTIVATE (SYSTEM + CUSTOM)
+--------------------------------------------------------------------------------
+
+  POST .../roles/:roleId/deactivate
+  body optional: { "reason": "..." }
+
+  If ACTIVE assignees > 0:
+    409
+    code: ROLE_HAS_ACTIVE_ASSIGNEES
+    message: "This role has active users assigned. Reassign or unassign all
+              active users before deactivating the role."
+
+  Valid: SYSTEM + INACTIVE + 0 users
+
+
+ERROR CODES (in response envelope as "code")
+--------------------------------------------------------------------------------
+
+  ROLE_HAS_ACTIVE_ASSIGNEES
+  SYSTEM_ROLE_DELETE_BLOCKED
+  SYSTEM_ROLE_RENAME_BLOCKED
+  SYSTEM_ROLE_PERMISSIONS_LOCKED
+  ROLE_INACTIVE
+  ROLE_CODE_EXISTS
+  DUPLICATE_ASSIGNMENT
+
+
+FE UX HINTS
+--------------------------------------------------------------------------------
+
+  SYSTEM card:
+    - Show Deactivate / Reactivate
+    - Hide Edit Permissions → CTA "Clone to customize"
+    - Hide Delete
+
+  CUSTOM card:
+    - Edit permissions / rename / delete (when safe) as before
+
+  Badge: use roleType or isSystem
+
+
+UNCHANGED
+--------------------------------------------------------------------------------
+
+  Assign / reassign / unassign / history / soft-delete / Hybrid auth
+  Permission gates still roles:view|create|edit|delete (no new assign codes yet)
+
+
+MIGRATE
+--------------------------------------------------------------------------------
+
+  npx prisma migrate deploy
+  (20260821120000_role_type)
+
+================================================================================
+END
+================================================================================

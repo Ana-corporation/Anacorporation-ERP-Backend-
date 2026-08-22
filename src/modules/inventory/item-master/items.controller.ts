@@ -20,7 +20,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
-import { RequireModulePermission } from '@/common/decorators/auth.decorators';
+import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
@@ -50,7 +50,7 @@ export class ItemsController {
 
   @Get()
   @ApiOperation({ summary: 'List item master records' })
-  @RequireModulePermission('supply-chain', 'view')
+  @RequirePermissions('items:view')
   findAll(
     @Param('companyId') companyId: string,
     @Query() query: PaginationQueryDto,
@@ -62,7 +62,7 @@ export class ItemsController {
 
   @Get('settings')
   @ApiOperation({ summary: 'Get Item Master code settings (AUTO/MANUAL)' })
-  @RequireModulePermission('supply-chain', 'view')
+  @RequirePermissions('items:view')
   getSettings(
     @Param('companyId') companyId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -73,7 +73,7 @@ export class ItemsController {
 
   @Patch('settings')
   @ApiOperation({ summary: 'Update Item Master code settings (AUTO/MANUAL)' })
-  @RequireModulePermission('supply-chain', 'edit')
+  @RequirePermissions('items:edit')
   updateSettings(
     @Param('companyId') companyId: string,
     @Body() dto: UpdateItemSettingsDto,
@@ -87,7 +87,7 @@ export class ItemsController {
   @ApiOperation({
     summary: 'Create item (AUTO generates itemCode; MANUAL requires itemCode)',
   })
-  @RequireModulePermission('supply-chain', 'create')
+  @RequirePermissions('items:create')
   create(
     @Param('companyId') companyId: string,
     @Body() dto: CreateItemDto,
@@ -109,7 +109,7 @@ export class ItemsController {
       },
     },
   })
-  @RequireModulePermission('supply-chain', 'edit')
+  @RequirePermissions('items:edit')
   @UseInterceptors(
     FileFieldsInterceptor(
       [
@@ -136,7 +136,7 @@ export class ItemsController {
 
   @Get(':id/attachments/:fileAssetId/url')
   @ApiOperation({ summary: 'Get signed download URL for an item attachment' })
-  @RequireModulePermission('supply-chain', 'view')
+  @RequirePermissions('items:view')
   getAttachmentUrl(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
@@ -149,7 +149,7 @@ export class ItemsController {
 
   @Delete(':id/attachments/:fileAssetId')
   @ApiOperation({ summary: 'Delete an uploaded item attachment' })
-  @RequireModulePermission('supply-chain', 'edit')
+  @RequirePermissions('items:edit')
   deleteAttachment(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
@@ -162,7 +162,7 @@ export class ItemsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get one item with warehouse stock' })
-  @RequireModulePermission('supply-chain', 'view')
+  @RequirePermissions('items:view')
   findOne(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
@@ -174,7 +174,7 @@ export class ItemsController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update item' })
-  @RequireModulePermission('supply-chain', 'edit')
+  @RequirePermissions('items:edit')
   update(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
@@ -187,7 +187,7 @@ export class ItemsController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Soft delete item' })
-  @RequireModulePermission('supply-chain', 'delete')
+  @RequirePermissions('items:delete')
   remove(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
@@ -199,7 +199,7 @@ export class ItemsController {
 
   @Put(':id/warehouses')
   @ApiOperation({ summary: 'Create or update item stock row for a warehouse' })
-  @RequireModulePermission('supply-chain', 'edit')
+  @RequirePermissions('items:edit')
   upsertWarehouseStock(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
@@ -212,7 +212,7 @@ export class ItemsController {
 
   @Delete(':id/warehouses/:warehouseId')
   @ApiOperation({ summary: 'Remove item stock row for a warehouse' })
-  @RequireModulePermission('supply-chain', 'delete')
+  @RequirePermissions('items:delete')
   removeWarehouseStock(
     @Param('companyId') companyId: string,
     @Param('id') id: string,

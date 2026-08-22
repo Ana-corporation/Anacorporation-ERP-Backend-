@@ -136,7 +136,8 @@ export class CompanyAccessContextService {
     ]);
 
     const planSet = new Set(planModules.map((row) => row.moduleId.toString()));
-    const entitled = new Set(planSet);
+    // Workspace entitlement requires an ACTIVE company_modules row (plan alone is not enough).
+    const entitled = new Set<string>();
 
     for (const row of companyModules) {
       const key = row.moduleId.toString();
@@ -145,17 +146,8 @@ export class CompanyAccessContextService {
       if (row.isActive && notExpired) {
         entitled.add(key);
         activeByModuleId.set(key, true);
-      } else if (!row.isActive) {
-        entitled.delete(key);
+      } else {
         activeByModuleId.set(key, false);
-      } else if (row.isActive) {
-        activeByModuleId.set(key, true);
-      }
-    }
-
-    for (const id of planSet) {
-      if (!activeByModuleId.has(id)) {
-        activeByModuleId.set(id, true);
       }
     }
 
@@ -226,16 +218,25 @@ export class CompanyAccessContextService {
       }
     }
 
-    return productModules.map((mod) => {
-      const key = mod.moduleId.toString();
-      return {
-        moduleId: Number(mod.moduleId),
-        moduleCode: mod.moduleCode,
-        moduleName: mod.moduleName,
-        isActive: companyModuleActiveById.get(key) ?? true,
-        permissions: permissionsByModuleId.get(key) ?? [],
-      };
-    });
+    return productModules
+      .filter((mod) => {
+        const key = mod.moduleId.toString();
+        // Spec: company_modules.isActive === true (explicit entitlement row)
+        if (companyModuleActiveById.get(key) !== true) return false;
+        const perms = permissionsByModuleId.get(key) ?? [];
+        // Spec: user has at least view (or any Phase-1 action) on the module
+        return perms.includes('view') || perms.length > 0;
+      })
+      .map((mod) => {
+        const key = mod.moduleId.toString();
+        return {
+          moduleId: Number(mod.moduleId),
+          moduleCode: mod.moduleCode,
+          moduleName: mod.moduleName,
+          isActive: true,
+          permissions: permissionsByModuleId.get(key) ?? [],
+        };
+      });
   }
 
   private isPhase1Action(action: PermissionAction | string): action is Phase1PermissionAction {

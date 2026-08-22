@@ -22,10 +22,26 @@ export class UsersRepository {
   findManyByCompany(companyId: string, query: PaginationQueryDto) {
     const { skip, limit, page } = getPaginationParams(query);
     const cid = parseBigIntId(companyId);
+    const roleCode =
+      typeof (query as { roleCode?: string }).roleCode === 'string'
+        ? (query as { roleCode?: string }).roleCode!.trim().toUpperCase()
+        : undefined;
+
     const where = buildListWhere(
       {
         deletedAt: null,
         companies: { some: { companyId: cid, deletedAt: null } },
+        ...(roleCode
+          ? {
+              roles: {
+                some: {
+                  companyId: cid,
+                  isActive: true,
+                  role: { roleCode, deletedAt: null },
+                },
+              },
+            }
+          : {}),
       },
       query,
       USERS_LIST_FILTER,
@@ -47,6 +63,12 @@ export class UsersRepository {
             include: { role: true },
             take: 1,
             orderBy: { assignedDate: 'desc' },
+          },
+          loginHistory: {
+            where: { companyId: cid, loginResult: 'success' },
+            orderBy: { loginDate: 'desc' },
+            take: 1,
+            select: { loginDate: true },
           },
         },
       }),
@@ -92,6 +114,7 @@ export class UsersRepository {
         roleId: parseBigIntId(roleId),
         companyId: parseBigIntId(companyId),
         deletedAt: null,
+        status: 'ACTIVE',
       },
     });
   }
@@ -260,8 +283,9 @@ export class UsersRepository {
   }
 
   /**
-   * Replace the single active role for a user in a company.
-   * roleId=null deactivates all roles.
+   * Replace the single active role for a user in a company (history-preserving).
+   * Ends prior ACTIVE periods (endedAt + endReason) then creates a NEW row.
+   * roleId=null → unassign all ACTIVE company roles (UNASSIGNED).
    */
   replacePrimaryRole(
     userId: string,
@@ -272,38 +296,58 @@ export class UsersRepository {
     const uid = parseBigIntId(userId);
     const cid = parseBigIntId(companyId);
     const nextRoleId = roleId ? parseBigIntId(roleId) : null;
+    const actor = assignedBy ? parseBigIntId(assignedBy) : undefined;
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.userRole.updateMany({
-        where: {
-          userId: uid,
-          companyId: cid,
-          ...(nextRoleId ? { roleId: { not: nextRoleId } } : {}),
-        },
-        data: { isActive: false },
+      const active = await tx.userRole.findMany({
+        where: { userId: uid, companyId: cid, isActive: true },
+        select: { userRoleId: true, roleId: true },
       });
+
+      if (active.length > 0) {
+        const endReason =
+          nextRoleId && active.some((r) => r.roleId === nextRoleId)
+            ? 'REASSIGNED'
+            : nextRoleId
+              ? 'REASSIGNED'
+              : 'UNASSIGNED';
+
+        // If already on the target role and only that one is active — no-op refresh.
+        if (
+          nextRoleId &&
+          active.length === 1 &&
+          active[0].roleId === nextRoleId
+        ) {
+          return tx.userRole.findFirst({
+            where: { userRoleId: active[0].userRoleId },
+            include: { role: true },
+          });
+        }
+
+        await tx.userRole.updateMany({
+          where: { userRoleId: { in: active.map((r) => r.userRoleId) } },
+          data: {
+            isActive: false,
+            endedAt: new Date(),
+            endedBy: actor,
+            endReason,
+          },
+        });
+      }
 
       if (!nextRoleId) return null;
 
-      return tx.userRole.upsert({
-        where: {
-          userId_companyId_roleId: {
-            userId: uid,
-            companyId: cid,
-            roleId: nextRoleId,
-          },
-        },
-        update: {
-          isActive: true,
-          assignedBy: assignedBy ? parseBigIntId(assignedBy) : undefined,
-          assignedDate: new Date(),
-        },
-        create: {
+      return tx.userRole.create({
+        data: {
           userId: uid,
           companyId: cid,
           roleId: nextRoleId,
-          assignedBy: assignedBy ? parseBigIntId(assignedBy) : undefined,
+          assignedBy: actor,
+          assignedDate: new Date(),
           isActive: true,
+          endedAt: null,
+          endedBy: null,
+          endReason: null,
         },
         include: { role: true },
       });

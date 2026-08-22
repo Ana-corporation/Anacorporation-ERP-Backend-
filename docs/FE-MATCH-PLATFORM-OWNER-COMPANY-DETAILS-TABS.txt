@@ -1,0 +1,79 @@
+================================================================================
+FE ↔ BE MATCH — Platform Owner Company Details (tabs)
+Date:       2026-08-20
+Status:     BE READY
+Audience:   ERP-Frontend
+================================================================================
+
+
+P1 — Activity & Audit (REQUIRED)
+--------------------------------------------------------------------------------
+
+  GET /api/v1/companies/:companyId/audit-logs
+    ?page=&limit=&from=&to=&action=
+
+  Permission: user_audit:view  (PLATFORM_OWNER also via platform_companies:view alias)
+  Tenant isolation: assertCompanyAccess — platform_companies:* may cross tenants;
+                    tenant users only their own companyId.
+
+  Response: { items, total, page, limit, totalPages }
+
+  Each item (camelCase):
+  {
+    "auditId": "...",
+    "occurredAt": "ISO",
+    "action": "COMPANY_SUSPENDED" | "COMPANY_ACTIVATED" | "COMPANY_SET_TRIAL"
+             | "COMPANY_CREATED" | "COMPANY_UPDATED"
+             | "PLAN_ASSIGNED" | "SUBSCRIPTION_CHANGED"
+             | "MODULE_ENABLED" | "MODULE_DISABLED"
+             | "ADMIN_INVITED" | ...,
+    "actor": { "userId", "displayName", "email" },
+    "target": { "type": "company"|"subscription"|"module"|"user", "id", "label" },
+    "details": "human readable"
+  }
+
+  Empty company → 200 with items: []
+
+
+P2 — Company Admins filter
+--------------------------------------------------------------------------------
+
+  GET /api/v1/companies/:companyId/users?roleCode=ADMIN
+  GET /api/v1/companies/:companyId/admins   (same result)
+
+  Extra fields on user rows (when available):
+    inviteStatus: "pending" | "accepted" | ...
+    lastLoginAt: ISO | null
+
+
+P3 — Company summary enrichment
+--------------------------------------------------------------------------------
+
+  GET /api/v1/companies/:companyId  (and status PATCH response) now includes:
+    userCount, activeUserCount, pendingInviteCount,
+    userLimit, userUsage,
+    primaryAdminEmail, primaryAdminName,
+    createdAt,
+    subscriptionStatus, planCode, planName, subscriptionEndDate, billingCycle,
+    activeModuleCount, entitledModuleCount
+
+
+Platform Owner access to tenant APIs
+--------------------------------------------------------------------------------
+
+  platform_companies:view / edit aliases allow PO to call:
+    companies / subscriptions / modules / users / roles / user_audit view
+  without holding every tenant permission code.
+
+
+Wire on FE
+--------------------------------------------------------------------------------
+
+  1) Activity & Audit tab → GET .../audit-logs
+  2) Company Admins tab → ?roleCode=ADMIN or /admins
+  3) Overview cards → use enriched GET company fields
+
+
+================================================================================
+END
+================================================================================

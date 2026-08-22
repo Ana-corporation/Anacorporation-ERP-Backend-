@@ -20,6 +20,15 @@ export class ErpModulesController {
     return this.erpModulesService.findAll(query);
   }
 
+  @Get('grantable')
+  @RequirePermissions('subscription_modules:view')
+  @ApiOperation({
+    summary: 'List AVAILABLE product modules (for company entitlement grant UI)',
+  })
+  findGrantable() {
+    return this.erpModulesService.findGrantable();
+  }
+
   @Get(':id')
   @RequirePermissions('subscription_modules:view')
   @ApiOperation({ summary: 'Get ERP module by ID' })

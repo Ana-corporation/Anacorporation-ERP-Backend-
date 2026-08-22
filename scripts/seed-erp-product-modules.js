@@ -18,16 +18,25 @@ const ADMIN_MODULES = [
   { code: 'platform', name: 'Platform', moduleType: 'admin', sortOrder: 5 },
 ];
 
+/**
+ * Product catalogue + lifecycle (option b — FE nav maps Vendors/Items → supply-chain):
+ *   AVAILABLE:    supply-chain (Vendors + Items)
+ *   DEVELOPMENT:  financials, hcm, manufacturing, crm, projects
+ * Admin modules use INTERNAL (not customer workspace entitlements).
+ */
 const PRODUCT_MODULES = [
-  { code: 'financials', name: 'Financials', moduleType: 'product', sortOrder: 10, icon: 'finance' },
-  { code: 'supply-chain', name: 'Supply Chain', moduleType: 'product', sortOrder: 11, icon: 'supply' },
-  { code: 'hcm', name: 'HCM', moduleType: 'product', sortOrder: 12, icon: 'people' },
-  { code: 'manufacturing', name: 'Manufacturing', moduleType: 'product', sortOrder: 13, icon: 'factory' },
-  { code: 'crm', name: 'CRM', moduleType: 'product', sortOrder: 14, icon: 'crm' },
-  { code: 'projects', name: 'Projects', moduleType: 'product', sortOrder: 15, icon: 'projects' },
+  { code: 'financials', name: 'Financials', moduleType: 'product', sortOrder: 10, icon: 'finance', lifecycleStatus: 'DEVELOPMENT' },
+  { code: 'supply-chain', name: 'Supply Chain', moduleType: 'product', sortOrder: 11, icon: 'supply', lifecycleStatus: 'AVAILABLE' },
+  { code: 'hcm', name: 'HCM', moduleType: 'product', sortOrder: 12, icon: 'people', lifecycleStatus: 'DEVELOPMENT' },
+  { code: 'manufacturing', name: 'Manufacturing', moduleType: 'product', sortOrder: 13, icon: 'factory', lifecycleStatus: 'DEVELOPMENT' },
+  { code: 'crm', name: 'CRM', moduleType: 'product', sortOrder: 14, icon: 'crm', lifecycleStatus: 'DEVELOPMENT' },
+  { code: 'projects', name: 'Projects', moduleType: 'product', sortOrder: 15, icon: 'projects', lifecycleStatus: 'DEVELOPMENT' },
 ];
 
-const ALL_MODULES = [...ADMIN_MODULES, ...PRODUCT_MODULES];
+const ALL_MODULES = [
+  ...ADMIN_MODULES.map((m) => ({ ...m, lifecycleStatus: 'INTERNAL' })),
+  ...PRODUCT_MODULES,
+];
 
 async function seedModules() {
   for (const mod of ALL_MODULES) {
@@ -38,6 +47,7 @@ async function seedModules() {
         moduleType: mod.moduleType,
         sortOrder: mod.sortOrder,
         icon: mod.icon ?? null,
+        lifecycleStatus: mod.lifecycleStatus,
         isActive: true,
       },
       create: {
@@ -46,10 +56,11 @@ async function seedModules() {
         moduleType: mod.moduleType,
         sortOrder: mod.sortOrder,
         icon: mod.icon ?? null,
+        lifecycleStatus: mod.lifecycleStatus,
         isActive: true,
       },
     });
-    console.log(`  module: ${mod.code} (${mod.moduleType})`);
+    console.log(`  module: ${mod.code} (${mod.moduleType}, ${mod.lifecycleStatus})`);
   }
 }
 
@@ -84,6 +95,39 @@ async function seedProductPermissions() {
       });
     }
     console.log(`  permissions: ${mod.code} (${PHASE1_ACTIONS.length} actions)`);
+  }
+
+  // Supply Chain resource-level (Vendors / Items) — under module supply-chain
+  const supplyChain = byCode.get('supply-chain');
+  if (supplyChain) {
+    const resources = [
+      { resource: 'vendors', label: 'Vendors' },
+      { resource: 'items', label: 'Items' },
+    ];
+    for (const { resource, label } of resources) {
+      for (const action of PHASE1_ACTIONS) {
+        const permissionCode = `${resource}:${action}`;
+        await prisma.permission.upsert({
+          where: {
+            moduleId_permissionCode: {
+              moduleId: supplyChain.moduleId,
+              permissionCode,
+            },
+          },
+          update: {
+            action,
+            permissionName: `${label} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+          },
+          create: {
+            moduleId: supplyChain.moduleId,
+            permissionCode,
+            permissionName: `${label} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+            action,
+          },
+        });
+      }
+      console.log(`  permissions: supply-chain / ${resource} (${PHASE1_ACTIONS.length} actions)`);
+    }
   }
 }
 

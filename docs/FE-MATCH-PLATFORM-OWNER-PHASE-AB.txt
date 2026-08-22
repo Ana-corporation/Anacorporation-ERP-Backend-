@@ -1,0 +1,66 @@
+================================================================================
+FE ↔ BE MATCH — Platform Owner (Phase A + B)
+Date:       2026-08-20
+Status:     MATCHED (FE switched off derived fallbacks)
+Audience:   ERP-Frontend / ERP-Backend
+Source:     BE READY note from backend team + FE confirmation
+================================================================================
+
+
+FE CHANGES AFTER BE READY
+--------------------------------------------------------------------------------
+
+  1) src/lib/api/platform-api.ts
+     - getPlatformDashboard() → GET /platform/dashboard only
+     - listPlatformSubscriptions() → GET /platform/subscriptions only
+     - Removed listCompanies / per-company subscription derived fallbacks
+
+  2) Nav + page gates
+     - Platform overview / Companies / Subscriptions nav → platform_companies:view
+     - Views also accept platformOwner || companies:view (compat)
+     - Company list edit/create/delete also accept platform_companies:*
+
+  3) Overview UI always shows:
+       Data source: GET /platform/dashboard
+
+
+BE ENDPOINTS (live)
+--------------------------------------------------------------------------------
+
+  PATCH /api/v1/companies/:companyId/status
+    Body: { status: "active" | "suspended" | "trial" | "cancelled" }
+    Returns company + subscription summary (camelCase)
+
+  GET  /api/v1/platform/dashboard
+    Counts: total/active/trial/suspended/cancelled companies +
+            activeSubscriptions + expiringSoonSubscriptions
+    Excludes PLATFORM company
+    Permission: platform_companies:view
+
+  GET  /api/v1/platform/subscriptions?limit=200
+    Cross-tenant rows (array)
+    Excludes PLATFORM company
+    Permission: platform_companies:view
+
+
+CREATE + INVITE (unchanged)
+--------------------------------------------------------------------------------
+
+  Still: POST /companies → roles → users/invite
+  Single-call adminInvite not required.
+
+
+ACCEPTANCE
+--------------------------------------------------------------------------------
+
+  [ ] PLATFORM_OWNER Suspend / Activate / Set trial
+  [ ] Overview from /platform/dashboard
+  [ ] Subscriptions hub from /platform/subscriptions
+  [ ] PLATFORM company excluded
+  [ ] Tenant ADMIN blocked from platform pages
+  [ ] Suspended tenant cannot login
+
+
+================================================================================
+END
+================================================================================

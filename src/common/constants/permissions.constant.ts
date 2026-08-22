@@ -1,13 +1,47 @@
 import { PHASE1_PERMISSION_ACTIONS, PRODUCT_MODULES } from './modules.constant';
 
+/** Module-level Phase-1 codes (legacy for product modules; kept for entitlement + migration). */
 const PRODUCT_PERMISSIONS = PRODUCT_MODULES.flatMap((mod) =>
   PHASE1_PERMISSION_ACTIONS.map((action) => ({
     module: mod.code,
     code: `${mod.code}:${action}`,
     name: `${mod.name} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
     action,
+    resource: null as string | null,
+    resourceDisplayName: null as string | null,
   })),
 );
+
+/**
+ * Supply Chain resource-level permissions (MODULE → RESOURCE → ACTION).
+ * Codes follow existing `resource:action` convention (same as users:view).
+ * Module remains `supply-chain` for company entitlement / lifecycle.
+ */
+export const SUPPLY_CHAIN_RESOURCES = [
+  { resource: 'vendors', displayName: 'Vendors' },
+  { resource: 'items', displayName: 'Items' },
+] as const;
+
+export type SupplyChainResource = (typeof SUPPLY_CHAIN_RESOURCES)[number]['resource'];
+
+export const SUPPLY_CHAIN_RESOURCE_PERMISSIONS = SUPPLY_CHAIN_RESOURCES.flatMap((r) =>
+  PHASE1_PERMISSION_ACTIONS.map((action) => ({
+    module: 'supply-chain' as const,
+    code: `${r.resource}:${action}`,
+    name: `${r.displayName} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+    action,
+    resource: r.resource,
+    resourceDisplayName: r.displayName,
+  })),
+);
+
+/** Expand legacy `supply-chain:{action}` → vendors + items resource codes. */
+export function expandSupplyChainModulePermission(code: string): string[] {
+  const match = /^supply-chain:(view|create|edit|delete|approve)$/.exec(code);
+  if (!match) return [code];
+  const action = match[1];
+  return [`vendors:${action}`, `items:${action}`];
+}
 
 const ADMIN_PERMISSIONS = [
   { module: 'organization', code: 'companies:view', name: 'View Companies', action: 'view' },
@@ -131,7 +165,11 @@ const ADMIN_PERMISSIONS = [
   { module: 'platform', code: 'platform_companies:edit', name: 'Manage Platform Companies', action: 'edit' },
 ] as const;
 
-export const PERMISSIONS = [...ADMIN_PERMISSIONS, ...PRODUCT_PERMISSIONS] as const;
+export const PERMISSIONS = [
+  ...ADMIN_PERMISSIONS,
+  ...PRODUCT_PERMISSIONS,
+  ...SUPPLY_CHAIN_RESOURCE_PERMISSIONS,
+] as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[number]['code'];
 

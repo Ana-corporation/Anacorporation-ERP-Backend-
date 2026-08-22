@@ -27,7 +27,7 @@ export class CompanyUsersController {
 
   @Get()
   @RequirePermissions('users:view')
-  @ApiOperation({ summary: 'List users in company' })
+  @ApiOperation({ summary: 'List users in company (optional ?roleCode=ADMIN)' })
   findAll(
     @Param('companyId') companyId: string,
     @Query() query: PaginationQueryDto,
@@ -35,6 +35,18 @@ export class CompanyUsersController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.usersService.findAll(companyId, query);
+  }
+
+  @Get('admins')
+  @RequirePermissions('users:view')
+  @ApiOperation({ summary: 'List Company Admins (roleCode ADMIN)' })
+  findAdmins(
+    @Param('companyId') companyId: string,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.usersService.findAdmins(companyId, query);
   }
 
   @Post('invite')

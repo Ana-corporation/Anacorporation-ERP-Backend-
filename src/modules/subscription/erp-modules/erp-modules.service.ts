@@ -20,6 +20,11 @@ export class ErpModulesService {
     return serialize(toPaginatedResult(items, total, page, limit));
   }
 
+  async findGrantable() {
+    const items = await this.repository.findGrantable();
+    return serialize(items);
+  }
+
   async findOne(id: string) {
     const mod = await this.repository.findById(id);
     if (!mod) throw new NotFoundException('Module');

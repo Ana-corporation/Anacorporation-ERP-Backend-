@@ -2,10 +2,20 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions, TenantOptional } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { ForbiddenException } from '@/common/exceptions/business.exception';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { CompaniesService } from './companies.service';
 import { CreateCompanyDto, UpdateCompanyDto } from './dto/company.dto';
+import { companyStatusSchema } from '@/common/zod/common.schemas';
+import { z } from 'zod';
+import { createZodDto } from 'nestjs-zod';
+
+const SetCompanyStatusSchema = z.object({
+  status: companyStatusSchema,
+});
+
+class SetCompanyStatusDto extends createZodDto(SetCompanyStatusSchema) {}
 
 @ApiTags('Companies')
 @ApiBearerAuth()
@@ -33,6 +43,40 @@ export class CompaniesController {
   @ApiOperation({ summary: 'Create company' })
   create(@Body() dto: CreateCompanyDto, @CurrentUser() user: AuthenticatedUser) {
     return this.companiesService.create(dto, user?.sub);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({ summary: 'Set company status (platform owner / company editor)' })
+  async setStatus(
+    @Param('id') id: string,
+    @Body() dto: SetCompanyStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const isSuperAdmin = user?.role === 'super_admin';
+    const isPlatformOwner = Boolean(
+      user?.role === 'PLATFORM_OWNER' ||
+        user?.permissions?.includes('platform_companies:edit') ||
+        user?.permissions?.includes('companies:edit'),
+    );
+    const isCompanyEditor = Boolean(user?.permissions?.includes('companies:edit'));
+
+    if (!isSuperAdmin && !isPlatformOwner && !isCompanyEditor) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    // Tenant isolation:
+    // - Platform owner can update any tenant company.
+    // - Company editor (companies:edit only, not platform) can update only their own company.
+    const crossTenant =
+      user?.role === 'PLATFORM_OWNER' ||
+      user?.permissions?.includes('platform_companies:edit');
+    if (!isSuperAdmin && !crossTenant && isCompanyEditor) {
+      if (!user?.companyId || user.companyId.toString() !== id.toString()) {
+        throw new ForbiddenException('Company context mismatch');
+      }
+    }
+
+    return this.companiesService.setStatus(id, dto.status, user.sub);
   }
 
   @Patch(':id')

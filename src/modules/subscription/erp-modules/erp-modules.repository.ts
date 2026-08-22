@@ -8,11 +8,15 @@ import { CreateErpModuleDto, UpdateErpModuleDto } from './dto/erp-module.dto';
 
 const ERP_MODULES_LIST_FILTER: ListFilterOptions = {
   contains: { code: 'moduleCode', name: 'moduleName' },
-  exact: { moduleId: 'moduleId' },
+  exact: {
+    moduleId: 'moduleId',
+    moduleType: 'moduleType',
+    lifecycleStatus: 'lifecycleStatus',
+  },
   booleans: { isActive: 'isActive' },
   dateRange: { field: 'createdAt' },
   searchFields: ['moduleCode', 'moduleName', 'description'],
-  sortFields: ['sortOrder', 'moduleCode', 'moduleName', 'createdAt'],
+  sortFields: ['sortOrder', 'moduleCode', 'moduleName', 'createdAt', 'lifecycleStatus'],
   defaultSortField: 'sortOrder',
 };
 
@@ -49,6 +53,19 @@ export class ErpModulesRepository {
     });
   }
 
+  /** AVAILABLE product modules for Company → Modules & Entitlements grant picker. */
+  findGrantable() {
+    return this.prisma.module.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        moduleType: 'product',
+        lifecycleStatus: 'AVAILABLE',
+      },
+      orderBy: { sortOrder: 'asc' },
+    });
+  }
+
   create(dto: CreateErpModuleDto, createdBy?: string) {
     return this.prisma.module.create({
       data: {
@@ -60,6 +77,8 @@ export class ErpModulesRepository {
           ? parseBigIntId(dto.parentModuleId, 'parentModuleId')
           : undefined,
         sortOrder: dto.sortOrder ?? 0,
+        moduleType: dto.moduleType ?? 'product',
+        lifecycleStatus: dto.lifecycleStatus ?? 'DEVELOPMENT',
         isActive: dto.isActive ?? true,
         createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
       },
@@ -82,6 +101,10 @@ export class ErpModulesRepository {
             }
           : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+        ...(dto.moduleType !== undefined ? { moduleType: dto.moduleType } : {}),
+        ...(dto.lifecycleStatus !== undefined
+          ? { lifecycleStatus: dto.lifecycleStatus }
+          : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
         updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
         updatedAt: new Date(),

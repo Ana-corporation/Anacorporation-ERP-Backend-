@@ -179,14 +179,14 @@ export class CompanyAccessContextRepository {
   }
 
   findProductModules(moduleIds: bigint[]) {
-    if (moduleIds.length === 0) return Promise.resolve([]);
-
     return this.prisma.module.findMany({
       where: {
         moduleId: { in: moduleIds },
         moduleType: 'product',
         deletedAt: null,
         isActive: true,
+        // Workspace nav / API entitlement: customer-ready (or already-entitled DEPRECATED)
+        lifecycleStatus: { in: ['AVAILABLE', 'DEPRECATED'] },
       },
       orderBy: { sortOrder: 'asc' },
     });

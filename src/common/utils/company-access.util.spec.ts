@@ -30,4 +30,13 @@ describe('assertCompanyAccess', () => {
   it('allows platform owner with no JWT companyId', () => {
     expect(() => assertCompanyAccess('15', makeUser({ companyId: undefined }))).not.toThrow();
   });
+
+  it('allows platform_companies:view across tenants', () => {
+    expect(() =>
+      assertCompanyAccess(
+        '99',
+        makeUser({ companyId: '1', permissions: ['platform_companies:view'] }),
+      ),
+    ).not.toThrow();
+  });
 });

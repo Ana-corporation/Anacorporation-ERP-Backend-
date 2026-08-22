@@ -1,4 +1,7 @@
 // iam | user_roles
+// Assignment periods: end with isActive=false + endedAt (never overwrite history in place).
+// Partial unique indexes (see migration): one ACTIVE role per (user, company);
+// one ACTIVE row per (user, company, role).
 
 model UserRole {
   userRoleId   BigInt    @id @default(autoincrement()) @map("user_role_id")
@@ -9,6 +12,9 @@ model UserRole {
   assignedDate DateTime  @default(now()) @map("assigned_date")
   validUntil   DateTime? @map("valid_until")
   isActive     Boolean   @default(true) @map("is_active")
+  endedAt      DateTime? @map("ended_at")
+  endedBy      BigInt?   @map("ended_by")
+  endReason    String?   @map("end_reason") @db.VarChar(40)
   createdAt    DateTime  @default(now()) @map("created_at")
   rowVersion   Int       @default(1) @map("row_version")
 
@@ -16,7 +22,7 @@ model UserRole {
   company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   role    Role    @relation(fields: [roleId], references: [roleId], onDelete: Cascade)
 
-  @@unique([userId, companyId, roleId])
   @@index([userId, companyId])
+  @@index([companyId, roleId, isActive])
   @@map("user_roles")
 }

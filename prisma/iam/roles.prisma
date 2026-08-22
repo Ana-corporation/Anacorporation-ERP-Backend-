@@ -1,27 +1,40 @@
 // iam | roles
 
 model Role {
-  roleId      BigInt    @id @default(autoincrement()) @map("role_id")
-  companyId   BigInt?   @map("company_id")
-  roleCode    String    @map("role_code") @db.VarChar(40)
-  roleName    String    @map("role_name") @db.VarChar(120)
+  roleId      BigInt     @id @default(autoincrement()) @map("role_id")
+  companyId   BigInt?    @map("company_id")
+  roleCode    String     @map("role_code") @db.VarChar(40)
+  roleName    String     @map("role_name") @db.VarChar(120)
   description String?
-  isSystem    Boolean   @default(false) @map("is_system")
-  isTemplate  Boolean   @default(false) @map("is_template")
-  createdBy   BigInt?   @map("created_by")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedBy   BigInt?   @map("updated_by")
-  updatedAt   DateTime? @map("updated_at")
-  deletedBy   BigInt?   @map("deleted_by")
-  deletedAt   DateTime? @map("deleted_at")
-  rowVersion  Int       @default(1) @map("row_version")
+  isSystem    Boolean    @default(false) @map("is_system")
+  /** Mirrors isSystem for FE (SYSTEM | CUSTOM). Company Admin cannot set this. */
+  roleType    RoleType   @default(CUSTOM) @map("role_type")
+  /**
+   * Stable product template identity for SYSTEM roles (e.g. MANAGER).
+   * NULL for CUSTOM. Same key across companies = same product template, different rows.
+   */
+  systemTemplateKey String? @map("system_template_key") @db.VarChar(40)
+  isTemplate  Boolean    @default(false) @map("is_template")
+  /** ACTIVE = assignable; INACTIVE = retired (no new assignments). Soft-delete is separate. */
+  status      RoleStatus @default(ACTIVE) @map("status")
+  deactivatedAt DateTime? @map("deactivated_at")
+  deactivatedBy BigInt?   @map("deactivated_by")
+  createdBy   BigInt?    @map("created_by")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedBy   BigInt?    @map("updated_by")
+  updatedAt   DateTime?  @map("updated_at")
+  deletedBy   BigInt?    @map("deleted_by")
+  deletedAt   DateTime?  @map("deleted_at")
+  rowVersion  Int        @default(1) @map("row_version")
 
-  company         Company?         @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
-  rolePermissions RolePermission[]
+  company            Company?             @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  rolePermissions    RolePermission[]
   rolePermissionSets RolePermissionSet[]
-  userRoles       UserRole[]
+  userRoles          UserRole[]
 
   @@unique([companyId, roleCode])
   @@index([companyId])
+  @@index([companyId, status])
+  @@index([systemTemplateKey])
   @@map("roles")
 }

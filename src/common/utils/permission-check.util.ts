@@ -29,6 +29,48 @@ const PERMISSION_CODE_ALIASES: Record<string, string[]> = {
   'subscription_modules:delete': ['modules:edit', 'modules:delete'],
   'plan_modules:view': ['plans:view'],
   'plan_modules:manage': ['plans:edit'],
+  // Platform Owner company-detail tabs reuse tenant APIs
+  'companies:view': ['platform_companies:view'],
+  'companies:create': ['platform_companies:edit', 'companies:create'],
+  'companies:edit': ['platform_companies:edit', 'companies:edit'],
+  'companies:delete': ['platform_companies:edit', 'companies:delete'],
+  'company_subscriptions:view': [
+    'platform_companies:view',
+    'companies:view',
+    'subscription:view',
+  ],
+  'company_subscriptions:create': [
+    'platform_companies:edit',
+    'companies:edit',
+    'subscription:edit',
+  ],
+  'company_subscriptions:edit': [
+    'platform_companies:edit',
+    'companies:edit',
+    'subscription:edit',
+  ],
+  'company_subscriptions:delete': [
+    'platform_companies:edit',
+    'companies:edit',
+    'subscription:edit',
+  ],
+  'company_modules:view': ['platform_companies:view', 'companies:view', 'modules:view'],
+  'company_modules:create': ['platform_companies:edit', 'companies:edit', 'modules:edit'],
+  'company_modules:edit': ['platform_companies:edit', 'companies:edit', 'modules:edit'],
+  'company_modules:delete': ['platform_companies:edit', 'companies:edit', 'modules:edit'],
+  'users:view': ['platform_companies:view', 'companies:view'],
+  'users:create': ['platform_companies:edit', 'companies:edit'],
+  'users:edit': ['platform_companies:edit', 'companies:edit'],
+  'users:delete': ['platform_companies:edit', 'companies:edit'],
+  'roles:view': ['platform_companies:view', 'companies:view'],
+  'user_audit:view': ['platform_companies:view', 'companies:view', 'user_audit:view'],
+  // Legacy module-level supply-chain:* still satisfies resource checks until roles migrate
+  ...Object.fromEntries(
+    PHASE1_PERMISSION_ACTIONS.flatMap((action) => [
+      [`vendors:${action}`, [`supply-chain:${action}`]],
+      [`items:${action}`, [`supply-chain:${action}`]],
+    ]),
+  ),
 };
 
 function userHasPermissionCode(user: AuthenticatedUser, permissionCode: string): boolean {
@@ -37,19 +79,23 @@ function userHasPermissionCode(user: AuthenticatedUser, permissionCode: string):
   return Boolean(aliases?.some((alias) => user.permissions.includes(alias)));
 }
 
-/** Legacy ERP API permission codes → Phase 1 module + action. */
+/** Legacy ERP API codes → resource-level catalogue codes (Supply Chain split). */
+const LEGACY_TO_RESOURCE_CODE: Record<string, string> = {
+  'vendors:read': 'vendors:view',
+  'vendors:write': 'vendors:edit',
+  'products:read': 'items:view',
+  'products:write': 'items:edit',
+  'inventory:read': 'items:view',
+  'inventory:write': 'items:edit',
+};
+
+/** Legacy ERP API permission codes → Phase 1 module + action (non–Supply Chain). */
 const LEGACY_PRODUCT_PERMISSION_MAP: Record<
   string,
   { moduleCode: string; action: Phase1PermissionAction }
 > = {
   'customers:read': { moduleCode: 'crm', action: 'view' },
   'customers:write': { moduleCode: 'crm', action: 'edit' },
-  'vendors:read': { moduleCode: 'supply-chain', action: 'view' },
-  'vendors:write': { moduleCode: 'supply-chain', action: 'edit' },
-  'products:read': { moduleCode: 'supply-chain', action: 'view' },
-  'products:write': { moduleCode: 'supply-chain', action: 'edit' },
-  'inventory:read': { moduleCode: 'supply-chain', action: 'view' },
-  'inventory:write': { moduleCode: 'supply-chain', action: 'edit' },
 };
 
 export interface PermissionCheckContext {
@@ -63,22 +109,22 @@ export function checkModulePermission(
   action: Phase1PermissionAction,
 ): boolean {
   const mod = modules.find((m) => m.moduleCode === moduleCode);
+  // isActive already means ACTIVE company entitlement + AVAILABLE lifecycle (login snapshot)
   if (!mod?.isActive) return false;
   return mod.permissions.includes(action);
 }
 
-/** Full Phase 1 permission chain for product modules (subscription + entitlement + role). */
+/** Full Phase 1 permission chain for product modules (entitlement snapshot + role). */
 export function checkPermission(
   ctx: PermissionCheckContext,
   moduleCode: string,
   action: Phase1PermissionAction,
 ): boolean {
-  const entitled =
-    ctx.subscriptionStatus === 'active' ||
-    ctx.subscriptionStatus === 'trial' ||
-    ctx.modules.some((m) => m.moduleCode === moduleCode);
-
-  if (!entitled) return false;
+  // Entitlement is proven by presence of an ACTIVE module in the login snapshot.
+  // Do not allow subscriptionStatus alone to bypass missing company_modules.
+  if (!ctx.modules.some((m) => m.moduleCode === moduleCode && m.isActive)) {
+    return false;
+  }
 
   return checkModulePermission(ctx.modules, moduleCode, action);
 }
@@ -103,6 +149,11 @@ export function checkPermissionCode(
   permissionCode: string,
 ): boolean {
   if (user.role === 'super_admin') return true;
+
+  const resourceMapped = LEGACY_TO_RESOURCE_CODE[permissionCode];
+  if (resourceMapped) {
+    return checkPermissionCode(user, resourceMapped);
+  }
 
   const legacy = resolveLegacyPermission(permissionCode);
   if (legacy) {
@@ -139,4 +190,3 @@ export function checkPermissionCode(
     action,
   );
 }
-

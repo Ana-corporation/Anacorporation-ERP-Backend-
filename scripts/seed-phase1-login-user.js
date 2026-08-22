@@ -35,6 +35,8 @@ const PRODUCT_MODULE_CODES = [
   'projects',
 ];
 
+const AVAILABLE_PRODUCT_MODULE_CODES = ['supply-chain'];
+
 async function main() {
   const existing = await prisma.userCompany.findFirst({
     where: { employeeId: DEMO.employeeCode, company: { companyCode: DEMO.companyCode } },
@@ -87,6 +89,8 @@ async function main() {
         roleCode: 'ADMIN',
         roleName: 'Administrator',
         isSystem: true,
+        roleType: 'SYSTEM',
+        systemTemplateKey: 'ADMIN',
         createdBy: user.userId,
       },
     });
@@ -136,11 +140,33 @@ async function main() {
         },
       });
 
-      for (const mod of modules) {
+      for (const mod of modules.filter((m) =>
+        AVAILABLE_PRODUCT_MODULE_CODES.includes(m.moduleCode),
+      )) {
         await tx.planModule.create({
           data: { planId: plan.planId, moduleId: mod.moduleId },
         });
       }
+    }
+
+    for (const mod of modules) {
+      const isActive = AVAILABLE_PRODUCT_MODULE_CODES.includes(mod.moduleCode);
+      await tx.companyModule.upsert({
+        where: {
+          companyId_moduleId: {
+            companyId: company.companyId,
+            moduleId: mod.moduleId,
+          },
+        },
+        update: { isActive, deletedAt: null },
+        create: {
+          companyId: company.companyId,
+          moduleId: mod.moduleId,
+          isActive,
+          activatedDate: new Date(),
+          createdBy: user.userId,
+        },
+      });
     }
 
     const today = new Date();

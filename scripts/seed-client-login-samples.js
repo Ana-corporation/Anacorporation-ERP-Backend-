@@ -10,12 +10,12 @@
  *
  * Accounts:
  *   PLATFORM  / OWNER001  / Owner@123   → platform owner (admin nav)
- *   DEMO_ACME / ADMIN001  / Admin@123   → company ADMIN (all modules full)
- *   DEMO_ACME / MGR001    / Manager@123 → MANAGER (financials + crm partial)
- *   DEMO_ACME / STAFF001  / Staff@123   → STAFF (crm + supply-chain view)
- *   DEMO_ACME / SALES001  / Sales@123   → SALES (crm view/create/edit)
+ *   DEMO_ACME / ADMIN001  / Admin@123   → company ADMIN (supply-chain full)
+ *   DEMO_ACME / MGR001    / Manager@123 → MANAGER (role may list future modules; workspace = entitled only)
+ *   DEMO_ACME / STAFF001  / Staff@123   → STAFF (supply-chain view; crm role reserved until AVAILABLE)
+ *   DEMO_ACME / SALES001  / Sales@123   → SALES (crm role reserved until AVAILABLE)
  *   DEMO_ACME / VENDOR001 / Vendor@123  → VENDOR (supply-chain vendors CRUD)
- *   DEMO_ACME / INV001    / InvAdmin@123 → INVENTORY_ADMIN (Item Master only)
+ *   DEMO_ACME / INV001    / InvAdmin@123 → INVENTORY_ADMIN (Item Master / supply-chain)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
@@ -37,6 +37,9 @@ const PRODUCT_MODULE_CODES = [
   'crm',
   'projects',
 ];
+
+/** Customer-ready workspace modules (Vendors + Items → FE moduleCode supply-chain). */
+const AVAILABLE_PRODUCT_MODULE_CODES = ['supply-chain'];
 
 const PHASE1_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'];
 
@@ -94,6 +97,9 @@ const PLATFORM_OWNER_PERMISSION_CODES = [
   { module: 'organization', code: 'companies:create', name: 'Create Companies', action: 'create' },
   { module: 'organization', code: 'companies:edit', name: 'Edit Companies', action: 'edit' },
   { module: 'organization', code: 'companies:delete', name: 'Delete Companies', action: 'delete' },
+  { module: 'platform', code: 'platform_companies:view', name: 'View Platform Companies', action: 'view' },
+  { module: 'platform', code: 'platform_companies:edit', name: 'Manage Platform Companies', action: 'edit' },
+  { module: 'iam', code: 'user_audit:view', name: 'View User Audit', action: 'view' },
   // FE aliases (in addition to backend subscription_* codes)
   { module: 'subscription', code: 'subscription:view', name: 'View Subscription', action: 'view' },
   { module: 'subscription', code: 'subscription:edit', name: 'Edit Subscription', action: 'edit' },
@@ -109,6 +115,14 @@ const PLATFORM_OWNER_PERMISSION_CODES = [
   { module: 'subscription', code: 'subscription_modules:create', name: 'Create ERP Modules', action: 'create' },
   { module: 'subscription', code: 'subscription_modules:edit', name: 'Edit ERP Modules', action: 'edit' },
   { module: 'subscription', code: 'subscription_modules:delete', name: 'Delete ERP Modules', action: 'delete' },
+  { module: 'subscription', code: 'company_subscriptions:view', name: 'View Company Subscriptions', action: 'view' },
+  { module: 'subscription', code: 'company_subscriptions:create', name: 'Create Company Subscriptions', action: 'create' },
+  { module: 'subscription', code: 'company_subscriptions:edit', name: 'Edit Company Subscriptions', action: 'edit' },
+  { module: 'subscription', code: 'company_modules:view', name: 'View Company Modules', action: 'view' },
+  { module: 'subscription', code: 'company_modules:edit', name: 'Edit Company Modules', action: 'edit' },
+  { module: 'iam', code: 'users:view', name: 'View Users', action: 'view' },
+  { module: 'iam', code: 'users:create', name: 'Create Users', action: 'create' },
+  { module: 'iam', code: 'roles:view', name: 'View Roles', action: 'view' },
   ...CUSTOM_FIELDS_PERMISSION_CODES,
   ...ORG_STRUCTURE_PERMISSION_CODES,
 ];
@@ -143,10 +157,10 @@ const ACCOUNTS = [
     level: 'company-admin',
     companyCode: 'DEMO_ACME',
     companyName: 'Demo Acme Corp',
-    companyStatus: 'trial',
+    companyStatus: 'active',
     planCode: 'DEMO_STARTER',
     planName: 'Demo Starter',
-    productModules: PRODUCT_MODULE_CODES,
+    productModules: AVAILABLE_PRODUCT_MODULE_CODES,
     employeeCode: 'ADMIN001',
     password: 'Admin@123',
     username: 'demo.admin',
@@ -155,24 +169,29 @@ const ACCOUNTS = [
     lastName: 'Admin',
     roleCode: 'ADMIN',
     roleName: 'Administrator',
-    modulePermissions: {
-      financials: ['view', 'create', 'edit', 'delete', 'approve'],
-      'supply-chain': ['view', 'create', 'edit', 'delete', 'approve'],
-      hcm: ['view', 'create', 'edit', 'delete', 'approve'],
-      manufacturing: ['view', 'create', 'edit', 'delete', 'approve'],
-      crm: ['view', 'create', 'edit', 'delete', 'approve'],
-      projects: ['view', 'create', 'edit', 'delete', 'approve'],
-    },
+    modulePermissions: {},
+    resourcePermissionCodes: [
+      'vendors:view',
+      'vendors:create',
+      'vendors:edit',
+      'vendors:delete',
+      'vendors:approve',
+      'items:view',
+      'items:create',
+      'items:edit',
+      'items:delete',
+      'items:approve',
+    ],
     platformPermissionCodes: ADMIN_EXTRA_PERMISSION_CODES.map((p) => p.code),
   },
   {
     level: 'manager',
     companyCode: 'DEMO_ACME',
     companyName: 'Demo Acme Corp',
-    companyStatus: 'trial',
+    companyStatus: 'active',
     planCode: 'DEMO_STARTER',
     planName: 'Demo Starter',
-    productModules: PRODUCT_MODULE_CODES,
+    productModules: AVAILABLE_PRODUCT_MODULE_CODES,
     employeeCode: 'MGR001',
     password: 'Manager@123',
     username: 'demo.manager',
@@ -181,10 +200,15 @@ const ACCOUNTS = [
     lastName: 'Manager',
     roleCode: 'MANAGER',
     roleName: 'Manager',
-    modulePermissions: {
-      financials: ['view', 'create', 'edit', 'approve'],
-      crm: ['view', 'edit'],
-    },
+    modulePermissions: {},
+    resourcePermissionCodes: [
+      'vendors:view',
+      'vendors:create',
+      'vendors:edit',
+      'items:view',
+      'items:create',
+      'items:edit',
+    ],
     denyOtherModules: true,
     platformPermissionCodes: [],
   },
@@ -192,10 +216,10 @@ const ACCOUNTS = [
     level: 'staff',
     companyCode: 'DEMO_ACME',
     companyName: 'Demo Acme Corp',
-    companyStatus: 'trial',
+    companyStatus: 'active',
     planCode: 'DEMO_STARTER',
     planName: 'Demo Starter',
-    productModules: PRODUCT_MODULE_CODES,
+    productModules: AVAILABLE_PRODUCT_MODULE_CODES,
     employeeCode: 'STAFF001',
     password: 'Staff@123',
     username: 'demo.staff',
@@ -204,10 +228,8 @@ const ACCOUNTS = [
     lastName: 'Staff',
     roleCode: 'STAFF',
     roleName: 'Staff',
-    modulePermissions: {
-      'supply-chain': ['view'],
-      crm: ['view'],
-    },
+    modulePermissions: {},
+    resourcePermissionCodes: ['vendors:view', 'items:view'],
     denyOtherModules: true,
     platformPermissionCodes: [],
   },
@@ -215,10 +237,10 @@ const ACCOUNTS = [
     level: 'sales',
     companyCode: 'DEMO_ACME',
     companyName: 'Demo Acme Corp',
-    companyStatus: 'trial',
+    companyStatus: 'active',
     planCode: 'DEMO_STARTER',
     planName: 'Demo Starter',
-    productModules: PRODUCT_MODULE_CODES,
+    productModules: AVAILABLE_PRODUCT_MODULE_CODES,
     employeeCode: 'SALES001',
     password: 'Sales@123',
     username: 'demo.sales',
@@ -227,9 +249,8 @@ const ACCOUNTS = [
     lastName: 'Sales',
     roleCode: 'SALES',
     roleName: 'Sales Executive',
-    modulePermissions: {
-      crm: ['view', 'create', 'edit'],
-    },
+    modulePermissions: {},
+    resourcePermissionCodes: ['vendors:view', 'items:view'],
     denyOtherModules: true,
     platformPermissionCodes: [],
   },
@@ -237,10 +258,10 @@ const ACCOUNTS = [
     level: 'vendor',
     companyCode: 'DEMO_ACME',
     companyName: 'Demo Acme Corp',
-    companyStatus: 'trial',
+    companyStatus: 'active',
     planCode: 'DEMO_STARTER',
     planName: 'Demo Starter',
-    productModules: PRODUCT_MODULE_CODES,
+    productModules: AVAILABLE_PRODUCT_MODULE_CODES,
     employeeCode: 'VENDOR001',
     password: 'Vendor@123',
     username: 'demo.vendor',
@@ -249,9 +270,13 @@ const ACCOUNTS = [
     lastName: 'Vendor',
     roleCode: 'VENDOR',
     roleName: 'Vendor User',
-    modulePermissions: {
-      'supply-chain': ['view', 'create', 'edit', 'delete'],
-    },
+    modulePermissions: {},
+    resourcePermissionCodes: [
+      'vendors:view',
+      'vendors:create',
+      'vendors:edit',
+      'vendors:delete',
+    ],
     denyOtherModules: true,
     platformPermissionCodes: [],
   },
@@ -259,10 +284,10 @@ const ACCOUNTS = [
     level: 'inventory-admin',
     companyCode: 'DEMO_ACME',
     companyName: 'Demo Acme Corp',
-    companyStatus: 'trial',
+    companyStatus: 'active',
     planCode: 'DEMO_STARTER',
     planName: 'Demo Starter',
-    productModules: PRODUCT_MODULE_CODES,
+    productModules: AVAILABLE_PRODUCT_MODULE_CODES,
     employeeCode: 'INV001',
     password: 'InvAdmin@123',
     username: 'demo.inventory',
@@ -271,9 +296,13 @@ const ACCOUNTS = [
     lastName: 'Inventory',
     roleCode: 'INVENTORY_ADMIN',
     roleName: 'Inventory Admin',
-    modulePermissions: {
-      'supply-chain': ['view', 'create', 'edit', 'delete'],
-    },
+    modulePermissions: {},
+    resourcePermissionCodes: [
+      'items:view',
+      'items:create',
+      'items:edit',
+      'items:delete',
+    ],
     denyOtherModules: true,
     platformPermissionCodes: [],
   },
@@ -288,15 +317,15 @@ async function ensureModules() {
     { code: 'platform', name: 'Platform', moduleType: 'admin', sortOrder: 5 },
   ];
   const product = [
-    { code: 'financials', name: 'Financials', moduleType: 'product', sortOrder: 10, icon: 'finance' },
-    { code: 'supply-chain', name: 'Supply Chain', moduleType: 'product', sortOrder: 11, icon: 'supply' },
-    { code: 'hcm', name: 'HCM', moduleType: 'product', sortOrder: 12, icon: 'people' },
-    { code: 'manufacturing', name: 'Manufacturing', moduleType: 'product', sortOrder: 13, icon: 'factory' },
-    { code: 'crm', name: 'CRM', moduleType: 'product', sortOrder: 14, icon: 'crm' },
-    { code: 'projects', name: 'Projects', moduleType: 'product', sortOrder: 15, icon: 'projects' },
+    { code: 'financials', name: 'Financials', moduleType: 'product', sortOrder: 10, icon: 'finance', lifecycleStatus: 'DEVELOPMENT' },
+    { code: 'supply-chain', name: 'Supply Chain', moduleType: 'product', sortOrder: 11, icon: 'supply', lifecycleStatus: 'AVAILABLE' },
+    { code: 'hcm', name: 'HCM', moduleType: 'product', sortOrder: 12, icon: 'people', lifecycleStatus: 'DEVELOPMENT' },
+    { code: 'manufacturing', name: 'Manufacturing', moduleType: 'product', sortOrder: 13, icon: 'factory', lifecycleStatus: 'DEVELOPMENT' },
+    { code: 'crm', name: 'CRM', moduleType: 'product', sortOrder: 14, icon: 'crm', lifecycleStatus: 'DEVELOPMENT' },
+    { code: 'projects', name: 'Projects', moduleType: 'product', sortOrder: 15, icon: 'projects', lifecycleStatus: 'DEVELOPMENT' },
   ];
 
-  for (const mod of [...admin, ...product]) {
+  for (const mod of [...admin.map((m) => ({ ...m, lifecycleStatus: 'INTERNAL' })), ...product]) {
     await prisma.module.upsert({
       where: { moduleCode: mod.code },
       update: {
@@ -304,6 +333,7 @@ async function ensureModules() {
         moduleType: mod.moduleType,
         sortOrder: mod.sortOrder,
         icon: mod.icon ?? null,
+        lifecycleStatus: mod.lifecycleStatus,
         isActive: true,
       },
       create: {
@@ -312,6 +342,7 @@ async function ensureModules() {
         moduleType: mod.moduleType,
         sortOrder: mod.sortOrder,
         icon: mod.icon ?? null,
+        lifecycleStatus: mod.lifecycleStatus,
         isActive: true,
       },
     });
@@ -336,6 +367,38 @@ async function ensureModules() {
           action,
         },
       });
+    }
+  }
+
+  // Supply Chain resource-level permissions (vendors / items) under module supply-chain
+  const supplyChain = productModules.find((m) => m.moduleCode === 'supply-chain');
+  if (supplyChain) {
+    const resources = [
+      { resource: 'vendors', label: 'Vendors' },
+      { resource: 'items', label: 'Items' },
+    ];
+    for (const { resource, label } of resources) {
+      for (const action of PHASE1_ACTIONS) {
+        const permissionCode = `${resource}:${action}`;
+        await prisma.permission.upsert({
+          where: {
+            moduleId_permissionCode: {
+              moduleId: supplyChain.moduleId,
+              permissionCode,
+            },
+          },
+          update: {
+            action,
+            permissionName: `${label} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+          },
+          create: {
+            moduleId: supplyChain.moduleId,
+            permissionCode,
+            permissionName: `${label} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+            action,
+          },
+        });
+      }
     }
   }
 
@@ -433,6 +496,37 @@ async function ensurePlan(tx, account, modulesByCode) {
   }
 
   return plan;
+}
+
+/** ACTIVE company_modules only for AVAILABLE product modules the company should have. */
+async function ensureCompanyModules(tx, companyId, account, modulesByCode, createdBy) {
+  const entitled = new Set(account.productModules || []);
+
+  for (const code of PRODUCT_MODULE_CODES) {
+    const mod = modulesByCode.get(code);
+    if (!mod) continue;
+
+    const isActive = entitled.has(code) && AVAILABLE_PRODUCT_MODULE_CODES.includes(code);
+    await tx.companyModule.upsert({
+      where: {
+        companyId_moduleId: { companyId, moduleId: mod.moduleId },
+      },
+      update: {
+        isActive,
+        deletedAt: null,
+        activatedDate: isActive ? new Date() : undefined,
+        updatedAt: new Date(),
+        updatedBy: createdBy,
+      },
+      create: {
+        companyId,
+        moduleId: mod.moduleId,
+        isActive,
+        activatedDate: new Date(),
+        createdBy,
+      },
+    });
+  }
 }
 
 async function ensureSubscription(tx, companyId, planId, createdBy, status) {
@@ -554,6 +648,8 @@ async function ensureRole(tx, companyId, account, createdBy) {
         roleCode: account.roleCode,
         roleName: account.roleName,
         isSystem: true,
+        roleType: 'SYSTEM',
+        systemTemplateKey: account.roleCode,
         createdBy,
       },
     });
@@ -562,6 +658,9 @@ async function ensureRole(tx, companyId, account, createdBy) {
       where: { roleId: role.roleId },
       data: {
         roleName: account.roleName,
+        isSystem: true,
+        roleType: 'SYSTEM',
+        systemTemplateKey: account.roleCode,
         deletedAt: null,
         updatedAt: new Date(),
       },
@@ -576,10 +675,19 @@ async function replaceRolePermissions(tx, roleId, account, modulesByCode, create
 
   const permissionCodes = new Set();
 
-  for (const [moduleCode, actions] of Object.entries(account.modulePermissions)) {
+  for (const [moduleCode, actions] of Object.entries(account.modulePermissions ?? {})) {
     for (const action of actions) {
-      permissionCodes.add(`${moduleCode}:${action}`);
+      const moduleLevel = `${moduleCode}:${action}`;
+      permissionCodes.add(moduleLevel);
+      // Expand legacy supply-chain:* → vendors:* + items:* (migration-safe)
+      if (moduleCode === 'supply-chain') {
+        permissionCodes.add(`vendors:${action}`);
+        permissionCodes.add(`items:${action}`);
+      }
     }
+  }
+  for (const code of account.resourcePermissionCodes ?? []) {
+    permissionCodes.add(code);
   }
   for (const code of account.platformPermissionCodes ?? []) {
     permissionCodes.add(code);
@@ -721,6 +829,16 @@ async function seedAccount(account, modulesByCode) {
         user.userId,
         account.companyStatus === 'active' ? 'active' : 'trial',
       );
+
+      if (account.level !== 'platform-owner') {
+        await ensureCompanyModules(
+          tx,
+          company.companyId,
+          account,
+          modulesByCode,
+          user.userId,
+        );
+      }
 
       const role = await ensureRole(tx, company.companyId, account, user.userId);
       await replaceRolePermissions(tx, role.roleId, account, modulesByCode, user.userId);

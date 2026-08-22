@@ -1,0 +1,76 @@
+================================================================================
+FE MATCH — System Role Templates (multi-tenant)
+Date:       2026-08-21
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (shipped)
+================================================================================
+
+
+WHAT CHANGED
+--------------------------------------------------------------------------------
+
+  SYSTEM roles now carry a stable product identity:
+
+    systemTemplateKey: "MANAGER" | "ADMIN" | "STAFF" | ... | null
+
+  Same key across companies = same PRODUCT template.
+  Each company still has its OWN role row (isolated).
+
+  Example:
+    Company A roleId=101  systemTemplateKey=MANAGER
+    Company B roleId=202  systemTemplateKey=MANAGER
+    Deactivate A → only 101 changes.
+
+
+RESPONSE FIELDS (role list/detail)
+
+--------------------------------------------------------------------------------
+
+  id / roleId
+  roleCode
+  roleName
+  roleType: SYSTEM | CUSTOM
+  isSystem: boolean          (compat)
+  systemTemplateKey: string | null
+  status: ACTIVE | INACTIVE
+  description
+  assigneeCount / assignees
+  ...permissions as today
+
+  FE MUST NOT send: isSystem, roleType, systemTemplateKey
+
+
+PROVISIONING (BE automatic)
+--------------------------------------------------------------------------------
+
+  New company create → provisions core SYSTEM roles:
+    ADMIN, MANAGER, STAFF
+    (PLATFORM_OWNER never into customer companies)
+
+  When product module entitled (e.g. supply-chain ACTIVE):
+    also provisions VENDOR, INVENTORY_ADMIN
+  When crm entitled:
+    also provisions SALES
+
+  Clone SYSTEM → CUSTOM with systemTemplateKey = null
+
+
+FE USAGE
+--------------------------------------------------------------------------------
+
+  Prefer systemTemplateKey for product identity (badges, analytics).
+  Prefer roleId for all mutations (assign/deactivate/etc).
+  Never hardcode by roleName.
+
+
+UNCHANGED
+--------------------------------------------------------------------------------
+
+  Assign / reassign / unassign / deactivate / soft-delete rules
+  Hybrid auth / tenant isolation
+  Company Admin cannot convert SYSTEM ↔ CUSTOM
+
+
+================================================================================
+END
+================================================================================

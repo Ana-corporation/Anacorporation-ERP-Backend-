@@ -1,0 +1,129 @@
+================================================================================
+FE MATCH — Role / Position Assignment Lifecycle
+Date:       2026-08-21
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (shipped)
+Rule:       Same roles + user_roles (no parallel "positions" stack)
+================================================================================
+
+
+PRODUCT MODEL
+--------------------------------------------------------------------------------
+
+  ROLE (definition)     vs     ASSIGNMENT (who holds it / history)
+
+  Role.status:
+    ACTIVE   — assignable; default in list pickers
+    INACTIVE — retired; no new assignments; history kept
+    Soft-delete (deletedAt) = remove from catalogue when safe (separate)
+
+  Role type (both fields; stay in sync):
+    isSystem / roleType SYSTEM|CUSTOM
+    Company Admin cannot set these on create/update.
+
+  Assignment periods on user_roles:
+    ACTIVE: isActive=true, endedAt=null
+    ENDED:  isActive=false, endedAt, endedBy, endReason
+            REASSIGNED | UNASSIGNED | ROLE_DEACTIVATED | ROLE_DELETED
+
+  One ACTIVE primary role per (user, company).
+  Many users may share the same roleId.
+
+  Deactivate rule (A — strict):
+    Must unassign/reassign all ACTIVE holders first → else 409 ROLE_HAS_ACTIVE_ASSIGNEES.
+    SYSTEM and CUSTOM may both deactivate (System is NOT blocked).
+    System: cannot delete / rename / edit permissions (clone to customize).
+
+
+NEW / EXTENDED APIs
+--------------------------------------------------------------------------------
+
+  List (default ACTIVE only):
+    GET /api/v1/companies/:companyId/roles?status=ACTIVE|INACTIVE|ALL
+        &includeAssigneeSummary=true
+
+  Role item extras:
+    status, assigneeCount,
+    assignees?: [{ userId, displayName, assignedDate, userRoleId }]
+
+  Assignments:
+    GET .../roles/:roleId/assignments?history=true|false
+      → { userRoleId, userId, displayName, status: ACTIVE|ENDED,
+          assignedDate, assignedBy, endedAt, endedBy, endReason }
+
+  Role-centric (Roles tab) — permission roles:edit:
+    POST .../roles/:roleId/assign
+      body: { "userId": "<id>" }
+
+    POST .../roles/:roleId/reassign
+      body: { "toUserId": "<id>", "fromUserId": "<id>"? }
+      fromUserId required if multiple active assignees
+
+    POST .../roles/:roleId/unassign
+      body: { "userId": "<id>"? }
+      userId required if multiple active assignees
+      → role stays ACTIVE (vacant for that seat); NOT deleted
+
+    POST .../roles/:roleId/deactivate
+      body optional: { "reason": "..." }
+      → status=INACTIVE
+
+    POST .../roles/:roleId/reactivate
+      → status=ACTIVE (still vacant until assign)
+
+  Users drawer (unchanged path, history-preserving):
+    PUT .../users/:userId/role
+      { "roleId": "<id>" }  → end prior + new ACTIVE period
+      { "roleId": null }    → unassign all ACTIVE (enable "No role")
+
+  Delete (soft):
+    DELETE .../roles/:roleId
+    DELETE .../roles/:roleId?reassignToRoleId=<id>
+    Soft-delete OK when no ACTIVE assignees (ENDED history allowed).
+    System roles → 409.
+
+
+FE CARD ACTIONS (suggested)
+--------------------------------------------------------------------------------
+
+  ACTIVE + vacant     → Assign Person | Deactivate
+  ACTIVE + assigned   → Reassign | Remove Assignment | Deactivate
+  INACTIVE            → Reactivate (no Assign)
+  SYSTEM              → no Delete / Rename / Edit permissions (Clone instead)
+  CUSTOM              → Edit permissions / Rename / Delete when safe
+
+
+KEEP UNCHANGED
+--------------------------------------------------------------------------------
+
+  Hybrid login: permissions[] / tenantAdmin / platformOwner
+  Clone + PUT permissions
+  Multi-tenant company isolation
+  Designations ≠ IAM roles
+
+
+MIGRATE / SEED
+--------------------------------------------------------------------------------
+
+  npx prisma migrate deploy
+  (migration 20260821110000_role_assignment_lifecycle)
+
+  Existing roles → status=ACTIVE by default.
+  Existing inactive user_roles get endedAt backfill.
+
+
+ACCEPTANCE
+--------------------------------------------------------------------------------
+
+  [ ] ASSIGN vacant ACTIVE role → ACTIVE assignment
+  [ ] REASSIGN ends previous (endedAt) + new ACTIVE; history=true shows both
+  [ ] UNASSIGN ends assignment; role ACTIVE; role not deleted
+  [ ] DEACTIVATE with assignees → 409; after unassign → INACTIVE
+  [ ] REACTIVATE → ACTIVE vacant
+  [ ] PUT roleId null works (Users drawer "No role")
+  [ ] DELETE blocked with clear message when ACTIVE assignees
+  [ ] Default role list = ACTIVE only
+
+================================================================================
+END
+================================================================================

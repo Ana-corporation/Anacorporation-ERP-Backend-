@@ -1,0 +1,78 @@
+================================================================================
+FE FEED — Role delete with optional reassign (UPDATED)
+Date:       2026-08-20
+Audience:   ERP-Frontend
+Backend:    ERP-Backend
+Screen:     Company → Roles & Permissions
+================================================================================
+
+
+VERDICT
+--------------------------------------------------------------------------------
+
+  Blocking delete when users are assigned is intentional (NOT an FE bug).
+
+  Backend now also supports: reassign all assignees → then delete
+  in one call, so FE can finish the flow without a separate manual step.
+
+
+DELETE API
+--------------------------------------------------------------------------------
+
+  DELETE /api/v1/companies/:companyId/roles/:roleId
+
+  Option A — no assignees:
+    (no body needed)
+    → 200 { "message": "Role deleted" }
+
+  Option B — has assignees, move them then delete:
+    DELETE /api/v1/companies/15/roles/34?reassignToRoleId=12
+
+    → 200 {
+          "message": "Role deleted",
+          "reassignedUsers": 4,
+          "reassignToRoleId": "12"
+        }
+
+  Option C — has assignees, no reassignToRoleId:
+    → 409 Conflict
+      message: "This role is currently assigned to N users. Pass reassignToRoleId
+                to move them, or reassign users before deleting this role."
+
+
+STILL BLOCKED
+--------------------------------------------------------------------------------
+
+  System roles (isSystem): cannot delete (409)
+  reassignToRoleId missing / same as deleted role / not found → error
+
+
+RECOMMENDED FE UX
+--------------------------------------------------------------------------------
+
+  1. User clicks Delete on a role with N users
+  2. Dialog: "Reassign N users to:" [role dropdown]  + Confirm
+  3. Call:
+       DELETE /companies/:companyId/roles/:roleId?reassignToRoleId=<targetId>
+  4. On success: refresh roles list
+  5. On 409 without reassign: show message (do not remove card)
+
+
+EXAMPLE
+--------------------------------------------------------------------------------
+
+  DELETE /api/v1/companies/15/roles/34?reassignToRoleId=12
+  Authorization: Bearer …
+
+
+ACCEPTANCE
+--------------------------------------------------------------------------------
+
+  [ ] Delete empty custom role → succeeds
+  [ ] Delete role with users, no reassign → 409 + clear message
+  [ ] Delete role with users + reassignToRoleId → users moved, role gone
+  [ ] System role still cannot be deleted
+
+================================================================================
+END
+================================================================================

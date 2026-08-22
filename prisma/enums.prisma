@@ -77,6 +77,32 @@ enum ModuleType {
   @@map("module_type")
 }
 
+enum ModuleLifecycleStatus {
+  DEVELOPMENT
+  TESTING
+  INTERNAL
+  AVAILABLE
+  DEPRECATED
+  DISABLED
+
+  @@map("module_lifecycle_status")
+}
+
+enum RoleStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("role_status")
+}
+
+/** Product-owned vs company-owned role definition. Kept in sync with isSystem. */
+enum RoleType {
+  SYSTEM
+  CUSTOM
+
+  @@map("role_type")
+}
+
 enum PermissionAction {
   view
   create
