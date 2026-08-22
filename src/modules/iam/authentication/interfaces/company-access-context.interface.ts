@@ -19,6 +19,9 @@ export interface CompanyAccessRoleSummary {
   roleId: string;
   roleCode: string;
   roleName: string;
+  systemTemplateKey?: string | null;
+  roleType?: string | null;
+  isSystem?: boolean;
 }
 
 export interface CompanyAccessSubscriptionSummary {
@@ -35,6 +38,7 @@ export interface CompanyAccessModuleSummary {
   moduleCode: string;
   moduleName: string;
   isActive: boolean;
+  lifecycleStatus?: string | null;
   permissions: Phase1PermissionAction[];
 }
 

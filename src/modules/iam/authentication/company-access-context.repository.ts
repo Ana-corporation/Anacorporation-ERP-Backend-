@@ -78,6 +78,7 @@ export class CompanyAccessContextRepository {
         userId: parseBigIntId(userId),
         companyId: parseBigIntId(companyId),
         isActive: true,
+        endedAt: null,
       },
       include: { role: true },
       orderBy: { roleId: 'asc' },
@@ -90,6 +91,7 @@ export class CompanyAccessContextRepository {
         userId: parseBigIntId(userId),
         companyId: parseBigIntId(companyId),
         isActive: true,
+        endedAt: null,
       },
     });
   }
@@ -187,6 +189,12 @@ export class CompanyAccessContextRepository {
         isActive: true,
         // Workspace nav / API entitlement: customer-ready (or already-entitled DEPRECATED)
         lifecycleStatus: { in: ['AVAILABLE', 'DEPRECATED'] },
+      },
+      select: {
+        moduleId: true,
+        moduleCode: true,
+        moduleName: true,
+        lifecycleStatus: true,
       },
       orderBy: { sortOrder: 'asc' },
     });

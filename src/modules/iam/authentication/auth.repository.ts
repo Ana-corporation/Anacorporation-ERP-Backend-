@@ -281,6 +281,7 @@ export class AuthRepository {
         userId: parseBigIntId(userId),
         companyId: parseBigIntId(companyId),
         isActive: true,
+        endedAt: null,
       },
       orderBy: { roleId: 'asc' },
       include: {

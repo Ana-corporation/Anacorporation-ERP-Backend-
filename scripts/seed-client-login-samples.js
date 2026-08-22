@@ -754,17 +754,34 @@ async function ensureMembership(tx, userId, companyId, account, createdBy) {
 }
 
 async function ensureUserRole(tx, userId, companyId, roleId, assignedBy) {
-  const existing = await tx.userRole.findUnique({
+  const existing = await tx.userRole.findFirst({
     where: {
-      userId_companyId_roleId: { userId, companyId, roleId },
+      userId,
+      companyId,
+      roleId,
+      isActive: true,
+      endedAt: null,
     },
+    orderBy: { userRoleId: 'desc' },
   });
 
-  if (!existing) {
-    // Deactivate other roles for this user in company (primary role only)
+  const inactiveExisting = existing
+    ? null
+    : await tx.userRole.findFirst({
+        where: { userId, companyId, roleId },
+        orderBy: { userRoleId: 'desc' },
+      });
+
+  const row = existing ?? inactiveExisting;
+
+  if (!row) {
     await tx.userRole.updateMany({
-      where: { userId, companyId, isActive: true },
-      data: { isActive: false },
+      where: { userId, companyId, isActive: true, endedAt: null },
+      data: {
+        isActive: false,
+        endedAt: new Date(),
+        endReason: 'REASSIGNED',
+      },
     });
     await tx.userRole.create({
       data: {
@@ -773,18 +790,46 @@ async function ensureUserRole(tx, userId, companyId, roleId, assignedBy) {
         roleId,
         assignedBy,
         isActive: true,
+        endedAt: null,
+        endedBy: null,
+        endReason: null,
       },
     });
   } else {
     await tx.userRole.updateMany({
-      where: { userId, companyId, isActive: true, NOT: { roleId } },
-      data: { isActive: false },
+      where: {
+        userId,
+        companyId,
+        isActive: true,
+        endedAt: null,
+        NOT: { userRoleId: row.userRoleId },
+      },
+      data: {
+        isActive: false,
+        endedAt: new Date(),
+        endReason: 'REASSIGNED',
+      },
     });
     await tx.userRole.update({
-      where: { userRoleId: existing.userRoleId },
-      data: { isActive: true },
+      where: { userRoleId: row.userRoleId },
+      data: {
+        isActive: true,
+        endedAt: null,
+        endedBy: null,
+        endReason: null,
+      },
     });
   }
+}
+
+function resolveAllowedProductModules(account) {
+  const allowed = new Set(Object.keys(account.modulePermissions ?? {}));
+  for (const code of account.resourcePermissionCodes ?? []) {
+    if (/^(vendors|items):/.test(code)) {
+      allowed.add('supply-chain');
+    }
+  }
+  return allowed;
 }
 
 async function ensureModuleAccessOverrides(tx, userId, companyId, account, modulesByCode, createdBy) {
@@ -792,7 +837,7 @@ async function ensureModuleAccessOverrides(tx, userId, companyId, account, modul
 
   if (!account.denyOtherModules) return;
 
-  const allowed = new Set(Object.keys(account.modulePermissions));
+  const allowed = resolveAllowedProductModules(account);
   const rows = [];
   for (const code of PRODUCT_MODULE_CODES) {
     if (allowed.has(code)) continue;

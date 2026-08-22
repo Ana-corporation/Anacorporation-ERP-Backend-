@@ -1,0 +1,254 @@
+================================================================================
+FE HANDOFF — Auth snapshot + Supply Chain resource permissions
+Date:       2026-08-22
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (development-anc)
+Related:    docs/FE-MATCH-SUPPLY-CHAIN-RESOURCE-PERMISSIONS.txt
+            docs/FE-COPY-ROLE-LIFECYCLE-LOGICS.txt
+            docs/FE-MATCH-SYSTEM-ROLE-TEMPLATES.txt
+            src/lib/auth/post-login-path.ts (FE)
+================================================================================
+
+
+SUMMARY
+--------------------------------------------------------------------------------
+
+  BE now splits Supply Chain into two independent permission resources:
+
+    Vendors  →  vendors:view | create | edit | delete | approve
+    Items    →  items:view   | create | edit | delete | approve
+
+  Login + /auth/me must return role, modules, and permissions[] for scoped
+  users (VENDOR001, INV001). Empty snapshot = blank FE — fixed 2026-08-22.
+
+
+NO NEW ENDPOINTS
+--------------------------------------------------------------------------------
+
+  Same Hybrid contract on:
+
+    POST /api/v1/auth/login
+    GET  /api/v1/auth/me
+
+
+LOGIN / ME RESPONSE — WHAT FE MUST READ
+--------------------------------------------------------------------------------
+
+  Top level (unchanged shape):
+
+    permissions: string[]          ← primary authz for nav + screens
+    tenantAdmin: boolean
+    platformOwner: boolean
+    mustChangePassword: boolean
+    user: { userId, username, displayName, email }
+    companies: [...]
+    activeCompany: { ... }
+
+  activeCompany.role  — REQUIRED for workspace (NOT null for seeded users)
+
+    {
+      "roleId": "123",
+      "roleCode": "VENDOR",              // or INVENTORY_ADMIN, ADMIN, …
+      "roleName": "Vendor User",
+      "systemTemplateKey": "VENDOR",     // use for scoped UX / post-login route
+      "roleType": "SYSTEM",
+      "isSystem": true
+    }
+
+    FE routing priority:
+      1. systemTemplateKey (stable across tenants)
+      2. roleCode (fallback)
+
+  activeCompany.modules  — workspace entitlement + module-level actions
+
+    [
+      {
+        "moduleId": 11,
+        "moduleCode": "supply-chain",
+        "moduleName": "Supply Chain",
+        "isActive": true,
+        "lifecycleStatus": "AVAILABLE",
+        "permissions": ["view", "create", "edit", "delete"]
+      }
+    ]
+
+    Notes:
+      - moduleCode "supply-chain" = company entitled to Supply Chain product
+      - permissions[] = Phase-1 module actions (view/create/edit/delete/approve)
+      - lifecycleStatus: AVAILABLE | DEPRECATED (show) | DEVELOPMENT (hide nav)
+      - Vendors/Items screen access uses flat permissions[] (vendors:* / items:*),
+        NOT supply-chain:view alone
+
+  activeCompany.subscription  — unchanged
+
+    { "status": "active" | "trial" | "none", "planCode", "planName", ... }
+
+
+PERMISSION CODES — NAMING
+--------------------------------------------------------------------------------
+
+  Format: resource:action  (same as users:view, roles:edit)
+
+  Supply Chain resources (module entitlement = supply-chain):
+
+    vendors:view | vendors:create | vendors:edit | vendors:delete | vendors:approve
+    items:view   | items:create   | items:edit   | items:delete   | items:approve
+
+  Do NOT use:
+    supply_chain.vendors.view   (not in this backend)
+    permission DB ids for authz
+
+  Legacy (still accepted by BE guards during migration):
+
+    supply-chain:view | create | edit | delete | approve
+
+    Maps to BOTH vendors + items for API checks only.
+    Prefer vendors:* / items:* in new FE code.
+
+
+INDEPENDENCE RULE (CRITICAL)
+--------------------------------------------------------------------------------
+
+  vendors:view does NOT grant items:view.
+  items:view does NOT grant vendors:view.
+
+  Role matrix must allow selecting Vendors vs Items separately.
+
+
+FE NAV + SCREEN GATES
+--------------------------------------------------------------------------------
+
+  | Screen / action      | Check permission        | Also require                    |
+  |----------------------|-------------------------|---------------------------------|
+  | Vendors list/detail  | vendors:view            | supply-chain in modules[]       |
+  | Create vendor        | vendors:create          | same                            |
+  | Edit vendor          | vendors:edit            | same                            |
+  | Delete vendor        | vendors:delete          | same                            |
+  | Items list/detail    | items:view              | supply-chain in modules[]       |
+  | Create item          | items:create            | same                            |
+  | Edit item            | items:edit              | same                            |
+  | Delete item          | items:delete            | same                            |
+
+  can("vendors:view") example:
+
+    permissions.includes("vendors:view")
+    OR permissions.includes("supply-chain:view")   // legacy fallback only
+
+  Module entitlement check (subscription):
+
+    activeCompany.modules.some(m => m.moduleCode === "supply-chain" && m.isActive)
+
+
+POST-LOGIN ROUTING (DEMO + PRODUCTION)
+--------------------------------------------------------------------------------
+
+  | systemTemplateKey / roleCode | Has permission   | Default route              |
+  |------------------------------|------------------|----------------------------|
+  | VENDOR                       | vendors:view     | /dashboard/vendors         |
+  | INVENTORY_ADMIN              | items:view       | /dashboard/items           |
+  | ADMIN / MANAGER              | (broad)          | /dashboard (existing)      |
+  | STAFF / SALES                | view both        | existing logic             |
+
+  If role OR permissions[] OR modules[] empty:
+    → show existing dashboard warning banner (already shipped)
+    → do NOT assume admin; prompt admin to assign role
+
+
+ROLE PERMISSION MATRIX (Company Setup)
+--------------------------------------------------------------------------------
+
+  GET /permissions catalogue rows now include:
+
+    moduleCode, resource, resourceDisplayName,
+    action, actionDisplayName, displayName, permissionCode
+
+  Group UI:
+
+    Supply Chain
+      ├── Vendors   [view] [create] [edit] [delete] [approve]
+      └── Items     [view] [create] [edit] [delete] [approve]
+
+  System roles (CUSTOM clone flow unchanged):
+
+    VENDOR           → vendors:* only
+    INVENTORY_ADMIN  → items:* only
+    ADMIN            → all vendors:* + items:*
+
+  Do NOT send on create/update role:
+    isSystem, roleType, systemTemplateKey
+
+
+DEMO LOGINS (DEMO_ACME) — RE-SEED IF BLANK WORKSPACE
+--------------------------------------------------------------------------------
+
+  After BE deploy or DB reset, backend team runs:
+
+    npm run seed:client-logins
+
+  | Employee  | Password      | Role              | permissions (min)        |
+  |-----------|---------------|-------------------|--------------------------|
+  | VENDOR001 | Vendor@123    | VENDOR            | vendors:view (+ CRUD)    |
+  | INV001    | InvAdmin@123  | INVENTORY_ADMIN   | items:view (+ CRUD)      |
+  | ADMIN001  | Admin@123     | ADMIN             | full tenant pack         |
+
+  Login body:
+
+    { "companyCode": "DEMO_ACME", "employeeCode": "VENDOR001", "password": "Vendor@123" }
+
+
+ACCEPTANCE — FE QA CHECKLIST
+--------------------------------------------------------------------------------
+
+  [ ] VENDOR001 login → role.systemTemplateKey = "VENDOR"
+  [ ] VENDOR001 → permissions includes vendors:view (NOT items:view)
+  [ ] VENDOR001 → modules includes supply-chain with isActive true
+  [ ] VENDOR001 → Vendors nav visible, Items nav hidden
+  [ ] VENDOR001 → redirect to /dashboard/vendors (or equivalent)
+
+  [ ] INV001 login → role.systemTemplateKey = "INVENTORY_ADMIN"
+  [ ] INV001 → permissions includes items:view (NOT vendors:view)
+  [ ] INV001 → modules includes supply-chain
+  [ ] INV001 → Items nav visible, Vendors nav hidden
+
+  [ ] GET /auth/me after login → same role, modules, permissions (not thinner)
+
+  [ ] ADMIN001 regression → full permissions + tenantAdmin true
+
+  [ ] Custom role: vendors:view only → Vendors yes, Items no
+
+  [ ] User with role null → warning banner, no silent empty dashboard
+
+
+API 403 BEHAVIOR (already live)
+--------------------------------------------------------------------------------
+
+  Vendors endpoints → 403 without vendors:{action}
+  Items endpoints     → 403 without items:{action}
+  Tenant isolation    → companyId path must match session (unchanged)
+
+
+BACKWARD COMPAT
+--------------------------------------------------------------------------------
+
+  - supply-chain:* codes remain in DB; BE aliases to both resources at guard layer
+  - FE should migrate can() checks to vendors:* / items:* for new work
+  - modules[].permissions = module-level actions; resource codes live in permissions[]
+
+
+OUT OF SCOPE (separate feeds)
+--------------------------------------------------------------------------------
+
+  - Purchase orders, GR, warehouses as SC resources (future)
+  - Role assignment lifecycle UI (see FE-COPY-ROLE-LIFECYCLE-LOGICS.txt)
+  - Module lifecycle admin (see FE-MATCH-MODULE-LIFECYCLE-ENTITLEMENT.txt)
+
+
+QUESTIONS → Backend
+--------------------------------------------------------------------------------
+
+  Slack / ticket with employeeCode + Network tab JSON for:
+    activeCompany.role, activeCompany.modules, permissions[]
+
+================================================================================
+END
+================================================================================

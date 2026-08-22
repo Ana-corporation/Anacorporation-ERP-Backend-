@@ -94,6 +94,9 @@ export class CompanyAccessContextService {
               roleId: primaryRole.role.roleId.toString(),
               roleCode: primaryRole.role.roleCode,
               roleName: primaryRole.role.roleName,
+              systemTemplateKey: primaryRole.role.systemTemplateKey ?? null,
+              roleType: primaryRole.role.roleType ?? null,
+              isSystem: primaryRole.role.isSystem,
             }
           : null,
         subscription: {
@@ -173,6 +176,33 @@ export class CompanyAccessContextService {
   }): Promise<CompanyAccessModuleSummary[]> {
     const { entitledModuleIds, companyModuleActiveById, roleId, overrides } = params;
 
+    const permissionsByModuleId = new Map<string, Phase1PermissionAction[]>();
+    let supplyChainEntitledByRole: string | null = null;
+
+    if (roleId) {
+      const rolePermissions = await this.repository.findRolePermissionsByModule(roleId);
+      for (const row of rolePermissions) {
+        if (row.module.moduleType !== 'product') continue;
+
+        const action = this.resolveProductModuleAction(
+          row.permission.permissionCode,
+          row.permission.action,
+        );
+        if (!action) continue;
+
+        const key = row.moduleId.toString();
+        const list = permissionsByModuleId.get(key) ?? [];
+        if (!list.includes(action)) {
+          list.push(action);
+        }
+        permissionsByModuleId.set(key, list);
+
+        if (this.isSupplyChainResourcePermission(row.permission.permissionCode)) {
+          supplyChainEntitledByRole = key;
+        }
+      }
+    }
+
     const grantModuleIds = overrides
       .filter((row) => row.accessType === 'grant' && row.module.moduleType === 'product')
       .map((row) => row.moduleId);
@@ -182,6 +212,11 @@ export class CompanyAccessContextService {
         .filter((row) => row.accessType === 'deny')
         .map((row) => row.moduleId.toString()),
     );
+
+    // Resource-level vendors:/items: grants imply supply-chain workspace access.
+    if (supplyChainEntitledByRole) {
+      denyModuleIds.delete(supplyChainEntitledByRole);
+    }
 
     const moduleIdSet = new Set(entitledModuleIds.map((id) => id.toString()));
     for (const id of grantModuleIds) {
@@ -194,22 +229,6 @@ export class CompanyAccessContextService {
     const moduleIds = [...moduleIdSet].map((id) => BigInt(id));
     const productModules = await this.repository.findProductModules(moduleIds);
 
-    const permissionsByModuleId = new Map<string, Phase1PermissionAction[]>();
-    if (roleId) {
-      const rolePermissions = await this.repository.findRolePermissionsByModule(roleId);
-      for (const row of rolePermissions) {
-        if (row.module.moduleType !== 'product') continue;
-        if (!this.isPhase1Action(row.permission.action)) continue;
-
-        const key = row.moduleId.toString();
-        const list = permissionsByModuleId.get(key) ?? [];
-        if (!list.includes(row.permission.action as Phase1PermissionAction)) {
-          list.push(row.permission.action as Phase1PermissionAction);
-        }
-        permissionsByModuleId.set(key, list);
-      }
-    }
-
     for (const row of overrides) {
       if (row.accessType !== 'grant' || row.module.moduleType !== 'product') continue;
       const key = row.moduleId.toString();
@@ -221,10 +240,8 @@ export class CompanyAccessContextService {
     return productModules
       .filter((mod) => {
         const key = mod.moduleId.toString();
-        // Spec: company_modules.isActive === true (explicit entitlement row)
         if (companyModuleActiveById.get(key) !== true) return false;
         const perms = permissionsByModuleId.get(key) ?? [];
-        // Spec: user has at least view (or any Phase-1 action) on the module
         return perms.includes('view') || perms.length > 0;
       })
       .map((mod) => {
@@ -234,9 +251,35 @@ export class CompanyAccessContextService {
           moduleCode: mod.moduleCode,
           moduleName: mod.moduleName,
           isActive: true,
+          lifecycleStatus: mod.lifecycleStatus ?? null,
           permissions: permissionsByModuleId.get(key) ?? [],
         };
       });
+  }
+
+  /** Map resource codes (vendors:view) and legacy supply-chain:* to Phase-1 actions. */
+  private resolveProductModuleAction(
+    permissionCode: string,
+    action: string,
+  ): Phase1PermissionAction | null {
+    const resourceMatch = /^(vendors|items):(view|create|edit|delete|approve)$/.exec(
+      permissionCode,
+    );
+    if (resourceMatch) {
+      return resourceMatch[2] as Phase1PermissionAction;
+    }
+    if (this.isPhase1Action(action)) {
+      return action;
+    }
+    return null;
+  }
+
+  private isSupplyChainResourcePermission(permissionCode: string): boolean {
+    return (
+      permissionCode.startsWith('vendors:') ||
+      permissionCode.startsWith('items:') ||
+      permissionCode.startsWith('supply-chain:')
+    );
   }
 
   private isPhase1Action(action: PermissionAction | string): action is Phase1PermissionAction {
