@@ -19,6 +19,7 @@ import {
   getReservedFieldLabel,
   getReservedFieldNames,
   isReservedFieldName,
+  ITEM_SECTIONS,
   resolveRequiredSectionKey,
   slugifyFieldName,
   VENDOR_SECTIONS,
@@ -294,7 +295,9 @@ export class CustomFieldsDefinitionsService {
     return serialize({
       entityType,
       fields: visible.map((def) => this.validationService.toFormSchemaField(def)),
-      sections: entityType === 'vendor' ? VENDOR_SECTIONS : [],
+      sections:
+        CUSTOM_FIELD_MODULES.find((m) => m.entityType === entityType)?.sections ??
+        (entityType === 'item' ? ITEM_SECTIONS : VENDOR_SECTIONS),
     });
   }
 

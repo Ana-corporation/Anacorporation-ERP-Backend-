@@ -1,0 +1,57 @@
+================================================================================
+BACKEND FIX — Form Configuration 403 for Company Admin (ADMIN001)
+Date:       2026-08-22
+Status:     FIXED in auth.repository ensurePermissionsSeeded backfill
+================================================================================
+
+
+ROOT CAUSE
+--------------------------------------------------------------------------------
+
+  Seed script already assigns form_configurations:* to ADMIN via platformPermissionCodes.
+
+  Existing DEMO_ACME ADMIN roles created before form_configurations was added kept
+  their role_permission rows. Login backfill only granted Security Org V1 codes
+  (permission_sets / data_access_policies), NOT form_configurations:*.
+
+  Result: custom_fields:* present (from earlier seed), form_configurations:* missing → 403.
+
+
+FIX (BE)
+--------------------------------------------------------------------------------
+
+  1. permissions.constant.ts
+     COMPANY_ADMIN_BACKFILL_PERMISSION_CODES includes:
+       custom_fields:*, form_configurations:view|edit, Security Org V1 codes
+
+  2. auth.repository.ts ensurePermissionsSeeded()
+     - Upsert any missing catalog codes (not count-based)
+     - backfillCompanyAdminPermissions() grants backfill pack to roleCode ADMIN
+
+  3. seed-client-login-samples.js unchanged logic; console reminds re-login
+
+
+VERIFY (no full re-seed required — re-login is enough)
+--------------------------------------------------------------------------------
+
+  1. Restart BE (or wait for next login — backfill runs on POST /auth/login)
+  2. Logout ADMIN001 completely
+  3. Login DEMO_ACME / ADMIN001 / Admin@123
+  4. login response permissions[] contains:
+       form_configurations:view
+       form_configurations:edit
+  5. GET /api/v1/companies/{companyId}/form-configurations/vendor → 200
+
+  Optional: npm run seed:client-logins (full role replace — also works)
+
+
+FE NOTE (unchanged)
+--------------------------------------------------------------------------------
+
+  Nav may show via tenantAdmin; API still requires explicit permissions[].
+  After BE fix + re-login, 403 clears without FE changes.
+
+
+================================================================================
+END
+================================================================================

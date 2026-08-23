@@ -1,0 +1,151 @@
+================================================================================
+BE STATUS — Form Configuration FULL WORK PLAN (Vendor + Item)
+Date:       2026-08-23
+Audience:   ERP-Frontend, QA, Backend
+FE status:  DONE (Vendor + Item) — ready for E2E
+BE status:  DONE — live smoke verified on localhost:3002
+================================================================================
+
+
+VERDICT
+--------------------------------------------------------------------------------
+
+  Backend Form Configuration for Vendor + Item is complete.
+  FE can run E2E against local BE now.
+
+  Live smoke (ADMIN001 / DEMO_ACME) 2026-08-23:
+    [x] Login permissions include form_configurations:view|edit
+    [x] GET  form-configurations/item → 200, entityType=item, 9 sections
+    [x] PUT  hide barcode + purchase.weight → hasOverride; sales.weight still true
+    [x] GET  entities/item/form-schema → barcode.visible=false; not in resolvedSections
+    [x] DELETE item reset → barcode default; Vendor website override unchanged
+    [x] PUT  hide itemCode → 400 PROTECTED_FIELD_CANNOT_HIDE
+    [x] GET  form-configurations/customer → 400 ENTITY_TYPE_NOT_SUPPORTED
+    [x] migrate deploy → no pending migrations (table exists)
+
+
+================================================================================
+PART 7 CHECKLIST — STATUS
+================================================================================
+
+
+Prerequisites
+--------------------------------------------------------------------------------
+
+  [x] 1. company_field_configurations table exists (migrate deploy)
+  [x] 2. entity_type supports vendor and item (VARCHAR path: "vendor"|"item")
+  [x] 3. form_configurations:view + edit seeded on Company Admin
+  [x] 4. ADMIN001 login returns both permissions (login backfill + seed)
+
+
+Shared
+--------------------------------------------------------------------------------
+
+  [x] 5. entityType whitelist: vendor | item
+  [x] 6. PUT validation: INVALID_FIELD_KEY + PROTECTED_FIELD_CANNOT_HIDE
+  [x] 7. DELETE scoped by entityType only
+  [x] 8. BusinessException codes (no Prisma stack traces)
+  [x] 9. assertCompanyAccess on all company-scoped routes
+
+
+Vendor
+--------------------------------------------------------------------------------
+
+  [x] 10. GET/PUT/DELETE form-configurations/vendor
+  [x] 11. form-schema vendor → builtInFields[] + resolvedSections[]
+  [x] 12. Protected: vendorName, supplierCode, vendorCategory
+
+
+Item
+--------------------------------------------------------------------------------
+
+  [x] 13. item-built-in.registry.ts complete (~90 fields)
+  [x] 14. Unique bag fieldKeys (purchase.weight ≠ sales.weight)
+  [x] 15. GET form-configurations/item → 200 + sections[]
+  [x] 16. PUT form-configurations/item → upsert + hasOverride
+  [x] 17. DELETE form-configurations/item → reset ITEM only
+  [x] 18. GET entities/item/form-schema → builtInFields + resolvedSections
+  [x] 19. Item PATCH preserves hidden values (JSON bag deep-merge in items.repository)
+  [x] 20. Protected: itemCode, description, itemType, status,
+                     isInventoryItem, isSalesItem, isPurchaseItem
+
+
+Tests
+--------------------------------------------------------------------------------
+
+  [x] 21. Unit: hide barcode → form-schema visible=false
+  [x] 22. Unit + live: hide purchase.weight; sales.weight still true
+  [x] 23. Unit + live: reset Item; Vendor overrides unchanged
+  [x] 24. Multi-tenant: companyId scoped UNIQUE(company, entity, field)
+       (Company A ≠ Company B by design; assertCompanyAccess on routes)
+  [x] 25. Auth: @RequirePermissions on GET/PUT/DELETE
+       (users without form_configurations:* → 403)
+
+  Unit suites: form-configuration + built-in-field-registry → 28 tests passing
+
+
+================================================================================
+CONTRACT NOTES FOR FE
+================================================================================
+
+  Path entityType:     "vendor" | "item"   (lowercase)
+  DB entity_type:      same string values (not uppercase enum)
+
+  Form-config GET field object:
+    fieldKey, label, sectionKey, fieldType, apiKey, visible, required,
+    configurable, source=BUILT_IN, hasOverride
+
+  form-schema builtInFields / resolvedSections:
+    use "key" (not fieldKey) — same as Vendor contract already shipped
+    also: apiKey, visible, required, configurable, source, sectionKey
+
+  Permissions:
+    form_configurations:view|edit   — admin configure APIs
+    supply-chain / items:view       — form-schema for module users
+
+
+================================================================================
+KEY FILES
+================================================================================
+
+  src/modules/shared/form-configuration/
+    form-configuration.controller.ts
+    form-configuration.service.ts
+    form-configuration.repository.ts
+    built-in-field-registry.ts
+    built-in-field-registry.types.ts
+    item-built-in.registry.ts
+    form-schema.service.ts
+
+  prisma/shared/company-field-configurations.prisma
+  prisma/migrations/20260822120000_company_field_configurations/
+
+  Permissions / ADMIN backfill:
+    src/common/constants/permissions.constant.ts
+    src/modules/iam/authentication/auth.repository.ts
+
+  FE handoffs:
+    docs/FE-HANDOFF-FORM-CONFIGURATION-ITEM.txt
+    docs/FE-HANDOFF-BUILT-IN-FIELD-CONFIGURATION.txt
+    docs/FE-HANDOFF-FORM-CONFIGURATION-403.txt
+
+
+================================================================================
+E2E READY — FE SMOKE
+================================================================================
+
+  BE:  http://localhost:3002
+  FE:  http://localhost:3001
+  Login: DEMO_ACME / ADMIN001 / Admin@123  (re-login if permissions stale)
+
+  [ ] Settings → Form Configuration → Vendors + Items
+  [ ] Items Configure → toggles load
+  [ ] Hide barcode → Save → Item create/edit hides barcode
+  [ ] Hide purchase.weight → sales.weight still shown
+  [ ] Reset Item → defaults; Vendor config unchanged
+  [ ] Re-enable barcode on existing item → prior value still present
+
+
+================================================================================
+END
+================================================================================

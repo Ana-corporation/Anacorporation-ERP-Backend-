@@ -1,0 +1,226 @@
+================================================================================
+FE HANDOFF — Built-in Field Configuration (Vendor)
+Date:       2026-08-22
+Audience:   ERP-Frontend
+Backend:    ERP-Backend
+Related:    Custom Fields (unchanged — separate feature)
+================================================================================
+
+
+SUMMARY
+--------------------------------------------------------------------------------
+
+  NEW: Company Admin can show/hide developer-defined Vendor built-in fields
+       per company (multi-tenant override model).
+
+  UNCHANGED: Custom Fields (Settings → Custom Fields) — add NEW fields only.
+
+  Two separate systems — both appear in the final Vendor form schema.
+
+
+SETTINGS NAV
+--------------------------------------------------------------------------------
+
+  Settings
+  ├── Custom Fields          → create NEW fields (existing)
+  └── Form Configuration     → show/hide built-in fields (NEW)
+        └── Vendor
+
+
+PERMISSIONS (Hybrid RBAC)
+--------------------------------------------------------------------------------
+
+  form_configurations:view   → read configuration screen
+  form_configurations:edit   → save changes + reset
+
+  Do NOT use tenantAdmin alone.
+
+  FE:
+    can("form_configurations:view")
+    can("form_configurations:edit")
+
+  ADMIN001 (demo) includes both after seed.
+
+
+APIs — FORM CONFIGURATION (NEW)
+--------------------------------------------------------------------------------
+
+  A) GET effective built-in configuration (Settings UI)
+
+     GET /api/v1/companies/{companyId}/form-configurations/vendor
+
+     Permission: form_configurations:view
+
+     Response:
+     {
+       "entityType": "vendor",
+       "sections": [
+         {
+           "sectionKey": "general",
+           "label": "General",
+           "fields": [
+             {
+               "fieldKey": "vendorName",
+               "label": "Vendor Name",
+               "fieldType": "text",
+               "visible": true,
+               "required": true,
+               "configurable": false,
+               "source": "BUILT_IN",
+               "hasOverride": false
+             },
+             {
+               "fieldKey": "website",
+               "label": "Website",
+               "fieldType": "text",
+               "visible": false,
+               "required": false,
+               "configurable": true,
+               "source": "BUILT_IN",
+               "hasOverride": true
+             }
+           ]
+         }
+       ]
+     }
+
+     UI rules:
+       - configurable=false → toggle disabled (always visible)
+       - configurable=true  → admin can toggle visible on/off
+
+
+  B) Save visibility overrides
+
+     PUT /api/v1/companies/{companyId}/form-configurations/vendor
+
+     Permission: form_configurations:edit
+
+     Body:
+     {
+       "fields": [
+         { "fieldKey": "website", "isVisible": false },
+         { "fieldKey": "creditLimit", "isVisible": false }
+       ]
+     }
+
+     Errors:
+       400 INVALID_FIELD_KEY           — unknown fieldKey
+       400 PROTECTED_FIELD_CANNOT_HIDE — vendorName, supplierCode, vendorCategory
+       403 Insufficient permissions
+
+
+  C) Reset to ERP defaults
+
+     DELETE /api/v1/companies/{companyId}/form-configurations/vendor
+
+     Permission: form_configurations:edit
+
+     Removes all company overrides → ERP defaultVisible applies.
+
+
+API — FINAL VENDOR FORM SCHEMA (EXPANDED, backward compatible)
+--------------------------------------------------------------------------------
+
+  GET /api/v1/companies/{companyId}/entities/vendor/form-schema
+
+  Permission: supply-chain module view (unchanged gate)
+
+  LEGACY (unchanged — custom fields only):
+    fields[]    — custom field definitions (same shape as before)
+    sections[]  — section tab metadata [{ key, label }]
+
+  NEW:
+    builtInFields[]     — all built-in fields with effective visibility
+    resolvedSections[]  — merged BUILT_IN + CUSTOM for Vendor create/edit UI
+
+  resolvedSections example:
+  {
+    "sectionKey": "contact",
+    "label": "Contact Details",
+    "fields": [
+      {
+        "key": "email",
+        "label": "Email",
+        "fieldType": "email",
+        "sectionKey": "contact",
+        "source": "BUILT_IN",
+        "visible": true,
+        "required": false,
+        "configurable": true
+      },
+      {
+        "key": "preferred_courier",
+        "label": "Preferred Courier",
+        "fieldType": "text",
+        "sectionKey": "custom",
+        "source": "CUSTOM",
+        "visible": true,
+        "required": false,
+        "fieldId": "...",
+        "fieldName": "preferred_courier",
+        ...
+      }
+    ]
+  }
+
+  Vendor form rendering:
+    Prefer resolvedSections — only render fields where visible === true
+    Hidden built-in fields: UI only (DB values preserved)
+
+
+BUILT-IN FIELD KEYS (Vendor registry)
+--------------------------------------------------------------------------------
+
+  | fieldKey       | Label           | Section  | Configurable | API mapping      |
+  |----------------|-----------------|----------|--------------|------------------|
+  | vendorName     | Vendor Name     | general  | NO (locked)  | name             |
+  | supplierCode   | Supplier Code   | general  | NO (locked)  | vendorCode       |
+  | vendorCategory | Vendor Category | general  | NO (locked)  | supplierType     |
+  | email          | Email           | contact  | YES          | email            |
+  | phone          | Phone           | contact  | YES          | phone            |
+  | website        | Website         | contact  | YES          | metadata.website |
+  | paymentTerms   | Payment Terms   | payment  | YES          | metadata.*       |
+  | creditLimit    | Credit Limit    | payment  | YES          | metadata.*       |
+
+  Note: fieldKey is for configuration UI; Vendor save API still uses
+  name / vendorCode / supplierType / metadata keys on create/update.
+
+
+INDEPENDENCE FROM CUSTOM FIELDS
+--------------------------------------------------------------------------------
+
+  - Custom Fields CRUD APIs unchanged
+  - custom_field_definitions / custom_field_values unchanged
+  - Custom field reserved names still block collisions with built-in fields
+  - Form Configuration does NOT create/delete field definitions
+
+
+MULTI-TENANT
+--------------------------------------------------------------------------------
+
+  All APIs scoped by companyId path + assertCompanyAccess.
+  Company A hiding website does NOT affect Company B.
+
+
+FE CHECKLIST
+--------------------------------------------------------------------------------
+
+  [ ] Settings → Form Configuration → Vendor (form_configurations:view)
+  [ ] Toggle configurable fields; lock non-configurable rows
+  [ ] Save via PUT; Reset via DELETE
+  [ ] Vendor create/edit uses resolvedSections (visible fields only)
+  [ ] Custom Fields screen unchanged
+  [ ] Custom fields still appear in resolvedSections alongside built-in
+  [ ] Handle 400 PROTECTED_FIELD_CANNOT_HIDE gracefully
+
+
+OUT OF SCOPE (Phase 1)
+--------------------------------------------------------------------------------
+
+  - Field reordering, label rename, required override
+  - Items / other entities (backend extensible via registry)
+  - Per-role field visibility
+
+================================================================================
+END
+================================================================================

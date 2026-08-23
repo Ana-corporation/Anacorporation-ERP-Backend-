@@ -1,0 +1,104 @@
+================================================================================
+BE STATUS — Form Configuration (Vendor) — vs improvement list 2026-08-22
+Audience: ERP-Frontend, QA
+Companion: docs/FE-HANDOFF-BUILT-IN-FIELD-CONFIGURATION.txt
+================================================================================
+
+
+MUST HAVE — STATUS
+--------------------------------------------------------------------------------
+
+  [x] 1. Complete Vendor built-in field registry
+        47 fields across general, contact, address, payment, paymentRun,
+        accounting, remarks. GET form-configurations/vendor returns:
+        fieldKey, label, sectionKey, fieldType, apiKey, visible, required,
+        configurable, source=BUILT_IN, hasOverride
+
+  [x] 2. Stable fieldKey → API contract
+        Export: VENDOR_BUILT_IN_FIELD_API_MAP in built-in-field-registry.ts
+        Examples:
+          vendorName     → name
+          supplierCode   → vendorCode
+          vendorCategory → supplierType
+          website        → metadata.website
+
+  [x] 3. Seed form_configurations permissions on Company Admin
+        form_configurations:view, form_configurations:edit
+        Included in ADMIN_EXTRA_PERMISSION_CODES + flatPermissions seed
+        ADMIN001 receives both after: npm run seed:client-logins
+
+  [x] 4. form-schema expanded (backward compatible)
+        GET /companies/{companyId}/entities/vendor/form-schema
+        NEW: builtInFields[], resolvedSections[] (with apiKey)
+        LEGACY: fields[] (custom only), sections[] (tab meta)
+
+  [x] 5. Strict PUT validation
+        400 INVALID_FIELD_KEY
+        400 PROTECTED_FIELD_CANNOT_HIDE (vendorName, supplierCode, vendorCategory)
+
+  [x] 6. Multi-tenant isolation
+        companyId on all rows; assertCompanyAccess on all endpoints
+
+  [x] 7. Hidden field values preserved on vendor PATCH
+        vendors.service.update deep-merges metadata with existing record
+        Omitting hidden keys in PATCH body does NOT wipe stored values
+
+
+SHOULD HAVE — STATUS
+--------------------------------------------------------------------------------
+
+  [x] 8.  hasOverride on GET form-configurations response
+  [x] 9.  PUT and DELETE return updated configuration body
+  [x] 10. Full registry beyond 8 demo fields (47 vendor built-ins)
+  [x] 11. Unit tests (form-configuration, form-schema, registry, vendor metadata)
+  [ ] 12. Deploy + live E2E QA (P0 cross-team — not BE-only)
+
+
+API QUICK REFERENCE
+--------------------------------------------------------------------------------
+
+  GET    /api/v1/companies/{companyId}/form-configurations/vendor
+         Permission: form_configurations:view
+
+  PUT    /api/v1/companies/{companyId}/form-configurations/vendor
+         Permission: form_configurations:edit
+         Body: { "fields": [{ "fieldKey": "website", "isVisible": false }] }
+
+  DELETE /api/v1/companies/{companyId}/form-configurations/vendor
+         Permission: form_configurations:edit (reset to ERP defaults)
+
+  GET    /api/v1/companies/{companyId}/entities/vendor/form-schema
+         Permission: supply-chain:view (module)
+         Use resolvedSections[] for vendor create/edit UI
+
+
+FE STATUS (reported 2026-08-22 — local, not E2E verified)
+--------------------------------------------------------------------------------
+
+  [x] resolvedSections / builtInFields on vendor UI
+  [x] hasOverride in admin UI
+  [x] Custom fields on vendor create/edit via form-schema
+  [x] useVendorFormSchema (single load per dialog)
+  [ ] Commit + deploy + E2E QA with live BE
+
+  See: docs/FE-FORM-CONFIG-IMPROVEMENT-LIST-STATUS.txt
+
+
+DEPLOY (BE)
+--------------------------------------------------------------------------------
+
+  npx prisma migrate deploy
+  npm run seed:client-logins
+
+  Migration: 20260822120000_company_field_configurations
+
+
+PROTECTED FIELDS (cannot hide)
+--------------------------------------------------------------------------------
+
+  vendorName, supplierCode, vendorCategory
+
+
+================================================================================
+END
+================================================================================

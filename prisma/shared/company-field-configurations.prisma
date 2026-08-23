@@ -1,0 +1,18 @@
+// shared | company_field_configurations
+// Company-level visibility overrides for developer-defined built-in form fields.
+
+model CompanyFieldConfiguration {
+  configurationId BigInt   @id @default(autoincrement()) @map("configuration_id")
+  companyId       BigInt   @map("company_id")
+  entityType      String   @map("entity_type") @db.VarChar(40)
+  fieldKey        String   @map("field_key") @db.VarChar(80)
+  isVisible       Boolean  @map("is_visible")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@unique([companyId, entityType, fieldKey])
+  @@index([companyId, entityType])
+  @@map("company_field_configurations")
+}

@@ -1,0 +1,165 @@
+================================================================================
+FE HANDOFF — Form Configuration 403 (Company Admin / ADMIN001)
+Date:       2026-08-22
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend (fix merged)
+Related:    docs/FE-HANDOFF-BUILT-IN-FIELD-CONFIGURATION.txt
+            docs/FE-HANDOFF-FORM-CONFIG-403-FIX.txt (BE detail)
+================================================================================
+
+
+WHAT FE SAW
+--------------------------------------------------------------------------------
+
+  Symptom:
+    Settings → Form Configuration → Vendor Configure
+    Page loads but API returns 403 "Insufficient permissions"
+
+  Login (ADMIN001):
+    tenantAdmin: true
+    permissions[] had custom_fields:* but NOT form_configurations:*
+
+  Affected call:
+    GET /api/v1/companies/{companyId}/form-configurations/vendor → 403
+
+  FE behavior was correct:
+    - Nav + route wired properly
+    - API path correct
+    - Permission gates correct (can("form_configurations:view"))
+
+
+ROOT CAUSE (BE — not an FE bug)
+--------------------------------------------------------------------------------
+
+  Backend ADMIN role in DEMO_ACME was seeded before form_configurations:*
+  permissions existed. Login backfill did not grant the new codes to existing
+  ADMIN roles.
+
+  FE nav may show Form Configuration via tenantAdmin (temporary UX).
+  API guards require explicit permissions[] — hence 403 until BE fix + re-login.
+
+
+BE FIX (already in backend)
+--------------------------------------------------------------------------------
+
+  On POST /auth/login (and /auth/me), backend now:
+    1. Upserts missing permission catalog rows (including form_configurations:*)
+    2. Backfills COMPANY_ADMIN role (roleCode ADMIN) with:
+         form_configurations:view
+         form_configurations:edit
+         custom_fields:* (if missing)
+         Security Org V1 codes (if missing)
+
+  Seed script also assigns these to ADMIN001:
+    npm run seed:client-logins
+
+
+WHAT FE MUST DO
+--------------------------------------------------------------------------------
+
+  1. No code changes required for the 403 itself.
+
+  2. After BE deploy / restart:
+       - Logout ADMIN001 completely (clear token / session)
+       - Login again: DEMO_ACME / ADMIN001 / Admin@123
+
+  3. Confirm login response permissions[] includes:
+       "form_configurations:view"
+       "form_configurations:edit"
+
+  4. Re-test Vendor Form Configuration page → GET should return 200.
+
+
+PERMISSION CONTRACT (keep as-is)
+--------------------------------------------------------------------------------
+
+  | Code                        | FE usage                                      |
+  |-----------------------------|-----------------------------------------------|
+  | form_configurations:view    | Show Settings nav + read config (GET)         |
+  | form_configurations:edit    | Save toggles (PUT) + Reset (DELETE)           |
+
+  Do NOT rely on tenantAdmin alone for API access.
+  Prefer can("form_configurations:view") for nav (matches Custom Fields pattern).
+
+  Who gets these permissions (demo):
+    ADMIN001 (Company Admin) — yes, after re-login or seed
+    MGR001 / STAFF001 / VENDOR001 / INV001 — no (nav hidden, API 403)
+
+
+EXPECTED LOGIN SNAPSHOT (ADMIN001 after fix)
+--------------------------------------------------------------------------------
+
+  {
+    "tenantAdmin": true,
+    "permissions": [
+      "...",
+      "custom_fields:view",
+      "custom_fields:create",
+      "custom_fields:edit",
+      "custom_fields:delete",
+      "form_configurations:view",
+      "form_configurations:edit",
+      "..."
+    ]
+  }
+
+
+API QUICK REFERENCE (unchanged)
+--------------------------------------------------------------------------------
+
+  GET    /api/v1/companies/{companyId}/form-configurations/vendor
+         Permission: form_configurations:view
+
+  PUT    /api/v1/companies/{companyId}/form-configurations/vendor
+         Permission: form_configurations:edit
+         Body: { "fields": [{ "fieldKey": "website", "isVisible": false }] }
+
+  DELETE /api/v1/companies/{companyId}/form-configurations/vendor
+         Permission: form_configurations:edit
+
+  GET    /api/v1/companies/{companyId}/entities/vendor/form-schema
+         Permission: supply-chain:view (module) — vendor create/edit UI
+         Use: resolvedSections[], builtInFields[]
+
+
+FE QA CHECKLIST (5 min)
+--------------------------------------------------------------------------------
+
+  [ ] Logout + login ADMIN001 on updated BE
+  [ ] DevTools → login response → form_configurations:view|edit present
+  [ ] Settings → Form Configuration visible (permission gate, not tenantAdmin only)
+  [ ] Vendor Configure → GET form-configurations/vendor → 200, sections load
+  [ ] Toggle Website OFF → Save → PUT 200
+  [ ] Vendors create/edit → Website hidden per resolvedSections
+  [ ] Login as STAFF001 → Form Configuration nav hidden → direct API → 403
+
+
+OPTIONAL FE CLEANUP (not blocking)
+--------------------------------------------------------------------------------
+
+  If nav still uses tenantAdmin OR can("form_configurations:view"):
+    Switch nav to permission-only once BE is deployed everywhere:
+      can("form_configurations:view")
+
+  Remove any "Insufficient permissions — contact admin" workaround banners
+  once E2E passes on live BE.
+
+
+TROUBLESHOOTING
+--------------------------------------------------------------------------------
+
+  Still 403 after deploy?
+    → Hard logout + login (stale JWT / user context cache)
+    → Confirm BE restarted with latest auth.repository backfill
+    → Optional: ask BE to run npm run seed:client-logins on target DB
+
+  Nav hidden but user is admin?
+    → permissions[] missing form_configurations:view — re-login issue
+
+  Nav visible but API 403?
+    → Nav using tenantAdmin; API correctly requires permissions[] — re-login
+
+
+================================================================================
+END
+================================================================================

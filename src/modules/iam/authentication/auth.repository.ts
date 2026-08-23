@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PermissionAction, Prisma } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { ALL_MODULES } from '@/common/constants/modules.constant';
-import { PERMISSIONS } from '@/common/constants/permissions.constant';
+import {
+  COMPANY_ADMIN_BACKFILL_PERMISSION_CODES,
+  PERMISSIONS,
+} from '@/common/constants/permissions.constant';
 import { parseBigIntId } from '@/common/utils/bigint.util';
 
 @Injectable()
@@ -26,21 +29,9 @@ export class AuthRepository {
     });
   }
 
-  /** Catalog codes introduced in Security & Organization V1 — grant to existing ADMIN roles. */
-  private static readonly SECURITY_ORG_V1_ADMIN_CODES = [
-    'permission_sets:view',
-    'permission_sets:create',
-    'permission_sets:edit',
-    'permission_sets:delete',
-    'data_access_policies:view',
-    'data_access_policies:create',
-    'data_access_policies:edit',
-    'data_access_policies:delete',
-  ] as const;
-
   /**
-   * Ensures permission catalog rows exist and grants Security Org V1 codes to
-   * every company role with roleCode === 'ADMIN' (DEMO_ACME ADMIN included).
+   * Ensures permission catalog rows exist and grants company-admin pack codes to
+   * every company role with roleCode === 'ADMIN' (DEMO_ACME ADMIN001 included).
    * Idempotent + single-flight — safe on concurrent login /me / signup.
    */
   async ensurePermissionsSeeded() {
@@ -62,24 +53,17 @@ export class AuthRepository {
   }
 
   private async runSecurityOrgSeed() {
-    const v1Codes = AuthRepository.SECURITY_ORG_V1_ADMIN_CODES;
-    const existingV1 = await this.prisma.permission.findMany({
-      where: { permissionCode: { in: [...v1Codes] } },
+    const existingRows = await this.prisma.permission.findMany({
       select: { permissionCode: true },
     });
-    const have = new Set(existingV1.map((p) => p.permissionCode));
-    const missingV1 = v1Codes.filter((code) => !have.has(code));
+    const have = new Set(existingRows.map((p) => p.permissionCode));
+    const missingFromCatalog = PERMISSIONS.filter((p) => !have.has(p.code));
 
-    const existingCount = await this.prisma.permission.count();
-    if (existingCount < PERMISSIONS.length) {
-      await this.upsertModulesAndPermissions(PERMISSIONS);
-    } else if (missingV1.length > 0) {
-      const missingSet = new Set<string>(missingV1);
-      const securityOrgPerms = PERMISSIONS.filter((p) => missingSet.has(p.code));
-      await this.upsertModulesAndPermissions(securityOrgPerms);
+    if (missingFromCatalog.length > 0) {
+      await this.upsertModulesAndPermissions(missingFromCatalog);
     }
 
-    await this.backfillAdminSecurityOrgPermissions();
+    await this.backfillCompanyAdminPermissions();
   }
 
   private async upsertModulesAndPermissions(
@@ -139,14 +123,14 @@ export class AuthRepository {
   }
 
   /**
-   * Existing company ADMIN roles predate Security & Organization V1 codes.
+   * Existing company ADMIN roles may predate newer shared-module codes (e.g. form_configurations).
    * Idempotent: createMany skipDuplicates so tabs/APIs stop returning 403 after re-login.
    */
-  private async backfillAdminSecurityOrgPermissions() {
+  private async backfillCompanyAdminPermissions() {
     const permissions = await this.prisma.permission.findMany({
       where: {
         permissionCode: {
-          in: [...AuthRepository.SECURITY_ORG_V1_ADMIN_CODES],
+          in: [...COMPANY_ADMIN_BACKFILL_PERMISSION_CODES],
         },
       },
       select: { permissionId: true, moduleId: true },

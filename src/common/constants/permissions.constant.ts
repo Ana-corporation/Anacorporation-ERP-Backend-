@@ -139,6 +139,8 @@ const ADMIN_PERMISSIONS = [
   { module: 'shared', code: 'custom_fields:create', name: 'Create Custom Fields', action: 'create' },
   { module: 'shared', code: 'custom_fields:edit', name: 'Edit Custom Fields', action: 'edit' },
   { module: 'shared', code: 'custom_fields:delete', name: 'Delete Custom Fields', action: 'delete' },
+  { module: 'shared', code: 'form_configurations:view', name: 'View Form Configurations', action: 'view' },
+  { module: 'shared', code: 'form_configurations:edit', name: 'Edit Form Configurations', action: 'edit' },
   { module: 'subscription', code: 'subscription_plans:view', name: 'View Subscription Plans', action: 'view' },
   { module: 'subscription', code: 'subscription_plans:create', name: 'Create Subscription Plans', action: 'create' },
   { module: 'subscription', code: 'subscription_plans:edit', name: 'Edit Subscription Plans', action: 'edit' },
@@ -185,3 +187,24 @@ export const SUPER_ADMIN_PERMISSIONS = [
 export const DEFAULT_ADMIN_PERMISSIONS: PermissionCode[] = PERMISSIONS.filter(
   (p) => p.module !== 'platform',
 ).map((p) => p.code);
+
+/**
+ * Idempotent backfill for company roleCode ADMIN (login + seed).
+ * Existing DEMO admins may predate newer shared-module codes — grant on re-login.
+ */
+export const COMPANY_ADMIN_BACKFILL_PERMISSION_CODES = [
+  'permission_sets:view',
+  'permission_sets:create',
+  'permission_sets:edit',
+  'permission_sets:delete',
+  'data_access_policies:view',
+  'data_access_policies:create',
+  'data_access_policies:edit',
+  'data_access_policies:delete',
+  'custom_fields:view',
+  'custom_fields:create',
+  'custom_fields:edit',
+  'custom_fields:delete',
+  'form_configurations:view',
+  'form_configurations:edit',
+] as const satisfies readonly PermissionCode[];

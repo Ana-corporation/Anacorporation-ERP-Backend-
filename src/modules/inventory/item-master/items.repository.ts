@@ -57,7 +57,8 @@ function toJson(value: JsonBag): Prisma.InputJsonValue | undefined {
   return value === undefined ? undefined : (value as Prisma.InputJsonValue);
 }
 
-/** Shallow-merge PATCH bag into existing JSON so FE can send only new keys. */
+/** Shallow-merge PATCH bag into existing JSON so FE can send only changed keys.
+ *  Hidden Form Configuration fields omitted from the UI must NOT clear stored bag values. */
 function mergeJsonBag(
   existing: unknown,
   incoming: JsonBag,

@@ -50,6 +50,11 @@ const CUSTOM_FIELDS_PERMISSION_CODES = [
   { module: 'shared', code: 'custom_fields:delete', name: 'Delete Custom Fields', action: 'delete' },
 ];
 
+const FORM_CONFIGURATION_PERMISSION_CODES = [
+  { module: 'shared', code: 'form_configurations:view', name: 'View Form Configurations', action: 'view' },
+  { module: 'shared', code: 'form_configurations:edit', name: 'Edit Form Configurations', action: 'edit' },
+];
+
 /** Company Organization tab — branches / departments / designations / warehouses */
 const ORG_STRUCTURE_PERMISSION_CODES = [
   { module: 'organization', code: 'branches:view', name: 'View Branches', action: 'view' },
@@ -129,6 +134,7 @@ const PLATFORM_OWNER_PERMISSION_CODES = [
 
 const ADMIN_EXTRA_PERMISSION_CODES = [
   ...CUSTOM_FIELDS_PERMISSION_CODES,
+  ...FORM_CONFIGURATION_PERMISSION_CODES,
   ...ORG_STRUCTURE_PERMISSION_CODES,
   ...TENANT_IAM_PERMISSION_CODES,
 ];
@@ -409,6 +415,7 @@ async function ensureModules() {
   const flatPermissions = [
     ...PLATFORM_OWNER_PERMISSION_CODES,
     ...CUSTOM_FIELDS_PERMISSION_CODES,
+    ...FORM_CONFIGURATION_PERMISSION_CODES,
     ...ORG_STRUCTURE_PERMISSION_CODES,
     ...TENANT_IAM_PERMISSION_CODES,
   ];
@@ -1191,8 +1198,10 @@ async function main() {
     ),
   );
   console.log(
-    '\nADMIN001 now includes org permissions: branches:* departments:* designations:* warehouses:*',
+    '\nADMIN001 now includes: org (branches/departments/designations/warehouses),',
   );
+  console.log('  custom_fields:*, form_configurations:view|edit, tenant IAM + Security Org V1.');
+  console.log('Re-login ADMIN001 after seed so permissions[] is fresh.');
 }
 
 main()

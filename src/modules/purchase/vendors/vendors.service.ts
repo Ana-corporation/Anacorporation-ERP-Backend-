@@ -114,11 +114,21 @@ export class VendorsService {
   }
 
   async update(id: string, companyId: string, dto: UpdateVendorDto, actorId: string) {
-    if (!(await this.repository.findById(id, companyId))) {
+    const existing = await this.repository.findById(id, companyId);
+    if (!existing) {
       throw new NotFoundException('Vendor');
     }
 
     const { customFields, ...vendorDto } = dto;
+
+    // Deep-merge metadata so hidden built-in fields retain values when FE omits them.
+    if (vendorDto.metadata !== undefined) {
+      const prior =
+        existing.metadata && typeof existing.metadata === 'object' && !Array.isArray(existing.metadata)
+          ? (existing.metadata as Record<string, unknown>)
+          : {};
+      vendorDto.metadata = { ...prior, ...vendorDto.metadata };
+    }
 
     await this.prisma.$transaction(async (tx) => {
       const client = tx as unknown as Prisma.TransactionClient;

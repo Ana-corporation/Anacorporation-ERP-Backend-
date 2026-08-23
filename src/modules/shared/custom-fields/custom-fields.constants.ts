@@ -1,4 +1,4 @@
-export const CUSTOM_FIELD_ENTITY_TYPES = ['vendor'] as const;
+export const CUSTOM_FIELD_ENTITY_TYPES = ['vendor', 'item'] as const;
 
 export type CustomFieldEntityType = (typeof CUSTOM_FIELD_ENTITY_TYPES)[number];
 
@@ -37,6 +37,7 @@ export const CUSTOM_FIELD_TYPES_NOT_IMPLEMENTED = [
 /** Maps entityType → product module for form-schema permission. */
 export const ENTITY_TYPE_MODULE_MAP: Record<CustomFieldEntityType, string> = {
   vendor: 'supply-chain',
+  item: 'supply-chain',
 };
 
 export const FIELD_NAME_REGEX = /^[a-zA-Z][a-zA-Z0-9_]{0,79}$/;
@@ -81,12 +82,32 @@ export const VENDOR_SECTIONS: ModuleSectionDef[] = [
   { key: 'custom', label: 'Custom' },
 ];
 
+/** Item Master form sections (FE tabs). Unknown sectionKey → treat as "custom". */
+export const ITEM_SECTIONS: ModuleSectionDef[] = [
+  { key: 'header', label: 'Header' },
+  { key: 'general', label: 'General' },
+  { key: 'classification', label: 'Classification' },
+  { key: 'purchasing', label: 'Purchasing' },
+  { key: 'sales', label: 'Sales' },
+  { key: 'inventory', label: 'Inventory' },
+  { key: 'planning', label: 'Planning' },
+  { key: 'production', label: 'Production' },
+  { key: 'remarks', label: 'Remarks' },
+  { key: 'custom', label: 'Custom' },
+];
+
 export const CUSTOM_FIELD_MODULES: CustomFieldModuleMeta[] = [
   {
     entityType: 'vendor',
     label: 'Vendor',
     productModule: 'supply-chain',
     sections: VENDOR_SECTIONS,
+  },
+  {
+    entityType: 'item',
+    label: 'Item',
+    productModule: 'supply-chain',
+    sections: ITEM_SECTIONS,
   },
 ];
 
@@ -245,14 +266,80 @@ export const VENDOR_RESERVED_FIELD_LABELS: Readonly<Record<string, string>> = {
   notes: 'Notes',
 };
 
+/** Core Item API / Prisma keys — cannot be used as custom fieldName. */
+export const ITEM_RESERVED_CORE_KEYS = [
+  'id',
+  'itemId',
+  'itemCode',
+  'companyId',
+  'description',
+  'oldCode',
+  'itemType',
+  'itemGroup',
+  'uomGroup',
+  'barcode',
+  'priceList',
+  'unitPrice',
+  'currencyCode',
+  'isInventoryItem',
+  'isSalesItem',
+  'isPurchaseItem',
+  'doNotApplyDiscountGroups',
+  'manufacturer',
+  'additionalIdentifier',
+  'shippingType',
+  'manageBy',
+  'status',
+  'activeFrom',
+  'activeTo',
+  'netWeightKg',
+  'grossWeightKg',
+  'division',
+  'coreActivity',
+  'majorGroup',
+  'brandName',
+  'effectiveDate',
+  'customerStockNo',
+  'stockToBe',
+  'stockDioDays',
+  'contractItemsFor',
+  'preferredVendorId',
+  'valuationMethod',
+  'itemCost',
+  'manageStockByWarehouse',
+  'remarks',
+  'purchase',
+  'sales',
+  'inventory',
+  'planning',
+  'production',
+  'properties',
+  'attachments',
+  'metadata',
+  'customFields',
+  'isActive',
+  'createdAt',
+  'updatedAt',
+  'createdBy',
+  'updatedBy',
+  'deletedAt',
+  'deletedBy',
+  'rowVersion',
+] as const;
+
+export const ITEM_RESERVED_FIELD_NAMES: readonly string[] = [...ITEM_RESERVED_CORE_KEYS];
+
 export function getReservedFieldNames(entityType: CustomFieldEntityType): readonly string[] {
   if (entityType === 'vendor') return VENDOR_RESERVED_FIELD_NAMES;
+  if (entityType === 'item') return ITEM_RESERVED_FIELD_NAMES;
   return [];
 }
 
 export function getReservedDisplayLabels(entityType: CustomFieldEntityType): readonly string[] {
-  if (entityType !== 'vendor') return [];
-  return [...new Set(Object.values(VENDOR_RESERVED_DISPLAY_LABELS))];
+  if (entityType === 'vendor') {
+    return [...new Set(Object.values(VENDOR_RESERVED_DISPLAY_LABELS))];
+  }
+  return [];
 }
 
 export function normalizeLabelKey(label: string): string {

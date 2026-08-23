@@ -1,0 +1,164 @@
+================================================================================
+FORM CONFIGURATION (Vendor) — IMPROVEMENT LIST STATUS
+Date:       2026-08-22 (updated after BE completion + FE local work)
+Audience:   ERP-Frontend, ERP-Backend, QA
+Related:    docs/FE-HANDOFF-BUILT-IN-FIELD-CONFIGURATION.txt
+            docs/FE-HANDOFF-FORM-CONFIG-BE-STATUS.txt
+================================================================================
+
+
+CURRENT MATCH SCORE (HONEST)
+--------------------------------------------------------------------------------
+
+  Form Configuration admin (toggle / save / reset)     ~95%  BE + FE aligned
+  Vendor form built-in visibility                      ~90%  FE on resolvedSections (local)
+  Custom Fields unchanged                              YES
+  Full BE + FE verified end-to-end                     NOT YET — deploy + QA only
+
+
+================================================================================
+BACKEND (BE) — IMPROVEMENTS
+================================================================================
+
+
+MUST HAVE (production-ready)
+--------------------------------------------------------------------------------
+
+  [x] 1. Complete Vendor built-in field registry
+        47 fields; GET form-configurations/vendor returns fieldKey, label,
+        sectionKey, fieldType, apiKey, visible, required, configurable,
+        source=BUILT_IN, hasOverride
+
+  [x] 2. Stable fieldKey contract documented and shared with FE
+        VENDOR_BUILT_IN_FIELD_API_MAP in built-in-field-registry.ts
+        vendorName→name, supplierCode→vendorCode, vendorCategory→supplierType,
+        website→metadata.website, etc.
+
+  [x] 3. Seed form_configurations permissions on Company Admin role
+        form_configurations:view, form_configurations:edit
+        ADMIN001 after: npm run seed:client-logins
+
+  [x] 4. form-schema expanded (backward compatible)
+        builtInFields[], resolvedSections[] + legacy fields[], sections[]
+
+  [x] 5. Strict PUT validation
+        INVALID_FIELD_KEY, PROTECTED_FIELD_CANNOT_HIDE
+
+  [x] 6. Multi-tenant isolation
+        companyId scoping + assertCompanyAccess on all endpoints
+
+  [x] 7. Hidden field values preserved on vendor PATCH
+        metadata deep-merge in vendors.service.update
+
+
+SHOULD HAVE
+--------------------------------------------------------------------------------
+
+  [x] 8.  hasOverride on GET form-configurations response
+  [x] 9.  PUT and DELETE return updated configuration body
+  [x] 10. Full registry beyond 8 demo fields (all vendor sections)
+  [x] 11. Unit tests (17 tests: registry, config, form-schema, metadata merge)
+  [x] 12. Auth / seed handoff
+        docs/FE-HANDOFF-FORM-CONFIG-BE-STATUS.txt
+        ADMIN only (via ADMIN_EXTRA_PERMISSION_CODES); not MANAGER/STAFF by default
+
+
+NICE TO HAVE (Phase 2+) — NOT STARTED
+--------------------------------------------------------------------------------
+
+  [ ] 13. Items / Customers entity registry
+  [ ] 14. Audit log when form configuration changes
+  [ ] 15. Bulk reset all entity configs for one company
+  [ ] 16. Per-role field visibility
+
+
+================================================================================
+FRONTEND (FE) — IMPROVEMENTS (per FE team report)
+================================================================================
+
+
+MUST HAVE
+--------------------------------------------------------------------------------
+
+  [x] 1. Use form-schema.resolvedSections / builtInFields for vendor UI
+  [x] 2. Extended fieldKey alias map + schema-driven visibility
+  [ ] 3. Commit and deploy Form Configuration feature
+  [ ] 4. Execute E2E manual QA with live backend
+  [x] 5. Refetch from backend after save/reset on admin page
+
+
+SHOULD HAVE
+--------------------------------------------------------------------------------
+
+  [x] 6.  hasOverride in Form Configuration admin UI
+  [x] 7.  form_configurations:* in permission catalog + role matrix
+  [x] 8.  Vendor create/edit: custom fields from form-schema
+  [x] 9.  One schema load per vendor dialog (useVendorFormSchema)
+  [x] 10. ConfirmDialog on Back (replaced window.confirm)
+  [x] 11. Info banner when visibility config unavailable
+
+
+NICE TO HAVE — OPEN
+--------------------------------------------------------------------------------
+
+  [ ] 12. Unit tests: filterVendorTabs, PUT diff, normalizeFormConfiguration
+  [ ] 13. Search/filter on long field lists (47 built-in fields now)
+  [ ] 14. "Preview vendor form" link from Form Configuration page
+  [ ] 15. Invalidate vendor schema after Form Configuration save
+
+
+================================================================================
+CROSS-TEAM — STATUS
+================================================================================
+
+  Priority   Item                                    Status
+  --------   ------------------------------------    ------
+  P0         Complete Vendor field registry          DONE (BE)
+  P0         ADMIN001 form_configurations:*          DONE (BE seed) — re-login required
+  P0         E2E hide Website → value preserved      READY TO TEST (BE merge + FE schema)
+  P1         resolvedSections contract               DONE — use apiKey + key fields
+  P1         Custom + built-in one render path       DONE (FE local)
+  P2         Shared OpenAPI / types                  OPEN
+
+
+================================================================================
+REMAINING WORK (to reach 100%)
+================================================================================
+
+  1. BE: Push + deploy (migration 20260822120000_company_field_configurations)
+  2. BE: npm run seed:client-logins on target DB
+  3. FE: Commit + push + Cloud Run deploy
+  4. Both: Run QUICK QA (10 min checklist below)
+  5. Optional: FE nice-to-haves (search on 47 fields, schema invalidation)
+
+
+================================================================================
+QUICK QA (10 MINUTES — BOTH TEAMS)
+================================================================================
+
+  Prerequisites:
+    - BE deployed + migrated + seeded
+    - ADMIN001: DEMO_ACME / ADMIN001 / Admin@123 (re-login after seed)
+
+  [ ] 1. Settings → Form Configuration nav visible
+  [ ] 2. Vendor Configure → sections load (GET 200, ~47 fields)
+  [ ] 3. Vendor Name / Supplier Code / Category locked
+  [ ] 4. Toggle Website OFF → Save → PUT 200
+  [ ] 5. Refresh admin → Website still OFF, hasOverride=true
+  [ ] 6. Vendors Create/Edit → Website NOT in resolvedSections
+  [ ] 7. Existing vendor website value → edit other field → re-enable Website → value back
+  [ ] 8. Reset to ERP Default → DELETE 200
+  [ ] 9. Custom field still on vendor detail + create/edit
+  [ ] 10. User without form_configurations:view → nav hidden
+
+
+================================================================================
+BE DEPLOY COMMANDS
+================================================================================
+
+  npx prisma migrate deploy
+  npm run seed:client-logins
+
+================================================================================
+END
+================================================================================

@@ -1,0 +1,113 @@
+================================================================================
+FE HANDOFF — Form Configuration for ITEM (parity with Vendor)
+Date:       2026-08-23
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Related:    docs/FE-HANDOFF-BUILT-IN-FIELD-CONFIGURATION.txt (Vendor)
+================================================================================
+
+
+SUMMARY
+--------------------------------------------------------------------------------
+
+  Form Configuration now supports Item Master using the SAME APIs / permissions
+  as Vendor. entityType path segment = "item".
+
+  BE status (2026-08-23): DONE + live smoke verified on localhost:3002
+  See: docs/FE-HANDOFF-FORM-CONFIG-FULL-WORKPLAN-STATUS.txt
+
+  Permissions (unchanged):
+    form_configurations:view
+    form_configurations:edit
+
+  ADMIN001 already has both after login backfill / seed.
+
+
+APIs
+--------------------------------------------------------------------------------
+
+  GET    /api/v1/companies/{companyId}/form-configurations/item
+  PUT    /api/v1/companies/{companyId}/form-configurations/item
+  DELETE /api/v1/companies/{companyId}/form-configurations/item
+
+  GET    /api/v1/companies/{companyId}/entities/item/form-schema
+         → builtInFields[] + resolvedSections[]
+         → legacy fields[] (custom only) + sections[] (tab meta)
+
+  Errors (same as Vendor):
+    INVALID_FIELD_KEY
+    PROTECTED_FIELD_CANNOT_HIDE
+    ENTITY_TYPE_NOT_SUPPORTED
+
+
+PROTECTED (configurable=false — Locked)
+--------------------------------------------------------------------------------
+
+  itemCode, description, itemType, status,
+  isInventoryItem, isSalesItem, isPurchaseItem
+
+
+UNIQUE fieldKey RULE (bag collisions)
+--------------------------------------------------------------------------------
+
+  Column fields:  camelCase API name
+                  e.g. barcode, unitPrice, preferredVendorId
+
+  Bag fields:     store prefix required
+                  e.g. purchase.weight, sales.weight, inventory.weight
+                       purchase.taxGroup, sales.taxGroup
+                       planning.leadTimeDays, production.phantomItem
+
+  FE alias map: map (FE name + store) → BE fieldKey
+
+
+SECTIONS (sectionKey)
+--------------------------------------------------------------------------------
+
+  header | general | classification | purchasing | sales |
+  inventory | planning | production | remarks | custom
+
+
+apiKey CONTRACT (examples)
+--------------------------------------------------------------------------------
+
+  itemCode              → itemCode
+  barcode               → barcode
+  purchase.weight       → purchase.weight   (PATCH body.purchase.weight)
+  sales.taxPercent      → sales.taxPercent
+  planning.leadTimeDays → planning.leadTimeDays
+
+
+HIDDEN FIELD SAVE BEHAVIOR
+--------------------------------------------------------------------------------
+
+  Item PATCH already deep-merges purchase/sales/inventory/planning/production/
+  metadata JSON bags. Omitting a hidden key from the UI does NOT clear DB values.
+  Column fields omitted from PATCH are also left unchanged.
+
+
+FE MIRROR PLAN
+--------------------------------------------------------------------------------
+
+  1. Form Configuration list → add Items card
+  2. Route: /dashboard/admin/form-configuration/item
+  3. Reuse Vendor configure view with entityType='item'
+  4. Item create/edit: prefer form-schema.resolvedSections
+  5. item-field-visibility.ts alias map for bag stores
+
+
+QUICK QA
+--------------------------------------------------------------------------------
+
+  [ ] Login ADMIN001 → Form Configuration → Items Configure → GET 200
+  [ ] itemCode / description Locked
+  [ ] Hide barcode → Save → PUT 200 → hasOverride true
+  [ ] GET form-schema → barcode not in resolvedSections
+  [ ] Hide purchase.weight (sales.weight still visible)
+  [ ] Reset Item → DELETE 200; Vendor config unchanged
+  [ ] Existing item barcode value survives hide → edit other field → re-enable
+
+
+================================================================================
+END
+================================================================================
