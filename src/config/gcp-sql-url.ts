@@ -25,12 +25,13 @@ export function applyGcpSqlDatabaseUrl(
   const database = String(config.GCP_SQL_DATABASE || '');
   const sslmode = String(config.GCP_SQL_SSL_MODE || (usesProxy ? 'disable' : 'require'));
   const timeout = String(config.GCP_SQL_CONNECT_TIMEOUT || '30');
+  const schema = String(config.GCP_SQL_SCHEMA || 'Erp_test_db');
   const canBuild = Boolean(user && password && host && database);
   const current = String(config.DATABASE_URL || '');
   const shouldBuild = canBuild && (!current || isNeonDatabaseUrl(current) || usesProxy);
 
   if (shouldBuild) {
-    const url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public&sslmode=${sslmode}&connect_timeout=${timeout}`;
+    const url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=${encodeURIComponent(schema)}&sslmode=${sslmode}&connect_timeout=${timeout}`;
     config.DATABASE_URL = url;
     config.DIRECT_DATABASE_URL = url;
     process.env.DATABASE_URL = url;

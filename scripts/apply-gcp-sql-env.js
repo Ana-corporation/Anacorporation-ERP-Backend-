@@ -24,9 +24,10 @@ function applyGcpSqlDatabaseUrl() {
   const database = process.env.GCP_SQL_DATABASE || '';
   const sslmode = process.env.GCP_SQL_SSL_MODE || (usesProxy ? 'disable' : 'require');
   const timeout = process.env.GCP_SQL_CONNECT_TIMEOUT || '30';
+  const schema = process.env.GCP_SQL_SCHEMA || 'Erp_test_db';
 
   if (user && password && host && database) {
-    const url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=public&sslmode=${sslmode}&connect_timeout=${timeout}`;
+    const url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=${encodeURIComponent(schema)}&sslmode=${sslmode}&connect_timeout=${timeout}`;
     process.env.DATABASE_URL = url;
     process.env.DIRECT_DATABASE_URL = url;
     return;
