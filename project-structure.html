@@ -130,7 +130,7 @@
       </div>
       <div class="box b-sql">
         <h3>sql/migrations/iam/</h3>
-        <p>Database schema + validation — CREATE TABLE and CHECK constraints. Run against Neon separately.</p>
+        <p>Database schema + validation — CREATE TABLE and CHECK constraints. Run against PostgreSQL separately.</p>
       </div>
       <div class="box b-prisma">
         <h3>prisma/</h3>
@@ -162,7 +162,7 @@
           <div><span class="dir">scripts/</span> <span class="comment">← Run helpers</span></div>
           <div><span class="dir">docker/</span> <span class="comment">← Docker config</span></div>
           <div><span class="dir">test/</span> <span class="comment">← E2E tests</span></div>
-          <div><span class="file env">.env</span> <span class="comment">← Secrets (Neon URL, JWT)</span></div>
+          <div><span class="file env">.env</span> <span class="comment">← Secrets (Cloud SQL URL, JWT)</span></div>
           <div><span class="file">.env.example</span></div>
           <div><span class="file">package.json</span></div>
           <div><span class="file">docker-compose.yml</span></div>
@@ -272,7 +272,7 @@
       <table>
         <thead><tr><th>File</th><th>Purpose</th></tr></thead>
         <tbody>
-          <tr><td><code>run-iam-migrations.js</code></td><td>Run all 70 SQL files in order on Neon</td></tr>
+          <tr><td><code>run-iam-migrations.js</code></td><td>Run all 70 SQL files in order on PostgreSQL</td></tr>
           <tr><td><code>run-iam-migrations.bat</code></td><td>Double-click to run migrations (Windows)</td></tr>
           <tr><td><code>db-list-and-drop.js</code></td><td>List tables or drop all (reset DB)</td></tr>
           <tr><td><code>setup.ps1</code></td><td>Initial project setup</td></tr>
@@ -292,7 +292,7 @@
           <tr><td>API routes, services, guards, DTOs</td><td><code>src/modules/</code></td><td><span class="tag t-inside">Inside src</span></td></tr>
           <tr><td>Prisma models (TypeScript ORM)</td><td><code>prisma/schema.prisma</code></td><td><span class="tag t-outside">Outside src</span></td></tr>
           <tr><td>Database URL, JWT secret</td><td><code>.env</code> (root)</td><td><span class="tag t-outside">Never in src</span></td></tr>
-          <tr><td>Run migrations on Neon</td><td><code>node scripts/run-iam-migrations.js</code></td><td><span class="tag t-outside">scripts/</span></td></tr>
+          <tr><td>Run migrations on PostgreSQL</td><td><code>node scripts/run-iam-migrations.js</code></td><td><span class="tag t-outside">scripts/</span></td></tr>
           <tr><td>Start API server</td><td><code>npm run start:dev</code></td><td><span class="tag t-inside">uses src/</span></td></tr>
         </tbody>
       </table>

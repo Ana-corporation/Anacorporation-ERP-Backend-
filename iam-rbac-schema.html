@@ -370,7 +370,7 @@ flowchart LR
   <!-- ============ 07 SQL DDL ============ -->
   <section id="s07">
     <h2><span class="num">07</span> Runnable PostgreSQL DDL</h2>
-    <p class="sub">Copy and run against Neon or local PostgreSQL. Requires PostgreSQL 14+ with <code>pgcrypto</code> for UUID generation.</p>
+    <p class="sub">Copy and run against Cloud SQL or local PostgreSQL. Requires PostgreSQL 14+ with <code>pgcrypto</code> for UUID generation.</p>
     <div class="note">⚠ This DDL creates a <b>separate IAM schema</b>. It does not replace your current <code>organizations</code> / Prisma tables — see Section 08 for migration mapping.</div>
     <div class="sql-toolbar">
       <button class="btn" onclick="copySql()">Copy SQL to clipboard</button>
@@ -805,7 +805,7 @@ INSERT INTO modules (code, name, sort_order) VALUES
   ('finance', 'Finance', 70)
 ON CONFLICT (code) DO NOTHING;
 </pre></div>
-    <p class="sub" style="margin-top:12px">Run in terminal: <code>psql "$DATABASE_URL" -f iam_rbac_schema.sql</code> (after downloading) or paste into Neon SQL Editor.</p>
+    <p class="sub" style="margin-top:12px">Run in terminal: <code>psql "$DATABASE_URL" -f iam_rbac_schema.sql</code> (after downloading) or paste into the Cloud SQL query editor.</p>
   </section>
 
   <!-- ============ 08 MAPPING TO CURRENT ERP ============ -->

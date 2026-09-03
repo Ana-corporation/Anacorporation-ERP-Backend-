@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('./apply-gcp-sql-env');
 const fs = require('fs');
 const path = require('path');
 const { PrismaClient } = require('@prisma/client');

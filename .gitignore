@@ -23,6 +23,9 @@ npm-debug.log*
 .env.local
 .env.*.local
 
+# local DB dump used during Cloud SQL migration
+.migrate-tmp/
+
 # prisma
 /prisma/migrations/**/migration_lock.toml
 

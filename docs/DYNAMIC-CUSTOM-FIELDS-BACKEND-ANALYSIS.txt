@@ -75,7 +75,7 @@ Roadmap (PDF)
 
 3. HOW WE SHOULD HANDLE THIS IN THIS BACKEND
 --------------------------------------------------------------------------------
-Stack fit: NestJS + Prisma + PostgreSQL/Neon + company multi-tenancy + JWT/RBAC.
+Stack fit: NestJS + Prisma + PostgreSQL + company multi-tenancy + JWT/RBAC.
 
 Recommended architecture (aligns with PDF, adapted to this repo):
 
@@ -145,7 +145,7 @@ F) PERFORMANCE
    - Invalidate cache on definition create/update/deactivate
    - Index values for filter endpoints
    - Paginate list APIs; do not load all custom values for unrelated entities
-   - Neon: keep connection/retry behavior already added in PrismaService
+   - PostgreSQL: keep connection/retry behavior already added in PrismaService
 
 G) FIRST SHIP TARGET IN THIS REPO
    Start with Vendor (already has metadata Json + company-scoped CRUD):
@@ -368,7 +368,7 @@ Entity read
 - Formula fields without a sandbox = security/perf risk. Defer.
 - Allowing unlimited fields per entity without limits = wide rows / slow forms.
   Suggest soft cap (e.g. 50 active fields per entityType per company) in v1.
-- Searching many EAV rows without indexes will hurt Neon. Mark filterable fields
+- Searching many EAV rows without indexes will hurt PostgreSQL. Mark filterable fields
   explicitly; only index those.
 - Customer/Product code currently assumes metadata but models may be missing —
   do not start custom fields there until base CRUD is solid.

@@ -17,7 +17,7 @@ Status:     ANALYSIS ONLY — no DB implementation yet
 
   Recommendation for OUR ERP:
     Build a company-scoped Item Master using the SAME patterns as Vendor
-    (shared Neon + companyId, structured columns + optional metadata JSON,
+    (shared PostgreSQL + companyId, structured columns + optional metadata JSON,
     reusable for custom fields later). Do NOT clone SAP 1:1 in v1.
 
 
@@ -249,7 +249,7 @@ Status:     ANALYSIS ONLY — no DB implementation yet
 --------------------------------------------------------------------------------
 
   Align with locked platform patterns:
-    ✓ Shared Neon DB + companyId
+    ✓ Shared PostgreSQL DB + companyId
     ✓ Soft delete + audit (createdBy/At, updatedBy/At)
     ✓ Lookups as master tables (or enums for small sets)
     ✓ Child tables for warehouse stock / attachments

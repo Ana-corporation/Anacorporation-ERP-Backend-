@@ -5,6 +5,7 @@
  * Run: node scripts/insert-demo-item-with-attachment.js
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('./apply-gcp-sql-env');
 if (process.env.DIRECT_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.DIRECT_DATABASE_URL;
 }

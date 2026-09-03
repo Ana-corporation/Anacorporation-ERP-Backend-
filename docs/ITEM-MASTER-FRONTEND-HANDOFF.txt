@@ -2,7 +2,7 @@
 ITEM MASTER DATA — BACKEND HANDOFF FOR FRONTEND
 Module:   Inventory / Item Master
 Phase:    ITEM-1 (MVP) + partial ITEM-2 (warehouse stock rows)
-Status:   IMPLEMENTED — tables created on Neon, APIs live
+Status:   IMPLEMENTED — tables created on PostgreSQL, APIs live
 Date:     2026-07-26
 ================================================================================
 

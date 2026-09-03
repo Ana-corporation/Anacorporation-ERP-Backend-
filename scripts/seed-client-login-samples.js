@@ -18,11 +18,12 @@
  *   DEMO_ACME / INV001    / InvAdmin@123 → INVENTORY_ADMIN (Item Master / supply-chain)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('./apply-gcp-sql-env');
 
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
 
-// Prefer direct (non-pooler) URL for long seed transactions on Neon
+// Prefer DIRECT_DATABASE_URL for long seed transactions
 if (process.env.DIRECT_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.DIRECT_DATABASE_URL;
 }

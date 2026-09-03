@@ -9,7 +9,7 @@ NOT:        Database-per-company (that is a future option, not current)
 
 0. ONE-LINE SUMMARY
 --------------------------------------------------------------------------------
-  One shared Postgres/Neon database.
+  One shared PostgreSQL database.
   Every company is a ROW in `companies`.
   Every business record (vendor, role, custom field, …) has `company_id`.
   Login picks a company → JWT carries companyId → APIs filter by that company.
@@ -19,7 +19,7 @@ NOT:        Database-per-company (that is a future option, not current)
 --------------------------------------------------------------------------------
 
   ┌─────────────────────────────────────────────────────────────┐
-  │  SHARED DATABASE (Neon / PostgreSQL)                        │
+  │  SHARED DATABASE (PostgreSQL)                               │
   │                                                             │
   │  Platform + Tenant data live together:                      │
   │    companies | users | roles | permissions | plans |        │

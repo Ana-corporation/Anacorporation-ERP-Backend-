@@ -1,4 +1,5 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('./apply-gcp-sql-env');
 
 const { PrismaClient } = require('@prisma/client');
 
@@ -6,7 +7,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is missing. Create C:\\ERP-Backend\\.env with your Neon connection string.');
+    throw new Error('DATABASE_URL is missing. Create a .env file with your PostgreSQL connection string.');
   }
 
   const consentCount = await prisma.userConsent.count();

@@ -48,7 +48,7 @@ SAP B1 / Odoo / Dynamics / Salesforce usually create REAL database columns when
 a custom field is added. That works when each customer has its own DB (or the
 platform owns schema evolution).
 
-We are multi-tenant on shared Neon/Postgres with Prisma migrations controlled
+We are multi-tenant on shared PostgreSQL with Prisma migrations controlled
 by engineering. Per-tenant ALTER TABLE is NOT acceptable.
 
 Therefore:
@@ -311,7 +311,7 @@ Parity strategy
   - Values appear beside standard fields in GET/PUT like Salesforce/Dynamics
   - Admin UI called "Custom Fields" / "User Defined Fields"
 
-Hybrid storage (recommended for Neon + Prisma):
+Hybrid storage (recommended for PostgreSQL + Prisma):
   custom_field_definitions
   custom_field_values (typed columns for filter)
   optional entity.metadata JSON snapshot for fast GET
@@ -378,7 +378,7 @@ Company / Org              companyId tenant
 - Sensitive UDFs visible to all roles with entity read → compliance failure
 - FE-only hide fields → still leak via API (Salesforce explicitly warns this)
 - No form-schema endpoint → every client reinvents definition loading
-- Trying to ALTER TABLE like SAP/Odoo on shared Neon → migration nightmare
+- Trying to ALTER TABLE like SAP/Odoo on shared PostgreSQL → migration nightmare
 
 
 11. RECOMMENDED STANCE (SUMMARY)
@@ -386,7 +386,7 @@ Company / Org              companyId tenant
 YES — treat Custom Fields / UDF as a first-class enterprise feature and match
       SAP/Odoo/Dynamics/Zoho/Salesforce capability expectations.
 
-NO  — do not copy their ALTER-TABLE storage on our multi-tenant Prisma/Neon DB.
+NO  — do not copy their ALTER-TABLE storage on our multi-tenant Prisma/PostgreSQL DB.
 
 PERMISSIONS — implement in this order:
   Phase 1: Layer A (custom_fields:*) + Layer C (entity CRUD) + form-schema

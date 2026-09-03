@@ -3,6 +3,7 @@
  * Run after migration: node scripts/seed-erp-product-modules.js
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('./apply-gcp-sql-env');
 
 const { PrismaClient } = require('@prisma/client');
 

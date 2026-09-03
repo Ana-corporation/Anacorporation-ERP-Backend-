@@ -100,8 +100,8 @@ Settings → Secrets and variables → Actions.
 
 | Secret | Value |
 |---|---|
-| `DATABASE_URL` | Neon pooled URL (`-pooler`, `sslmode=require`) |
-| `DIRECT_DATABASE_URL` | Neon direct URL (no pooler) |
+| `DATABASE_URL` | Cloud SQL URI via Auth Proxy or Unix socket (`/cloudsql/PROJECT:REGION:INSTANCE`) |
+| `DIRECT_DATABASE_URL` | Same Cloud SQL URI |
 | `JWT_SECRET` | 32+ random characters (same as local `.env` if you want existing sessions) |
 
 ---
@@ -153,6 +153,6 @@ Then open `http://localhost:8080/api/v1/health`.
 
 ## Notes
 
-- First request can be slow (Cloud Run cold start + Neon). That is expected with `--min-instances 0`.
+- First request can be slow (Cloud Run cold start). That is expected with `--min-instances 0`.
 - Sessions are in-memory until you set `REDIS_HOST`.
 - Change `REGION` in `.github/workflows/deploy-cloud-run.yml` if the frontend is not in `asia-southeast1`.

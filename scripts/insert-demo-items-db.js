@@ -1,8 +1,9 @@
 /**
- * One-shot: insert 5 DEMO-ITEM rows directly into Neon (no HTTP).
+ * One-shot: insert 5 DEMO-ITEM rows directly into PostgreSQL (no HTTP).
  * Run: node scripts/insert-demo-items-db.js
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('./apply-gcp-sql-env');
 if (process.env.DIRECT_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.DIRECT_DATABASE_URL;
 }

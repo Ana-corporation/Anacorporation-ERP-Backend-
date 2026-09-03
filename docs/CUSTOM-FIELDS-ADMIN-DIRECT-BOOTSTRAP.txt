@@ -17,7 +17,7 @@ Scope:    Vendor only (entityType=vendor)
 1. BOOTSTRAP DIAGRAM (SYSTEM READY)
 --------------------------------------------------------------------------------
 
-  [Shared Neon DB]
+  [Shared PostgreSQL DB]
          |
          |  migrate + seed
          v

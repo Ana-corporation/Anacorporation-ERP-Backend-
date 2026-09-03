@@ -1,5 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { applyGcpSqlDatabaseUrl } from '../../config/gcp-sql-url';
+
+applyGcpSqlDatabaseUrl();
 
 const TRANSIENT_DB_ERROR_CODES = new Set(['P1001', 'P1002', 'P1017']);
 
@@ -22,6 +25,7 @@ function delay(ms: number): Promise<void> {
 }
 
 function createPrismaClient() {
+  applyGcpSqlDatabaseUrl();
   const base = new PrismaClient();
 
   return base.$extends({
@@ -37,7 +41,7 @@ function createPrismaClient() {
               throw error;
             }
 
-            // Neon free-tier cold start / brief pooler blip
+            // Brief network blip
             await delay(attempt * 1500);
             try {
               await base.$connect();
@@ -81,8 +85,7 @@ export class PrismaService
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await this.$connect();
-        const isNeon = (process.env.DATABASE_URL ?? '').includes('neon.tech');
-        this.logger.log(isNeon ? 'Neon database connected' : 'Database connected');
+        this.logger.log('Database connected');
         return;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
@@ -92,7 +95,6 @@ export class PrismaService
           throw error;
         }
 
-        // Neon cold start can take a few seconds on free tier
         await delay(attempt * 2000);
       }
     }

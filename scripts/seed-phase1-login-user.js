@@ -9,6 +9,7 @@
  *   { "employeeCode": "EMP-00001", "password": "TestPass1!", "companyCode": "DEMO_ACME" }
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+require('./apply-gcp-sql-env');
 
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');

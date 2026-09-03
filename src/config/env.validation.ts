@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { applyGcpSqlDatabaseUrl } from './gcp-sql-url';
 
 const envSchema = z
   .object({
@@ -42,6 +43,7 @@ const envSchema = z
   });
 
 export function validate(config: Record<string, unknown>) {
+  applyGcpSqlDatabaseUrl(config);
   const result = envSchema.safeParse(config);
   if (!result.success) {
     throw new Error(result.error.toString());

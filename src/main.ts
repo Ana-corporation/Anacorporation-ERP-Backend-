@@ -7,6 +7,7 @@ import * as cookieParser from 'cookie-parser';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AppModule } from './app.module';
+import { applyGcpSqlDatabaseUrl } from './config/gcp-sql-url';
 import { SimpleLogger } from './common/logger/simple.logger';
 import { requestLogger } from './common/logger/request-logger.middleware';
 
@@ -31,6 +32,7 @@ function loadEnvFile() {
       process.env[key] = value;
     }
   }
+  applyGcpSqlDatabaseUrl();
 }
 
 async function bootstrap() {

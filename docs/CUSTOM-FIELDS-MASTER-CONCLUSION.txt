@@ -11,7 +11,7 @@ Scope now:  Vendor module ONLY
 ================================================================================
 
   1. MULTI-TENANT MODEL
-     - Shared Postgres/Neon database (NOT one DB per company)
+     - Shared PostgreSQL database (NOT one DB per company)
      - Every tenant row uses company_id
      - Login: companyCode + employeeCode → JWT with companyId
      - APIs: /api/v1/companies/{companyId}/...

@@ -12,7 +12,7 @@ Source:     Backend (pasted into FE repo for alignment)
 --------------------------------------------------------------------------------
 
   D1  Storage model
-      Shared Neon DB + companyId (NOT database-per-company).
+      Shared PostgreSQL DB + companyId (NOT database-per-company).
       Definitions in custom_field_definitions.
       Values in custom_field_values (NOT new columns on vendors).
 

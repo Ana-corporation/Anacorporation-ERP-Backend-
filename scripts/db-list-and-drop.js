@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('./apply-gcp-sql-env');
 const { PrismaClient } = require('@prisma/client');
 
 const action = process.argv[2] || 'list'; // list | drop

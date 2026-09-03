@@ -51,16 +51,17 @@ STEP-BY-STEP FIX (BACKEND)
 
 4) Create .env file (if missing)
        copy .env.example .env
-     Edit .env and set (Neon cloud — recommended for this team):
-       DATABASE_URL="postgresql://...@ep-xxx-pooler....neon.tech/neondb?sslmode=require"
-       DIRECT_DATABASE_URL="postgresql://...@ep-xxx....neon.tech/neondb?sslmode=require"
+     Edit .env and set GCP Cloud SQL fields (see .env.example):
+       GCP_SQL_INSTANCE_CONNECTION_NAME=PROJECT:REGION:INSTANCE
+       GOOGLE_APPLICATION_CREDENTIALS=./gcp-service-account.json
+       GCP_SQL_USER=swenter-dev
+       GCP_SQL_PASSWORD=your-db-password
+       GCP_SQL_DATABASE=swenter-dev
        JWT_SECRET=your-secret-key
        CORS_ORIGIN=http://localhost:3001
-       PORT=3000
-       USE_MEMORY_SESSION=true
 
-     Neon: DATABASE_URL = pooled (-pooler), DIRECT_DATABASE_URL = direct (no pooler).
-     See NEON_DATABASE_GUIDE.txt. Docker Postgres is optional / not required for Neon.
+     Start Cloud SQL Auth Proxy before the API or Prisma:
+       npm run db:proxy
 
 5) Generate Prisma client  * MOST IMPORTANT STEP *
        npm run prisma:generate
@@ -131,7 +132,7 @@ COMMON BACKEND MISTAKES
   [ ] Pulled code but did NOT run npm install
   [ ] Did NOT run npm run prisma:generate
   [ ] Missing .env file
-  [ ] Wrong DATABASE_URL (still localhost placeholders while using Neon)
+  [ ] Wrong DATABASE_URL (still localhost placeholders while using Cloud SQL)
   [ ] Two dev servers fighting for port 3000
   [ ] Running frontend command in backend folder (use npm run start:dev, NOT npm run dev)
 
@@ -197,7 +198,8 @@ PART C — QUICK CHECKLIST (share with new developer)
 BACKEND (do in order):
   [ ] git pull
   [ ] npm install
-  [ ] copy .env.example .env  (configure Neon DATABASE_URL + DIRECT_DATABASE_URL)
+  [ ] copy .env.example .env  (configure GCP_SQL_* + gcp-service-account.json)
+  [ ] npm run db:proxy         (Cloud SQL Auth Proxy — leave running)
   [ ] npm run prisma:generate
   [ ] npm run prisma:migrate
   [ ] npm run seed:phase1-login   (optional, for demo login)
@@ -238,7 +240,7 @@ Error: Network error on login (frontend)
 Fix:   Start backend + check NEXT_PUBLIC_API_URL in .env.local
 
 Error: Cannot connect to database
-Fix:   Fix Neon DATABASE_URL / DIRECT_DATABASE_URL in backend .env (not localhost)
+Fix:   Start npm run db:proxy and check GCP_SQL_* in backend .env
 
 
 ================================================================================
@@ -249,7 +251,8 @@ BACKEND:
   cd <backend-folder>
   npm install
   copy .env.example .env
-  (edit .env — paste Neon pooled + direct URLs)
+  (edit .env — GCP_SQL_* + service account JSON)
+  npm run db:proxy
   npm run prisma:generate
   npm run prisma:migrate
   npm run start:dev

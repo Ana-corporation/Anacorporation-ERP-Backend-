@@ -90,7 +90,7 @@ PHASE V1-A — Database + shared module
       - CustomFieldDefinition
       - CustomFieldValue
       - entityType = 'vendor' for pilot
-  [ ] Migration on Neon
+  [ ] Migration on PostgreSQL
   [ ] npx prisma generate
 
   [ ] New Nest module: src/modules/shared/custom-fields/
