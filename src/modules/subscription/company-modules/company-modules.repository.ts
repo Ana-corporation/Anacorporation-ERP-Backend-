@@ -90,6 +90,7 @@ export class CompanyModulesRepository {
         companyId: parseBigIntId(companyId),
         moduleId: parseBigIntId(dto.moduleId, 'moduleId'),
         isActive: dto.isActive ?? true,
+        isEnabled: dto.isActive ?? true,
         activatedDate: dto.activatedDate ? new Date(dto.activatedDate) : new Date(),
         expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
         createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
@@ -102,7 +103,8 @@ export class CompanyModulesRepository {
     return this.prisma.companyModule.update({
       where: { companyModuleId: parseBigIntId(id) },
       data: {
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive, isEnabled: dto.isActive } : {}),
+        ...(dto.enabled !== undefined ? { isEnabled: dto.enabled, isActive: dto.enabled } : {}),
         ...(dto.activatedDate !== undefined ? { activatedDate: new Date(dto.activatedDate) } : {}),
         ...(dto.expiryDate !== undefined
           ? { expiryDate: dto.expiryDate === null ? null : new Date(dto.expiryDate) }

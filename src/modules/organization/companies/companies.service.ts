@@ -8,6 +8,7 @@ import { toPaginatedResult } from '@/common/utils/pagination.util';
 import { SystemRoleProvisioningService } from '@/modules/iam/roles/system-role-provisioning.service';
 import { CompaniesRepository } from './companies.repository';
 import { CreateCompanyDto, UpdateCompanyDto } from './dto/company.dto';
+import { companyCodeCandidates } from './company-code.util';
 import { companyStatusSchema } from '@/common/zod/common.schemas';
 import { z } from 'zod';
 
@@ -31,10 +32,8 @@ export class CompaniesService {
   }
 
   async create(dto: CreateCompanyDto, actorId?: string) {
-    const existing = await this.repository.findByCode(dto.companyCode);
-    if (existing) throw new ConflictException('Company code already exists');
-
-    const company = await this.repository.create(dto, actorId);
+    const companyCode = await this.resolveCompanyCode(dto);
+    const company = await this.repository.create({ ...dto, companyCode }, actorId);
     const companyId = company.companyId.toString();
 
     // Core SYSTEM roles (ADMIN/MANAGER/STAFF). Module-gated templates (SALES, etc.)
@@ -114,5 +113,22 @@ export class CompaniesService {
     });
 
     return serialize(await this.repository.findPlatformCompanySummary(id));
+  }
+
+  private async resolveCompanyCode(dto: CreateCompanyDto): Promise<string> {
+    const manual = dto.companyCode?.trim().toUpperCase();
+    if (manual) {
+      const existing = await this.repository.findByCode(manual);
+      if (existing) throw new ConflictException('Company code already exists');
+      return manual;
+    }
+
+    const nextSeq = await this.repository.nextAutoCompanySequence();
+    for (const candidate of companyCodeCandidates(dto.name, nextSeq)) {
+      const taken = await this.repository.findByCode(candidate);
+      if (!taken) return candidate;
+    }
+
+    throw new ConflictException('Could not allocate a unique company code');
   }
 }

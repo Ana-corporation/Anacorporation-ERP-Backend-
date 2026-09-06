@@ -35,14 +35,14 @@ export class SystemRoleProvisioningService {
 
     for (const template of templates) {
       const result = await this.ensureCompanySystemRole(companyIdBig, template, actor);
-      if (result === 'created') {
+      if (result.status === 'created') {
         created.push(template.templateKey);
         await this.auditService.log({
           companyId: params.companyId,
           performedBy: params.actorId,
           action: UserAuditAction.create,
           entityName: 'Role',
-          entityId: template.templateKey,
+          entityId: result.roleId.toString(),
           newValue: {
             action: 'SYSTEM_ROLE_PROVISIONED',
             systemTemplateKey: template.templateKey,
@@ -105,7 +105,7 @@ export class SystemRoleProvisioningService {
     companyId: bigint,
     template: SystemRoleTemplate,
     createdBy?: bigint,
-  ): Promise<'created' | 'skipped'> {
+  ): Promise<{ status: 'created' | 'skipped'; roleId: bigint }> {
     const existingByKey = await this.prisma.role.findFirst({
       where: {
         companyId,
@@ -113,7 +113,7 @@ export class SystemRoleProvisioningService {
         deletedAt: null,
       },
     });
-    if (existingByKey) return 'skipped';
+    if (existingByKey) return { status: 'skipped', roleId: existingByKey.roleId };
 
     const existingByCode = await this.prisma.role.findFirst({
       where: {
@@ -136,10 +136,10 @@ export class SystemRoleProvisioningService {
           },
         });
       }
-      return 'skipped';
+      return { status: 'skipped', roleId: existingByCode.roleId };
     }
 
-    await this.prisma.role.create({
+    const created = await this.prisma.role.create({
       data: {
         companyId,
         roleCode: template.defaultRoleCode,
@@ -153,6 +153,6 @@ export class SystemRoleProvisioningService {
       },
     });
 
-    return 'created';
+    return { status: 'created', roleId: created.roleId };
   }
 }

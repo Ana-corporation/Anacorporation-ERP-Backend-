@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { ModuleLifecycleStatus, ModuleType, UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
+import { ENTITLEMENT_ERROR_CODES } from '@/common/constants/entitlement.constants';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import {
   BusinessException,
@@ -12,6 +13,8 @@ import { toPaginatedResult } from '@/common/utils/pagination.util';
 import { CreateCompanyModuleDto, UpdateCompanyModuleDto } from './dto/company-module.dto';
 import { CompanyModulesRepository } from './company-modules.repository';
 import { SystemRoleProvisioningService } from '@/modules/iam/roles/system-role-provisioning.service';
+import { UserContextCacheService } from '@/modules/iam/authentication/user-context-cache.service';
+import { EntitlementService } from '@/modules/subscription/entitlements/entitlement.service';
 
 const GRANTABLE_LIFECYCLES: ModuleLifecycleStatus[] = ['AVAILABLE'];
 const ACTIVATABLE_LIFECYCLES: ModuleLifecycleStatus[] = ['AVAILABLE', 'DEPRECATED'];
@@ -22,6 +25,8 @@ export class CompanyModulesService {
     private readonly repository: CompanyModulesRepository,
     private readonly auditService: AuditService,
     private readonly systemRoleProvisioning: SystemRoleProvisioningService,
+    private readonly entitlementService: EntitlementService,
+    private readonly userContextCache: UserContextCacheService,
   ) {}
 
   private validateDateRange(activatedDate: Date, expiryDate?: Date | null) {
@@ -108,11 +113,48 @@ export class CompanyModulesService {
       },
     });
 
+    await this.userContextCache.invalidateCompany(companyId);
+
     if (companyModule.isActive) {
       await this.systemRoleProvisioning.provisionFromCompanyEntitlements(companyId, actorId);
     }
 
     return serialize(companyModule);
+  }
+
+  async setModuleEnabled(
+    companyId: string,
+    moduleId: string,
+    enabled: boolean,
+    actorId: string,
+  ) {
+    const result = await this.entitlementService.setModuleEnabled({
+      companyId,
+      moduleId,
+      enabled,
+      actorId,
+    });
+
+    if (!result.ok) {
+      throw new BusinessException(
+        'Module is not included in the company subscription.',
+        HttpStatus.FORBIDDEN,
+        [{ field: 'enabled', message: 'Module is not commercially entitled' }],
+        ENTITLEMENT_ERROR_CODES.MODULE_NOT_ENTITLED,
+      );
+    }
+
+    await this.auditService.log({
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.update,
+      entityName: 'CompanyModuleSetting',
+      entityId: moduleId,
+      newValue: { enabled },
+    });
+
+    await this.userContextCache.invalidateCompany(companyId);
+    return { moduleId, enabled };
   }
 
   async update(id: string, companyId: string, dto: UpdateCompanyModuleDto, actorId: string) {
@@ -153,6 +195,7 @@ export class CompanyModulesService {
       await this.systemRoleProvisioning.provisionFromCompanyEntitlements(companyId, actorId);
     }
 
+    await this.userContextCache.invalidateCompany(companyId);
     return serialize(companyModule);
   }
 
@@ -175,6 +218,7 @@ export class CompanyModulesService {
       },
     });
 
+    await this.userContextCache.invalidateCompany(companyId);
     return { message: 'Company module deleted' };
   }
 }

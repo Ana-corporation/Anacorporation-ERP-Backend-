@@ -27,6 +27,9 @@ describe('permission-check.util', () => {
     moduleCode: 'crm',
     moduleName: 'CRM',
     isActive: true,
+    entitled: true,
+    enabled: true,
+    effectiveAccess: true,
     permissions: ['view', 'create'] as ('view' | 'create' | 'edit' | 'delete' | 'approve')[],
   };
 
@@ -35,6 +38,9 @@ describe('permission-check.util', () => {
     moduleCode: 'supply-chain',
     moduleName: 'Supply Chain',
     isActive: true,
+    entitled: true,
+    enabled: true,
+    effectiveAccess: true,
     permissions: ['view', 'create', 'edit', 'delete', 'approve'] as (
       | 'view'
       | 'create'
@@ -55,7 +61,11 @@ describe('permission-check.util', () => {
 
     it('returns false when module is inactive', () => {
       expect(
-        checkModulePermission([{ ...crmModule, isActive: false }], 'crm', 'view'),
+        checkModulePermission(
+          [{ ...crmModule, isActive: false, effectiveAccess: false, enabled: false }],
+          'crm',
+          'view',
+        ),
       ).toBe(false);
     });
   });
@@ -81,9 +91,19 @@ describe('permission-check.util', () => {
       expect(
         checkPermission(
           {
-            modules: [{ ...crmModule, isActive: false }],
+            modules: [{ ...crmModule, isActive: false, effectiveAccess: false, enabled: false }],
             subscriptionStatus: 'active',
           },
+          'crm',
+          'view',
+        ),
+      ).toBe(false);
+    });
+
+    it('denies product access when subscription is expired', () => {
+      expect(
+        checkPermission(
+          { modules: [crmModule], subscriptionStatus: 'expired' },
           'crm',
           'view',
         ),

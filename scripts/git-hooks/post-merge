@@ -1,0 +1,16 @@
+#!/bin/sh
+# Installed into .git/hooks/post-merge by npm install (scripts/install-git-hooks.js)
+# Regenerates Prisma Client after git pull / merge so TS types match prisma/*.prisma
+
+cd "$(git rev-parse --show-toplevel)" || exit 0
+
+echo "[post-merge] Regenerating Prisma Client…"
+npx prisma generate || {
+  echo ""
+  echo "Prisma generate failed (often Windows EPERM if Nest is running)."
+  echo "Stop npm run start:dev, then: npx prisma generate && npx prisma migrate deploy"
+  exit 0
+}
+
+echo "[post-merge] Next (once): npx prisma migrate deploy   — if new migrations were pulled"
+exit 0

@@ -4,6 +4,8 @@ import { CompanyAccessContext } from '../interfaces/company-access-context.inter
 export interface AuthRoleSnapshot extends CompanyAccessContext {
   /** FE/QA authorization contract — tenant codes for company roles; platform nav for OWNER. */
   permissions: string[];
+  /** Lightweight module codes with effective product access (backend-resolved). */
+  entitlements?: { modules: string[] };
   /** True when active role is company ADMIN (tenant admin). */
   tenantAdmin: boolean;
   /** True when active role is PLATFORM_OWNER. */

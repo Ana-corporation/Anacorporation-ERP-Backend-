@@ -6,6 +6,7 @@ import { parseBigIntId } from '@/common/utils/bigint.util';
 import { buildListWhere, resolveOrderBy, ListFilterOptions } from '@/common/utils/prisma-filter.util';
 import { CreateCompanyDto, UpdateCompanyDto } from './dto/company.dto';
 import { NotFoundException } from '@/common/exceptions/business.exception';
+import { parseAutoCompanySequence } from './company-code.util';
 
 const COMPANIES_LIST_FILTER: ListFilterOptions = {
   contains: { name: 'name', code: 'companyCode', email: 'email' },
@@ -50,15 +51,34 @@ export class CompaniesRepository {
 
   findByCode(code: string) {
     return this.prisma.company.findFirst({
-      where: { companyCode: code, deletedAt: null },
+      where: { companyCode: code.trim().toUpperCase() },
     });
   }
 
+  async nextAutoCompanySequence() {
+    const rows = await this.prisma.company.findMany({
+      where: { companyCode: { startsWith: 'CO-' } },
+      select: { companyCode: true },
+    });
+    let maxSeq = 0;
+    for (const row of rows) {
+      const seq = parseAutoCompanySequence(row.companyCode);
+      if (seq !== null && seq > maxSeq) maxSeq = seq;
+    }
+    return maxSeq + 1;
+  }
+
   create(dto: CreateCompanyDto, createdBy?: string) {
+    const companyCode = dto.companyCode?.trim().toUpperCase();
+    if (!companyCode) {
+      throw new Error('companyCode is required at persist time');
+    }
     return this.prisma.company.create({
       data: {
-        companyCode: dto.companyCode.trim().toUpperCase(),
+        companyCode,
         name: dto.name.trim(),
+        country: dto.country.trim(),
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
         legalName: dto.legalName,
         domain: dto.domain,
         email: dto.email,
@@ -78,6 +98,7 @@ export class CompaniesRepository {
       where: { companyId: parseBigIntId(id) },
       data: {
         ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.country !== undefined ? { country: dto.country.trim() } : {}),
         ...(dto.legalName !== undefined ? { legalName: dto.legalName } : {}),
         ...(dto.domain !== undefined ? { domain: dto.domain } : {}),
         ...(dto.email !== undefined ? { email: dto.email } : {}),
@@ -145,12 +166,33 @@ export class CompaniesRepository {
       orderBy: { createdAt: 'desc' },
     });
 
-    const [activeUserCount, pendingInviteCount, primaryAdminRole] = await Promise.all([
+    const [activeUserCount, pendingInviteCount, primaryMembership, fallbackAdminRole] =
+      await Promise.all([
       this.prisma.userCompany.count({
         where: { companyId, deletedAt: null, status: 'active' },
       }),
       this.prisma.userCompany.count({
         where: { companyId, deletedAt: null, status: 'invited' },
+      }),
+      this.prisma.userCompany.findFirst({
+        where: {
+          companyId,
+          deletedAt: null,
+          isPrimaryAdmin: true,
+          status: { in: ['active', 'invited'] },
+          user: { deletedAt: null },
+        },
+        include: {
+          user: {
+            select: {
+              email: true,
+              displayName: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+            },
+          },
+        },
       }),
       this.prisma.userRole.findFirst({
         where: {
@@ -244,7 +286,7 @@ export class CompaniesRepository {
       }
     }
 
-    const primaryUser = primaryAdminRole?.user;
+    const primaryUser = primaryMembership?.user ?? fallbackAdminRole?.user;
     const primaryAdminName = primaryUser
       ? primaryUser.displayName?.trim() ||
         [primaryUser.firstName, primaryUser.lastName].filter(Boolean).join(' ').trim() ||

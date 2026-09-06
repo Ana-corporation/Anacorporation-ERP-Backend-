@@ -9,6 +9,7 @@ import {
   AssignUserRoleDto,
   InviteUserDto,
   ReplaceModuleAccessDto,
+  ResendInviteDto,
   UpdateMembershipDto,
   UpdateMembershipStatusDto,
   UpdateUserDto,
@@ -59,6 +60,36 @@ export class CompanyUsersController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.usersService.invite(companyId, dto, user.sub);
+  }
+
+  @Post(':userId/resend-invite')
+  @RequirePermissions('users:create')
+  @ApiOperation({
+    summary: 'Resend invite / rotate temporary password (preferred)',
+  })
+  resendInvite(
+    @Param('companyId') companyId: string,
+    @Param('userId') userId: string,
+    @Body() dto: ResendInviteDto = { sendInviteEmail: true },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.usersService.resendInvite(companyId, userId, user.sub, dto);
+  }
+
+  @Post(':userId/reissue-temp-password')
+  @RequirePermissions('users:create')
+  @ApiOperation({
+    summary: 'Alias of resend-invite (legacy path)',
+  })
+  reissueTempPassword(
+    @Param('companyId') companyId: string,
+    @Param('userId') userId: string,
+    @Body() dto: ResendInviteDto = { sendInviteEmail: true },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.usersService.resendInvite(companyId, userId, user.sub, dto);
   }
 
   @Get(':userId')

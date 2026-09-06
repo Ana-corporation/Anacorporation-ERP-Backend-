@@ -5,6 +5,7 @@ model CompanyModule {
   companyId       BigInt    @map("company_id")
   moduleId        BigInt    @map("module_id")
   isActive        Boolean   @default(true) @map("is_active")
+  isEnabled       Boolean   @default(true) @map("is_enabled")
   activatedDate   DateTime  @default(now()) @map("activated_date") @db.Date
   expiryDate      DateTime? @map("expiry_date") @db.Date
   createdBy       BigInt?   @map("created_by")

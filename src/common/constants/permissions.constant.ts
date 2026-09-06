@@ -141,6 +141,8 @@ const ADMIN_PERMISSIONS = [
   { module: 'shared', code: 'custom_fields:delete', name: 'Delete Custom Fields', action: 'delete' },
   { module: 'shared', code: 'form_configurations:view', name: 'View Form Configurations', action: 'view' },
   { module: 'shared', code: 'form_configurations:edit', name: 'Edit Form Configurations', action: 'edit' },
+  { module: 'subscription', code: 'subscription:view', name: 'View Company Subscription Summary', action: 'view' },
+  { module: 'subscription', code: 'subscription:edit', name: 'Manage Company Subscription', action: 'edit' },
   { module: 'subscription', code: 'subscription_plans:view', name: 'View Subscription Plans', action: 'view' },
   { module: 'subscription', code: 'subscription_plans:create', name: 'Create Subscription Plans', action: 'create' },
   { module: 'subscription', code: 'subscription_plans:edit', name: 'Edit Subscription Plans', action: 'edit' },

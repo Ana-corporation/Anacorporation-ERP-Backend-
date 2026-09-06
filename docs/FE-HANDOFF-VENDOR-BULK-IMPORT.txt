@@ -1,0 +1,207 @@
+================================================================================
+FE HANDOFF — Vendor Bulk Import (Phase 2 Backend Ready)
+Date:       2026-09-03
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Related:    docs/BULK-IMPORT-PHASE1-ANALYSIS.txt
+            docs/company-setup/tes/FE-BE-BULK-IMPORT-VENDOR-ITEM-STOCK-WORK-SPLIT.txt
+FE status:  Aligned 2026-09-03 (company-scoped APIs + locked template)
+BE status:  Confirmed match 2026-09-03
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  Phase 1 analysis: DONE
+  Phase 2 Vendor import APIs: DONE (BE)
+  Phase 2 Vendor import UI: DONE (FE) — wired to company-scoped endpoints
+  Phase 3 Item Master import: NOT STARTED (BE); FE wizard scaffold ready
+  Phase 4 Opening Stock import: NOT STARTED (BE); FE wizard scaffold ready
+
+
+PERMISSION GATE (FE button)
+--------------------------------------------------------------------------------
+
+  Show Import when:
+
+    hasEffectiveModule("supply-chain")
+    AND permissions.includes("vendors:create")
+
+  Do NOT use tenantAdmin / roleCode.
+
+  FE: vendor-list-view.tsx uses hasEffectiveModule + canResource(..., 'create')
+
+
+APIs (all under /api/v1) — FE ALIGNED / BE CONFIRMED
+--------------------------------------------------------------------------------
+
+  1) Download template
+     GET /companies/{companyId}/vendors/import/template
+     Perm: vendors:create
+     Response: Excel file download (.xlsx)
+
+  2) Validate upload
+     POST /companies/{companyId}/vendors/import/validate
+     Content-Type: multipart/form-data
+     Field name: file  (.xlsx or .csv, max 10 MB, max 5,000 rows)
+     Perm: vendors:create
+
+  3) Confirm import
+     POST /companies/{companyId}/vendors/import/confirm
+     Body: { "importId": "42" }   ← importId ONLY, never rows[]
+     Perm: vendors:create
+
+  4) Get session
+     GET /companies/{companyId}/vendors/import/{importId}
+     Perm: vendors:create
+
+
+VALIDATE RESPONSE SHAPE
+--------------------------------------------------------------------------------
+
+  {
+    "importId": "42",
+    "type": "VENDOR",
+    "fileName": "vendors.xlsx",
+    "status": "VALIDATED",
+    "summary": {
+      "totalRows": 100,
+      "validRows": 92,
+      "invalidRows": 8
+    },
+    "rows": [
+      {
+        "rowNumber": 2,
+        "status": "VALID",
+        "data": {
+          "supplierType": "RM Supplier",
+          "name": "Acme Metals",
+          "email": "buyer@acme.example",
+          "phone": null,
+          "address": null,
+          "city": "Chennai",
+          "country": "India",
+          "taxId": null,
+          "isActive": true
+        },
+        "errors": []
+      },
+      {
+        "rowNumber": 5,
+        "status": "INVALID",
+        "data": { "supplierType": "", "name": "X" },
+        "errors": [
+          {
+            "field": "supplierType",
+            "code": "MISSING_REQUIRED_FIELD",
+            "message": "Supplier Type is required"
+          }
+        ]
+      }
+    ],
+    "expiresAt": "2026-09-04T12:00:00.000Z"
+  }
+
+
+CONFIRM RESPONSE SHAPE
+--------------------------------------------------------------------------------
+
+  {
+    "importId": "42",
+    "status": "COMPLETED",
+    "summary": {
+      "totalRows": 100,
+      "validRows": 92,
+      "invalidRows": 8,
+      "importedRows": 90,
+      "skippedRows": 0,
+      "failedRows": 2
+    },
+    "failures": [
+      { "rowNumber": 12, "message": "Vendor code already exists" }
+    ]
+  }
+
+
+TEMPLATE COLUMNS (LOCKED)
+--------------------------------------------------------------------------------
+
+  Required:
+    Supplier Type
+    Name
+
+  Optional:
+    Email, Phone, Address, City, Country, Tax ID, Is Active
+
+  Supplier Type exact values:
+    RM Supplier
+    Component Supplier
+    Service Provider
+    Electrical Suppliers
+
+  NOT in template:
+    Vendor Code / Supplier Code  → BE auto-generates (RM001, CS001, …)
+    companyId
+    Custom fields
+
+
+WIZARD STEPS (FE)
+--------------------------------------------------------------------------------
+
+  1 Upload   → choose file + Download Template
+  2 Validate → POST validate → show summary Total/Valid/Invalid
+  3 Preview  → tabs View Valid | View Errors (paginate rows)
+  4 Confirm  → "Import N valid records" → POST confirm { importId }
+  5 Result   → show imported/skipped/failed (+ failures table) → refresh vendor list
+
+
+ERROR CODES (map to snackbars) — FE unwrap.ts
+--------------------------------------------------------------------------------
+
+  INVALID_FILE_TYPE
+  FILE_TOO_LARGE
+  IMPORT_TOO_MANY_ROWS
+  MISSING_REQUIRED_COLUMN
+  MISSING_REQUIRED_FIELD
+  INVALID_SUPPLIER_TYPE
+  DUPLICATE_VENDOR_NAME
+  IMPORT_EXPIRED
+  IMPORT_ALREADY_COMPLETED
+  IMPORT_NOT_FOUND
+
+
+IMPORTANT RULES
+--------------------------------------------------------------------------------
+
+  [x] Confirm sends importId only — never validated rows[]
+  [x] Session expires in 24 hours → re-upload if IMPORT_EXPIRED
+  [x] Invalid rows are skipped; valid rows are imported
+  [x] BE is security authority (JWT + company + vendors:create + entitlement)
+
+
+FE FILES (Phase 2 Vendor)
+--------------------------------------------------------------------------------
+
+  src/lib/api/import-api.ts
+  src/lib/api/unwrap.ts
+  src/components/import/import-wizard.tsx
+  src/components/import/import-config.ts
+  src/sections/vendor/vendor-import-dialog.tsx
+  src/sections/vendor/vendor-list-view.tsx
+
+
+APPLY ON BE (after pull)
+--------------------------------------------------------------------------------
+
+  npx prisma migrate deploy
+  npx prisma generate
+  npm install
+  Restart Nest
+
+  Migration: 20260903120000_import_sessions
+
+
+================================================================================
+END
+================================================================================

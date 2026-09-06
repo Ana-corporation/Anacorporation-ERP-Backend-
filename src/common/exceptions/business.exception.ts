@@ -43,7 +43,7 @@ export class UnauthorizedException extends BusinessException {
 }
 
 export class ForbiddenException extends BusinessException {
-  constructor(message = 'Forbidden') {
-    super(message, HttpStatus.FORBIDDEN);
+  constructor(message = 'Forbidden', code?: string) {
+    super(message, HttpStatus.FORBIDDEN, undefined, code);
   }
 }

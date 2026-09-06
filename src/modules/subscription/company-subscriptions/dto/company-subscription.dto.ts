@@ -16,13 +16,24 @@ export const CreateCompanySubscriptionSchema = z.object({
 });
 
 export const UpdateCompanySubscriptionSchema = z.object({
+  planId: bigintIdSchema.optional(),
   startDate: z.string().date().optional(),
   endDate: z.string().date().optional().nullable(),
   billingCycle: billingCycleSchema.optional(),
   amount: z.coerce.number().min(0).optional(),
   autoRenew: z.boolean().optional(),
+  cancelAtPeriodEnd: z.boolean().optional(),
   status: subscriptionStatusSchema.optional(),
 });
 
 export class CreateCompanySubscriptionDto extends createZodDto(CreateCompanySubscriptionSchema) {}
 export class UpdateCompanySubscriptionDto extends createZodDto(UpdateCompanySubscriptionSchema) {}
+
+export const PatchCurrentSubscriptionSchema = z.object({
+  autoRenew: z.boolean().optional(),
+  cancelAtPeriodEnd: z.boolean().optional(),
+  planId: bigintIdSchema.optional(),
+  status: subscriptionStatusSchema.optional(),
+});
+
+export class PatchCurrentSubscriptionDto extends createZodDto(PatchCurrentSubscriptionSchema) {}

@@ -1,0 +1,320 @@
+================================================================================
+FE FIX — Assign Subscription modal (planId null validation error)
+Date:       2026-09-02
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (no BE change required for this bug)
+Related:    docs/FE-HANDOFF-SUBSCRIPTION-MODULE-ENTITLEMENT-PHASE1.txt
+Error:      POST /api/v1/companies/{id}/subscriptions
+            "Invalid input: expected string, received null" on planId
+================================================================================
+
+
+WHAT WENT WRONG
+--------------------------------------------------------------------------------
+
+  Current FE modal: "Assign subscription"
+    - User checks individual modules (HCM, Supply Chain, Financials)
+    - FE POSTs to /companies/33/subscriptions
+    - Body has planId: null (or missing)
+
+  Backend rejects with 400 Validation failed.
+
+  This is NOT a backend bug. The API contract requires a subscription PLAN id,
+  not a list of module ids.
+
+
+ROOT CAUSE
+--------------------------------------------------------------------------------
+
+  BE model:
+
+    Subscription Plan  (e.g. Professional, Demo Starter)
+         ↓
+      plan_modules     (which product modules the plan includes)
+         ↓
+    Company Subscription  (assign plan to company)
+
+  FE model (wrong):
+
+    User picks modules → POST subscription
+
+  Modules are NOT sent on POST …/subscriptions.
+  planId is REQUIRED.
+
+
+================================================================================
+P0 — FIX THE MODAL (REQUIRED)
+================================================================================
+
+CHANGE 1 — Replace module checkboxes with PLAN selection
+--------------------------------------------------------------------------------
+
+  BEFORE (wrong):
+    [ ] HCM
+    [x] Supply Chain
+    [ ] Financials
+    → POST { moduleIds: [...], planId: null }
+
+  AFTER (correct):
+    Select plan:  ( ) Demo Starter   ( ) Professional   ( ) Platform
+    Preview modules included in plan (read-only list)
+    → POST { planId: "5", startDate: "...", ... }
+
+  On modal open, load plans:
+
+    GET /api/v1/subscription/plans?limit=100&isActive=true
+    Perm: subscription_plans:view
+          (OWNER: subscription_plans:view OR plans:view alias)
+
+  Each plan item includes planModules with module details when listed.
+
+
+CHANGE 2 — Send correct POST body
+--------------------------------------------------------------------------------
+
+  POST /api/v1/companies/{companyId}/subscriptions
+  Perm: company_subscriptions:create
+        (OWNER: platform_companies:edit aliases companies:edit / subscription:edit)
+
+  REQUIRED fields:
+
+  {
+    "planId": "5",
+    "startDate": "2026-09-02"
+  }
+
+  OPTIONAL (recommended):
+
+  {
+    "planId": "5",
+    "startDate": "2026-09-02",
+    "endDate": "2027-09-02",
+    "billingCycle": "yearly",
+    "autoRenew": true,
+    "status": "active"
+  }
+
+  Field rules:
+
+    planId        string of digits — NEVER null, NEVER omit
+                  e.g. "5" not 5 is also OK (BE coerces number→string)
+    startDate     YYYY-MM-DD
+    endDate       YYYY-MM-DD optional (FE can auto-calc +1 year for yearly)
+    billingCycle  "monthly" | "yearly" | "quarterly"
+    autoRenew     boolean
+    status        "active" | "trial" | "pending" | …
+                  Recommend send "active" when Platform Owner assigns
+
+
+CHANGE 3 — Show included modules as READ-ONLY preview
+--------------------------------------------------------------------------------
+
+  When user selects a plan, show modules from plan response:
+
+    plan.planModules[].module.moduleCode
+    plan.planModules[].module.moduleName
+
+  Or fetch:
+
+    GET /api/v1/subscription/plans/{planId}/modules
+
+  Do NOT let user toggle modules on this screen for subscription create.
+  Module list is defined on the plan in BE catalogue.
+
+
+CHANGE 4 — After success, refresh entitlement state
+--------------------------------------------------------------------------------
+
+  On 201/200 from POST subscriptions:
+
+    1) Refetch GET /api/v1/companies/{id}/effective-entitlements
+    2) Refetch GET /api/v1/companies/{id}/subscription
+    3) Refetch company summary GET /api/v1/companies/{id}
+       (subscriptionStatus, planCode, planName update there too)
+
+  BE auto-creates company_modules settings (enabled=true) for plan modules.
+  No follow-up POST to /modules required.
+
+
+================================================================================
+SAMPLE FE CODE (TypeScript)
+================================================================================
+
+  // types
+  interface SubscriptionPlan {
+    planId: string;
+    planCode: string;
+    name: string;
+    billingCycle: 'monthly' | 'yearly' | 'quarterly';
+    price: number;
+    planModules?: Array<{
+      module: { moduleId: string; moduleCode: string; moduleName: string };
+    }>;
+  }
+
+  interface AssignSubscriptionPayload {
+    planId: string;           // required — from selected plan.planId
+    startDate: string;        // YYYY-MM-DD
+    endDate?: string;
+    billingCycle?: 'monthly' | 'yearly' | 'quarterly';
+    autoRenew?: boolean;
+    status?: 'active' | 'trial';
+  }
+
+  // load plans when modal opens
+  async function loadPlans(): Promise<SubscriptionPlan[]> {
+    const res = await api.get('/subscription/plans', {
+      params: { limit: 100, isActive: true },
+    });
+    return res.data.data.items ?? res.data.data ?? [];
+  }
+
+  // submit — FIX: always set planId from selected plan
+  async function assignSubscription(
+    companyId: string,
+    selectedPlan: SubscriptionPlan,
+    form: { startDate: string; billingCycle: string; autoRenew: boolean },
+  ) {
+    if (!selectedPlan?.planId) {
+      throw new Error('Select a subscription plan');
+    }
+
+    const payload: AssignSubscriptionPayload = {
+      planId: String(selectedPlan.planId),
+      startDate: form.startDate,
+      billingCycle: form.billingCycle as AssignSubscriptionPayload['billingCycle'],
+      autoRenew: form.autoRenew,
+      status: 'active',
+    };
+
+    if (form.billingCycle === 'yearly') {
+      payload.endDate = addYears(form.startDate, 1);
+    }
+
+    return api.post(`/companies/${companyId}/subscriptions`, payload);
+  }
+
+
+================================================================================
+WHAT NOT TO SEND (COMMON FE BUGS)
+================================================================================
+
+  WRONG — planId null:
+  { "planId": null, "startDate": "2026-09-02" }
+
+  WRONG — planId missing:
+  { "startDate": "2026-09-02", "moduleIds": ["10"] }
+
+  WRONG — module ids instead of plan:
+  { "modules": ["supply-chain"], "startDate": "2026-09-02" }
+
+  WRONG — empty string planId:
+  { "planId": "", "startDate": "2026-09-02" }
+
+  CORRECT:
+  { "planId": "5", "startDate": "2026-09-02", "status": "active" }
+
+
+================================================================================
+OPTIONAL — CUSTOM MODULE MIX (DIFFERENT PRODUCT FLOW)
+================================================================================
+
+  If product still wants "pick individual modules" WITHOUT choosing a plan:
+
+  Path A (recommended):
+    1) Assign closest base plan (POST subscriptions with planId)
+    2) Add GRANT overrides for extra modules
+    3) Add REVOKE overrides to remove plan modules not wanted
+
+    POST /api/v1/companies/{id}/module-overrides
+    { "moduleId": "12", "action": "GRANT", "reason": "Custom deal" }
+
+  Path B (not supported on subscription POST):
+    Do NOT POST module list to /subscriptions — BE has no such field.
+
+  Rename modal if using Path A:
+    "Assign plan"  + separate "Module overrides" section for exceptions
+
+
+================================================================================
+UI COPY SUGGESTIONS
+================================================================================
+
+  Modal title:     "Assign subscription plan"   (not "Assign subscription" alone)
+  Primary field:   Subscription plan (dropdown / radio)
+  Secondary:       Start date, Billing cycle, Auto-renew
+  Preview section: "Modules included in this plan" (read-only chips)
+  Submit button:   "Assign plan"   (not "Assign 1 module")
+
+  Validation before submit:
+    if (!selectedPlanId) show "Please select a subscription plan"
+
+
+================================================================================
+PERMISSIONS (Platform Owner company detail)
+================================================================================
+
+  Load plans:           subscription_plans:view
+  Create subscription:  company_subscriptions:create
+  View result:          company_subscriptions:view
+                        GET …/effective-entitlements (company_modules:view)
+
+  OWNER001 login aliases satisfy these via platform_companies:view/edit.
+
+
+================================================================================
+QA CHECKLIST
+================================================================================
+
+  [ ] Modal loads plans from GET /subscription/plans
+  [ ] Selecting plan shows included modules (read-only)
+  [ ] Submit sends planId as non-null string
+  [ ] POST /companies/{id}/subscriptions returns 200/201
+  [ ] GET effective-entitlements shows plan modules entitled=true
+  [ ] Company overview shows planCode / subscriptionStatus updated
+  [ ] No planId null validation error in Network tab
+  [ ] yearly billing auto-sets endDate (+1 year) if FE sends it
+
+
+================================================================================
+REFERENCE — PLAN LIST RESPONSE SHAPE
+================================================================================
+
+  GET /api/v1/subscription/plans
+
+  {
+    "success": true,
+    "data": {
+      "items": [
+        {
+          "planId": "5",
+          "planCode": "DEMO_STARTER",
+          "name": "Demo Starter",
+          "billingCycle": "monthly",
+          "price": 0,
+          "isActive": true,
+          "planModules": [
+            {
+              "planModuleId": "1",
+              "moduleId": "10",
+              "module": {
+                "moduleId": "10",
+                "moduleCode": "supply-chain",
+                "moduleName": "Supply Chain"
+              }
+            }
+          ]
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "limit": 20
+    }
+  }
+
+  Use items[].planId for POST body planId.
+
+
+================================================================================
+END
+================================================================================

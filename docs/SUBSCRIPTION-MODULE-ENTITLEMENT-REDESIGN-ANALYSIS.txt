@@ -1,0 +1,1005 @@
+================================================================================
+ERP SAAS — SUBSCRIPTION & MODULE ENTITLEMENT REDESIGN
+BACKEND PRE-IMPLEMENTATION ANALYSIS
+================================================================================
+
+Date:       2026-09-02
+Audience:   ERP-Backend, ERP-Frontend, PM
+Status:     ANALYSIS ONLY — no code changes until approved
+Related:    docs/PHASE-1-AUTH-DECISIONS.txt
+            docs/PHASE-1-AUTH-IMPLEMENTATION-STATUS.txt
+            docs/FE-MATCH-MODULE-LIFECYCLE-ENTITLEMENT.txt
+Rule:       Do NOT rebuild Hybrid auth / RBAC / tenant isolation
+
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+The backend ALREADY HAS a subscription + module stack. This is NOT a greenfield
+rewrite. The main work is CLARIFYING LAYERS and fixing places where concepts
+are currently mixed.
+
+Existing architecture must remain:
+
+  User → user_roles → roles → role_permissions → permissions
+
+Frontend authorization remains:
+
+  permissions.includes("module:action")
+
+Identity flags tenantAdmin / platformOwner remain — not used for normal CRUD.
+
+
+WHAT EXISTS TODAY
+--------------------------------------------------------------------------------
+
+  [x] modules (catalogue)
+  [x] subscription_plans + plan_modules
+  [x] company_subscriptions
+  [x] company_modules
+  [x] CompanyAccessContextService (login entitlement snapshot)
+  [x] RBAC + PermissionsGuard + ModulePermissionGuard
+  [x] user_module_access (per-user grant/deny)
+  [x] Full CRUD APIs under src/modules/subscription/*
+  [x] supply-chain product module with vendors/items resource permissions
+
+MAIN GAPS
+--------------------------------------------------------------------------------
+
+  [ ] No EntitlementService (single source of truth)
+  [ ] No company_module_overrides (commercial GRANT/REVOKE with audit)
+  [ ] company_modules conflates commercial grant + tenant enable/disable
+  [ ] Auth entitlement formula diverges from documented Phase-1 spec
+  [ ] No GET /companies/{id}/effective-entitlements
+  [ ] Subscription status not enforced in API guards
+  [ ] Cache not invalidated on subscription/entitlement changes
+  [ ] Subscription expiry job is placeholder only
+  [ ] cancelAtPeriodEnd / cancelledAt missing on subscriptions
+
+
+================================================================================
+A. CURRENT SYSTEM ANALYSIS
+================================================================================
+
+EXISTING ARCHITECTURE (AS IMPLEMENTED)
+--------------------------------------------------------------------------------
+
+  Platform Owner
+        ↓
+  modules (catalogue)
+        ↓
+  subscription_plans + plan_modules
+        ↓
+  company_subscriptions
+        ↓
+  company_modules          ← currently does too much
+        ↓
+  CompanyAccessContextService (login snapshot)
+        ↓
+  role_permissions + permissions
+        ↓
+  user_module_access       ← per-user override (NOT company commercial override)
+        ↓
+  PermissionsGuard + ModulePermissionGuard
+
+
+LAYER INVENTORY
+--------------------------------------------------------------------------------
+
+  Layer                  Implementation                    Key files
+  ---------------------  --------------------------------  ---------------------------
+  Module catalogue       Module with moduleCode,           prisma/subscription/
+                         moduleType (product/admin),       modules.prisma
+                         lifecycleStatus, isActive         ErpModulesService
+
+  Subscription plans     SubscriptionPlan + PlanModule     prisma/subscription/
+                                                           subscription-plans.prisma
+                                                           plan-modules.prisma
+
+  Company subscription   CompanySubscription with          prisma/subscription/
+                         status, dates, billing,           company-subscriptions.prisma
+                         autoRenew
+
+  Company module rows    CompanyModule with isActive,      prisma/subscription/
+                         expiryDate                        company-modules.prisma
+
+  Entitlement resolver   CompanyAccessContextService       company-access-context
+                         (NOT EntitlementService)          .service.ts
+
+  User permissions       RBAC unchanged                    src/modules/iam/*
+
+  Per-user overrides     user_module_access grant/deny     prisma/iam/
+                                                           user-module-access.prisma
+
+  Guards                 PermissionsGuard,                src/common/guards/*
+                         ModulePermissionGuard,
+                         TenantGuard
+
+  Login response         permissions[], tenantAdmin,        role-login-response
+                         platformOwner,                     .builder.ts
+                         activeCompany.modules[]
+
+  Admin APIs             Full CRUD                         src/modules/subscription/*
+
+
+CURRENT RUNTIME ENTITLEMENT LOGIC (AUTH PATH)
+--------------------------------------------------------------------------------
+
+  Source: CompanyAccessContextService.resolveEntitledModuleIds()
+
+  1. Requires LIVE subscription (active or trial, not expired) → planId
+  2. Loads plan_modules (only for isCustom comparison)
+  3. Entitled modules = ACTIVE company_modules rows ONLY
+     → plan modules alone do NOT grant access
+  4. Intersects with primary role permissions + user_module_access
+  5. Filters lifecycle to AVAILABLE / DEPRECATED
+
+  THIS DIFFERS from target formula AND from docs/PHASE-1-AUTH-DECISIONS.txt:
+
+    entitled = (plan_set UNION company_on) MINUS company_off
+
+  Platform company summary (companies.repository.ts) is closer to
+  plan ∪ company_modules. Login/auth path is NOT.
+
+
+COMPANY STATUS vs SUBSCRIPTION STATUS (TODAY)
+--------------------------------------------------------------------------------
+
+  Concept              Current enum                         Where enforced
+  -------------------  -----------------------------------  ------------------
+  Company account      trial, active, suspended, cancelled  Login blocked for
+                                                              suspended/cancelled
+
+  Subscription         pending, trial, active,              Selects live sub;
+                       expired, cancelled                   NOT used in API guards
+
+  PROBLEM: trial exists on BOTH company and subscription.
+  Target spec separates account lifecycle from commercial state more cleanly.
+
+
+WHAT company_modules DOES TODAY (MIXED ROLE)
+--------------------------------------------------------------------------------
+
+  One table currently represents:
+
+    - Platform-granted commercial access (PO creates rows)
+    - Tenant enable/disable (isActive)
+    - Optional per-module expiry
+
+  There is NO separate commercial override history table.
+
+
+SUPPLY CHAIN (ONLY LIVE PRODUCT MODULE)
+--------------------------------------------------------------------------------
+
+  Catalogue module:  supply-chain (product)
+  Workspace features: vendors:*, items:* resource permissions
+  Vendors/items use @RequirePermissions('vendors:view') etc.
+  → Correct direction for target model (do NOT split vendors/items catalogue)
+
+
+KEY SERVICE METHODS (EXISTING)
+--------------------------------------------------------------------------------
+
+  CompanyAccessContextService
+    buildCompanyAccessContext(userId, companyId)
+    resolveEntitledModuleIds(companyId, planId?)     [private]
+    buildModuleSnapshot(...)                         [private]
+
+  CompanyAccessContextRepository
+    findActiveSubscription(companyId)
+    findPlanModuleIds(planId)
+    findCompanyModules(companyId)
+    findUserModuleAccess(userId, companyId)
+    findRolePermissionsByModule(roleId)
+
+  CompanyModulesService
+    findAll, findOne, create, update, remove
+    assertModuleGrantable(...)                       [private — lifecycle gating]
+
+  CompanySubscriptionsService
+    findAll, findOne, create, update, remove
+
+  SystemRoleProvisioningService
+    provisionForCompany({ companyId, moduleCodes?, actorId? })
+    provisionFromCompanyEntitlements(companyId, actorId?)
+
+
+GUARD STACK (EXISTING — app.module.ts)
+--------------------------------------------------------------------------------
+
+  Order: JwtAuthGuard → TenantGuard → MustChangePasswordGuard
+         → PermissionsGuard → ModulePermissionGuard
+
+  PermissionsGuard       @RequirePermissions() — also enforces product entitlement
+  ModulePermissionGuard  @RequireModulePermission(module, action)
+  TenantGuard            user.companyId + x-company-id header
+
+  MISSING: SubscriptionGuard, unified ModuleAccessGuard orchestrator
+
+
+LOGIN vs JWT vs FE SNAPSHOT SPLIT
+--------------------------------------------------------------------------------
+
+  Layer                    permissions source          modules source
+  -----------------------  --------------------------  -------------------------
+  Login /auth/me response  Role-shaped (platform nav  CompanyAccessContextService
+                           stripped for tenant roles)
+
+  JWT AuthenticatedUser    Full DB merge (all active    Same entitlement snapshot
+                           roles + permission sets)
+
+  Comment in auth.service: "FE snapshot is role-shaped; JWT/cache keeps full
+  DB permissions for API guards."
+
+
+PRODUCT API ENFORCEMENT PATTERNS
+--------------------------------------------------------------------------------
+
+  Current (preferred):
+    vendors.controller.ts  → @RequirePermissions('vendors:view|create|...')
+    items.controller.ts    → @RequirePermissions('items:view|create|...')
+
+  Legacy (still in codebase):
+    products.controller.ts → @RequireModulePermission('supply-chain', action)
+    inventory.controller.ts
+    customers.controller.ts
+
+  Effective gate for GET /companies/:id/vendors:
+    1. JwtAuthGuard → cached AuthenticatedUser
+    2. TenantGuard → companyId match
+    3. PermissionsGuard → vendors:view + supply-chain in user.modules[]
+
+
+CACHE (EXISTING GAP)
+--------------------------------------------------------------------------------
+
+  UserContextCacheService — Redis key userctx:{userId}:{companyId}, TTL ~300s
+
+  Invalidates on: logout, password change, role change, users.service flows
+  Does NOT invalidate on:
+    - company-modules.service writes
+    - company-subscriptions.service writes
+    - permission-sets.service writes
+    - standalone user-module-access CRUD
+
+  → Subscription/entitlement changes can leave stale modules[] for up to 5 min
+
+
+================================================================================
+B. DATABASE GAP ANALYSIS
+================================================================================
+
+  Target concept              Current state              Gap
+  --------------------------  -------------------------  -------------------------
+  Module catalogue            Exists                     Extra lifecycle values
+                                                         (TESTING, INTERNAL,
+                                                         DISABLED); spec wants
+                                                         RETIRED
+
+  Plan modules                Exists                     OK
+
+  Company subscription        Exists                     Missing cancelAtPeriodEnd,
+                                                         cancelledAt, past_due
+
+  Plan entitlement            Derived indirectly         Not first-class computed
+                                                         layer; logic split
+
+  Entitlement override        MISSING                    No company_module_overrides;
+                                                         PO uses company_modules ad hoc
+
+  Company module settings     CONFLATED                  company_modules.isActive =
+                                                         commercial + tenant toggle
+
+  Effective entitlements API  MISSING                    No GET .../effective-
+                                                         entitlements
+
+  EntitlementService          MISSING                    Logic in CompanyAccess-
+                                                         ContextService
+
+  Subscription expiry job     Placeholder                subscription-renewal.job.ts
+                                                         = 'pending'
+
+  Entitlement cache           Partial                    No invalidation on sub/
+  invalidation                                            module changes
+
+  Company status              trial on company           Spec: ACTIVE/SUSPENDED/
+                                                         ARCHIVED
+
+  User permission             RBAC intact                OK — keep separate
+
+
+CURRENT PRISMA ENUMS (REFERENCE)
+--------------------------------------------------------------------------------
+
+  CompanyStatus:
+    trial | active | suspended | cancelled
+
+  SubscriptionStatus:
+    pending | trial | active | expired | cancelled
+    (missing: past_due)
+
+  ModuleLifecycleStatus:
+    DEVELOPMENT | TESTING | INTERNAL | AVAILABLE | DEPRECATED | DISABLED
+    (spec adds RETIRED; has extra TESTING/INTERNAL)
+
+  ModuleAccessType (user_module_access):
+    grant | deny
+
+
+CURRENT TABLE FIELDS (REFERENCE)
+--------------------------------------------------------------------------------
+
+  modules
+    moduleId, moduleCode, moduleName, description, icon, parentModuleId,
+    sortOrder, moduleType, lifecycleStatus, isActive, audit fields
+
+  subscription_plans
+    planId, planCode, name, description, price, billingCycle,
+    maxUsers, maxStorageGb, isActive, audit fields
+
+  plan_modules
+    planModuleId, planId, moduleId, createdAt
+    UNIQUE (planId, moduleId)
+
+  company_subscriptions
+    companySubscriptionId, companyId, planId, startDate, endDate,
+    billingCycle, amount, autoRenew, status, audit fields
+
+  company_modules
+    companyModuleId, companyId, moduleId, isActive, activatedDate,
+    expiryDate, audit fields
+    UNIQUE (companyId, moduleId)
+
+  user_module_access
+    userModuleAccessId, userId, companyId, moduleId, accessType,
+    reason, expiryDate, createdBy, createdAt
+
+
+================================================================================
+C. TABLES TO KEEP
+================================================================================
+
+  Reuse as-is or with light changes:
+
+  Table                  Prisma model           Reason
+  ---------------------  ---------------------  --------------------------------
+  modules                Module                 Core catalogue — extend lifecycle
+                                                enum only
+
+  subscription_plans     SubscriptionPlan       Commercial packages
+
+  plan_modules           PlanModule             Plan → module mapping
+
+  company_subscriptions  CompanySubscription    Commercial contract — extend
+
+  permissions            Permission             RBAC catalogue
+
+  role_permissions       RolePermission         RBAC
+
+  user_roles             UserRole               RBAC
+
+  roles                  Role                   RBAC
+
+  user_module_access     UserModuleAccess       USER-level override — keep;
+                                                NOT company commercial override
+
+
+================================================================================
+D. TABLES TO MODIFY
+================================================================================
+
+  Table                    Proposed changes
+  -----------------------  ----------------------------------------------------
+  company_modules          Split responsibility — either rename semantically or
+                           add fields: isEntitled vs isEnabled, OR migrate
+                           commercial state to overrides + settings
+
+  company_subscriptions    Add cancelAtPeriodEnd, cancelledAt; prepare past_due
+                           enum value
+
+  companies                Align status enum with account lifecycle (ARCHIVED vs
+                           cancelled; decide fate of trial on company)
+
+  modules                  Align ModuleLifecycleStatus with spec (RETIRED; hide
+                           DEVELOPMENT from tenants)
+
+
+RECOMMENDATION — EVOLVE company_modules (DO NOT DROP)
+--------------------------------------------------------------------------------
+
+  Phase 1: Add company_module_overrides for commercial GRANT/REVOKE with audit
+  Phase 2: Treat company_modules.isActive as TENANT ENABLEMENT only (settings)
+  Phase 3: Backfill and migrate Platform Owner flows off
+           "create company_module row = grant"
+
+
+================================================================================
+E. TABLES TO ADD
+================================================================================
+
+  New table                    Purpose
+  ---------------------------  ------------------------------------------------
+  company_module_overrides     Commercial GRANT/REVOKE with reason, expiresAt,
+                               createdBy, audit trail
+
+  company_module_settings      OPTIONAL if not reusing company_modules —
+                               tenant enable/disable only: isEnabled, updatedBy
+
+  subscription_audit_log       OR extend existing AuditService for subscription/
+                               entitlement change history
+
+
+SUGGESTED company_module_overrides SCHEMA
+--------------------------------------------------------------------------------
+
+  id
+  companyId
+  moduleId
+  action                       GRANT | REVOKE
+  reason
+  expiresAt                    optional
+  createdBy
+  createdAt
+  updatedAt
+
+
+DO NOT ADD
+--------------------------------------------------------------------------------
+
+  Separate catalogue modules for vendors / items — aligns with spec and
+  current supply-chain design.
+
+
+================================================================================
+F. API IMPACT
+================================================================================
+
+ALREADY EXISTS (DIFFERENT PATHS THAN SPEC)
+--------------------------------------------------------------------------------
+
+  Spec path                              Current path                    Action
+  -------------------------------------  ------------------------------  ---------
+  GET /modules                           GET /subscription/modules       Alias or
+                                                                         document
+
+  GET /subscription-plans              GET /subscription/plans           Same
+
+  PUT /subscription-plans/{id}/modules POST/DELETE                       Add PUT
+                                       /subscription/plans/:planId/      replace if
+                                       modules                           FE needs
+
+  GET /companies/{id}/subscription     GET /companies/{id}/subscriptions Add singular
+                                       (plural, list)                    "current"
+
+  GET /companies/{id}/modules            Exists                          Change
+                                                                         semantics to
+                                                                         settings-only
+
+  GET /companies/{id}/effective-         MISSING                         ADD
+  entitlements
+
+  GET/POST /companies/{id}/module-       MISSING                         ADD
+  overrides
+
+  PATCH /companies/{id}/modules/         PATCH /companies/{id}/modules/  Align ID
+  {moduleId}                             :id                             (moduleId vs
+                                                                         companyModuleId)
+
+
+NEW ENDPOINTS NEEDED
+--------------------------------------------------------------------------------
+
+  GET  /api/v1/companies/{companyId}/effective-entitlements
+  GET  /api/v1/companies/{companyId}/module-overrides
+  POST /api/v1/companies/{companyId}/module-overrides
+  PATCH /api/v1/companies/{companyId}/module-overrides/{overrideId}
+  PATCH /api/v1/companies/{companyId}/subscription
+       (cancel-at-period-end, renew, change plan)
+  GET  /api/v1/companies/{companyId}/subscription
+       (current live subscription summary)
+
+
+EXISTING CONTROLLERS (REFERENCE)
+--------------------------------------------------------------------------------
+
+  ErpModulesController           /subscription/modules
+  PlansController                /subscription/plans
+  PlanModulesController          /subscription/plans/:planId/modules
+  CompanySubscriptionsController /companies/:companyId/subscriptions
+  CompanyModulesController       /companies/:companyId/modules
+  UserModuleAccessController     /users/:userId/module-access
+  CompanyUsersController         PUT /companies/:companyId/users/:userId/module-access
+
+
+FE CONTRACT IMPACT
+--------------------------------------------------------------------------------
+
+  Login activeCompany.modules[] shape can stay but should add:
+    entitled, enabled, effectiveAccess
+
+  New endpoint for Platform Owner / Company Admin module management UI
+
+
+TARGET RESPONSE — GET effective-entitlements
+--------------------------------------------------------------------------------
+
+  {
+    "companyStatus": "ACTIVE",
+    "subscription": {
+      "status": "ACTIVE",
+      "planCode": "PROFESSIONAL",
+      "endDate": "2027-09-01"
+    },
+    "modules": [
+      {
+        "code": "supply-chain",
+        "entitled": true,
+        "enabled": true,
+        "effectiveAccess": true
+      }
+    ]
+  }
+
+  Do NOT expose DEVELOPMENT modules to companies.
+
+
+================================================================================
+G. AUTHORIZATION IMPACT
+================================================================================
+
+KEEP UNCHANGED
+--------------------------------------------------------------------------------
+
+  permissions.includes("module:action") on FE
+  PermissionsGuard + @RequirePermissions
+  RBAC tables and seeding
+  tenantAdmin / platformOwner as identity flags only
+
+
+ACCESS CHECK MATRIX (TARGET)
+--------------------------------------------------------------------------------
+
+  Example: Can user access Vendors?
+
+  CHECK 1  Company account status ACTIVE?              YES
+  CHECK 2  Subscription valid (TRIAL or ACTIVE)?      YES
+  CHECK 3  Module lifecycle AVAILABLE?                YES
+  CHECK 4  Company effectively entitled supply-chain? YES
+  CHECK 5  Company module enabled supply-chain?       YES
+  CHECK 6  User permission vendors:view?              YES
+  RESULT   ACCESS GRANTED
+
+
+TODAY vs TARGET
+--------------------------------------------------------------------------------
+
+  Check                      Today                    Target
+  -------------------------  -----------------------  -------------------------
+  Company ACTIVE             Login only               Re-check or cache invalidate
+                                                      on suspend
+
+  Subscription valid         Ignored in guards        Enforce TRIAL/ACTIVE
+                                                      (+ PAST_DUE later)
+
+  Module lifecycle           Partial (grant API)      Centralize in EntitlementService
+
+  Effective entitlement      company_modules only     Plan + overrides − revokes
+
+  Company module enabled     Same as entitlement      Separate settings layer
+
+  User permission            Works                    Unchanged
+
+
+PROPOSED GUARD STACK (CONCEPTUAL)
+--------------------------------------------------------------------------------
+
+  ModuleAccessGuard (new orchestrator)
+    → CompanyStatusCheck
+    → SubscriptionStatusCheck
+    → EntitlementService.getEffectiveEntitlements()
+    → CompanyModuleSettingsCheck
+    → PermissionsGuard (existing)
+
+  Can be implemented as a SERVICE called from existing guards first —
+  no RBAC rewrite.
+
+
+CACHE INVALIDATION (REQUIRED)
+--------------------------------------------------------------------------------
+
+  Invalidate UserContextCacheService when:
+
+    - Subscription created / updated / expired
+    - Plan modules changed
+    - Module override added / removed / expired
+    - Company module setting changed
+    - Company suspended / activated
+
+
+COMPANY ADMIN vs PLATFORM OWNER (UNCHANGED INTENT)
+--------------------------------------------------------------------------------
+
+  Company Admin CAN:
+    Enable/disable ENTITLED modules
+    Manage roles, permissions, users, form config
+
+  Company Admin CANNOT:
+    Create catalogue modules
+    Change module lifecycle
+    Create commercial plans
+    Grant unpurchased modules
+    Modify subscription pricing
+
+  Platform Owner CAN:
+    Full catalogue, plans, subscriptions, overrides, audit
+
+
+================================================================================
+H. MIGRATION PLAN
+================================================================================
+
+PHASE 0 — ANALYSIS & ALIGNMENT (THIS DOCUMENT)
+--------------------------------------------------------------------------------
+
+  [ ] Approve enum mapping (trial on company vs subscription)
+  [ ] Approve company_modules evolution vs new company_module_settings
+  [ ] Answer open decisions (section at end)
+
+
+PHASE 1 — SCHEMA (NON-BREAKING ADDITIVE)
+--------------------------------------------------------------------------------
+
+  1. Migration: company_module_overrides table
+  2. Migration: company_subscriptions.cancel_at_period_end, cancelled_at
+  3. Migration: add past_due to SubscriptionStatus enum (unused until job)
+  4. Optional: company_modules column split (is_enabled vs is_active)
+
+
+PHASE 2 — EntitlementService
+--------------------------------------------------------------------------------
+
+  1. Extract logic from CompanyAccessContextService into
+     EntitlementService.getEffectiveEntitlements(companyId)
+  2. Implement formula:
+
+       plan_modules (from live subscription)
+         + GRANT overrides
+         − REVOKE overrides
+         → filter lifecycle (AVAILABLE/DEPRECATED per rules)
+         → entitled set
+
+  3. Company module settings = enabled subset of entitled set
+  4. Wire login snapshot to use this service
+
+
+PHASE 3 — APIs
+--------------------------------------------------------------------------------
+
+  1. GET /effective-entitlements
+  2. Module overrides CRUD
+  3. Subscription cancel-at-period-end PATCH
+  4. Singular current subscription GET
+
+
+PHASE 4 — GUARDS & CACHE
+--------------------------------------------------------------------------------
+
+  1. Subscription status check in permission path
+  2. Cache invalidation hooks in subscription/override/settings services
+  3. Optional ModuleAccessGuard wrapper
+
+
+PHASE 5 — BACKGROUND JOBS
+--------------------------------------------------------------------------------
+
+  1. SubscriptionExpiryJob (BullMQ):
+     endDate < today AND status IN (TRIAL, ACTIVE) → EXPIRED
+  2. Invalidate entitlement cache + audit
+  3. Future: reminder emails (7d, 3d, 1d before expiry)
+
+
+PHASE 6 — DATA BACKFILL
+--------------------------------------------------------------------------------
+
+  1. Companies with live subscription + plan_modules but NO company_modules:
+     create settings rows (enabled by default) OR treat plan entitlement as
+     entitled-with-default-enabled
+  2. Migrate existing Platform Owner custom grants into
+     company_module_overrides where appropriate
+  3. Fix auth path to match documented plan ∪ override formula
+
+
+SUBSCRIPTION CANCELLATION BEHAVIOUR (TARGET)
+--------------------------------------------------------------------------------
+
+  Default: cancelAtPeriodEnd = true
+           subscription stays ACTIVE until endDate
+           then EXPIRED or CANCELLED
+           module access restricted per entitlement rules
+
+  Immediate cancel reserved for: fraud, non-payment, manual termination,
+                               account suspension
+
+
+================================================================================
+I. BACKWARD COMPATIBILITY RISKS
+================================================================================
+
+  Risk                                    Severity  Mitigation
+  --------------------------------------  --------  ---------------------------
+  Login breaks if entitlement formula     HIGH      Feature flag; dual-run old vs
+  changes                                           new; compare snapshots in logs
+
+  Companies with plan_modules only, no      HIGH      Backfill job; default entitled
+  company_modules                                   from plan on subscribe
+
+  company_modules.isActive semantics        HIGH      Transitional: effective =
+  change                                            entitled AND enabled; backfill
+
+  FE uses modules[].isActive for nav        MEDIUM    Add entitled + enabled +
+                                                    effectiveAccess; deprecate
+
+  Redis stale access after subscription     MEDIUM    Invalidate cache on all
+  change                                            write paths
+
+  Company trial status confusion            MEDIUM    Document mapping; no enum
+                                                    rename until FE ready
+
+  API path changes                          LOW       Add aliases; keep old routes
+
+  Duplicate employee_id (recent migration)  LOW       Already handled
+
+
+================================================================================
+J. IMPLEMENTATION PLAN (RECOMMENDED ORDER)
+================================================================================
+
+SPRINT 1 — FOUNDATION (P0)
+--------------------------------------------------------------------------------
+
+  1. EntitlementService + unit tests for formula
+  2. GET /companies/{id}/effective-entitlements
+  3. company_module_overrides table + POST/GET/PATCH APIs + audit
+  4. Fix resolveEntitledModuleIds to use plan + overrides
+     (align with PHASE-1-AUTH-DECISIONS.txt)
+  5. Cache invalidation on subscription/override/settings writes
+
+
+SPRINT 2 — SUBSCRIPTION LIFECYCLE (P0/P1)
+--------------------------------------------------------------------------------
+
+  1. Add cancelAtPeriodEnd, cancelledAt to subscriptions
+  2. PATCH subscription (cancel, renew, change plan)
+  3. SubscriptionExpiryJob (replace placeholder)
+  4. Enforce subscription status in access checks
+
+
+SPRINT 3 — COMPANY MODULE SETTINGS (P1)
+--------------------------------------------------------------------------------
+
+  1. Clarify company_modules as tenant settings (enable/disable entitled only)
+  2. Block Company Admin from enabling non-entitled modules
+  3. PATCH settings API with validation against effective entitlements
+
+
+SPRINT 4 — GUARD CONSOLIDATION (P1)
+--------------------------------------------------------------------------------
+
+  1. Central access check service for vendors/items and future modules
+  2. Align legacy @RequireModulePermission routes with resource-level pattern
+
+
+SPRINT 5 — POLISH (P2)
+--------------------------------------------------------------------------------
+
+  1. Expiry reminder jobs
+  2. Plan limit enforcement (maxUsers, maxStorageGb)
+  3. Company summary enrichment
+  4. Real subscription/invite emails (separate track)
+
+
+QA TEST CASES (POST-IMPLEMENTATION)
+--------------------------------------------------------------------------------
+
+  T1   Company with Professional plan + supply-chain in plan_modules
+       → effective-entitlements shows supply-chain entitled=true
+
+  T2   GRANT override for finance module
+       → appears in effective entitlements with reason
+
+  T3   REVOKE override for supply-chain
+       → removed from effective entitlements even if in plan
+
+  T4   Company Admin enables entitled module
+       → enabled=true, effectiveAccess=true (with permission)
+
+  T5   Company Admin tries to enable non-entitled manufacturing
+       → 403 or 400
+
+  T6   Subscription expires (job)
+       → status EXPIRED, modules restricted, cache invalidated
+
+  T7   cancelAtPeriodEnd=true
+       → access continues until endDate, then restricted
+
+  T8   DEVELOPMENT module in catalogue
+       → NOT visible in company effective-entitlements
+
+  T9   User with vendors:view but company module disabled
+       → 403 on GET /vendors
+
+  T10  Platform Owner with platform_companies:edit
+       → can POST module override without tenant users:create
+
+
+================================================================================
+ARCHITECTURE DIAGRAMS
+================================================================================
+
+TARGET FLOW (FROM PRODUCT SPEC)
+--------------------------------------------------------------------------------
+
+  PLATFORM OWNER
+        │
+        ▼
+  MODULE CATALOGUE
+        │
+        ▼
+  SUBSCRIPTION PLAN
+        │
+        ▼
+  PLAN MODULES
+        │
+        ▼
+  COMPANY SUBSCRIPTION
+        │
+        ▼
+  PLAN ENTITLEMENTS
+        │
+        + MODULE OVERRIDES
+        │
+        ▼
+  EFFECTIVE ENTITLEMENTS
+        │
+        ▼
+  COMPANY MODULE SETTINGS
+        │
+        ▼
+  ROLE PERMISSIONS
+        │
+        ▼
+  USER ACCESS
+
+
+TODAY vs TARGET (SIMPLIFIED)
+--------------------------------------------------------------------------------
+
+  TODAY:
+    plan_modules ──(informational)──┐
+    company_modules.isActive ──────┼──► login modules[] ──► guards
+    role_permissions ──────────────┘
+
+  TARGET:
+    plan_modules ──► plan entitlement ──┐
+    company_module_overrides ───────────┼──► EntitlementService ──► entitled[]
+    module lifecycle ───────────────────┘           │
+                                                      ▼
+                                        company_module_settings (enabled[])
+                                                      │
+                                        role_permissions + user_module_access
+                                                      │
+                                                      ▼
+                                               user effective access
+
+
+FINAL MODULE ACCESS RULE (ALL MUST PASS)
+--------------------------------------------------------------------------------
+
+  Company ACTIVE
+  AND Subscription TRIAL or ACTIVE (or policy for PAST_DUE)
+  AND Module lifecycle AVAILABLE (or DEPRECATED per rules)
+  AND Effective entitlement includes module
+  AND Company module enabled
+  AND User permission includes required action
+
+
+================================================================================
+DO NOT DO (FROM PRODUCT SPEC — REINFORCED)
+================================================================================
+
+  Do NOT create separate catalogue modules for Vendors or Items
+  Do NOT allow Company Admin to grant unpurchased modules
+  Do NOT mix subscription status with company status
+  Do NOT mix module entitlement with user permissions
+  Do NOT hard-code plan modules in source code
+  Do NOT expose DEVELOPMENT modules to companies
+  Do NOT delete data when module is disabled
+  Do NOT trust frontend navigation as authorization
+  Do NOT remove existing Hybrid authentication
+  Do NOT rewrite RBAC (user_roles → roles → role_permissions → permissions)
+
+
+================================================================================
+OPEN DECISIONS — NEED APPROVAL BEFORE CODING
+================================================================================
+
+  Q1  Company trial status
+      Keep trial on company? Move to subscription only? Support both during
+      transition?
+
+  Q2  company_modules evolution
+      Split into overrides + settings tables? Or add columns to existing table?
+
+  Q3  Default on subscribe
+      Auto-create entitled modules from plan + default enabled=true?
+
+  Q4  API paths
+      Add spec paths as aliases? Or update FE to existing /subscription/* routes?
+
+  Q5  Lifecycle enum
+      Map DISABLED → RETIRED? Or add RETIRED alongside DISABLED?
+
+  Q6  inviteStatus / company status naming
+      Align company status to ACTIVE/SUSPENDED/ARCHIVED now or later?
+
+
+================================================================================
+KEY FILE INDEX (EXISTING CODEBASE)
+================================================================================
+
+  Prisma / schema
+    prisma/subscription/modules.prisma
+    prisma/subscription/subscription-plans.prisma
+    prisma/subscription/plan-modules.prisma
+    prisma/subscription/company-subscriptions.prisma
+    prisma/subscription/company-modules.prisma
+    prisma/iam/user-module-access.prisma
+    prisma/iam/role-permissions.prisma
+    prisma/enums.prisma
+
+  Entitlement / auth
+    src/modules/iam/authentication/company-access-context.service.ts
+    src/modules/iam/authentication/company-access-context.repository.ts
+    src/modules/iam/authentication/role-access/role-login-response.builder.ts
+    src/modules/iam/authentication/user-context-cache.service.ts
+
+  Guards
+    src/common/guards/permissions.guard.ts
+    src/common/guards/module-permission.guard.ts
+    src/common/guards/tenant.guard.ts
+    src/common/utils/permission-check.util.ts
+
+  Subscription admin
+    src/modules/subscription/erp-modules/
+    src/modules/subscription/plans/
+    src/modules/subscription/company-subscriptions/
+    src/modules/subscription/company-modules/
+
+  Product APIs (supply chain)
+    src/modules/purchase/vendors/vendors.controller.ts
+    src/modules/inventory/item-master/items.controller.ts
+
+  Jobs
+    src/jobs/subscription-renewal.job.ts          (placeholder)
+
+  Docs
+    docs/PHASE-1-AUTH-DECISIONS.txt
+    docs/PHASE-1-AUTH-IMPLEMENTATION-STATUS.txt
+    docs/FE-MATCH-MODULE-LIFECYCLE-ENTITLEMENT.txt
+
+
+================================================================================
+NEXT STEP
+================================================================================
+
+  Review this document. Answer open decisions Q1–Q6.
+
+  After approval, implement Sprint 1:
+    EntitlementService + effective-entitlements API + company_module_overrides
+    WITHOUT touching RBAC or Hybrid auth.
+
+================================================================================
+END
+================================================================================

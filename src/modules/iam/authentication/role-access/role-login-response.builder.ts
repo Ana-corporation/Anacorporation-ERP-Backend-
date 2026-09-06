@@ -31,7 +31,7 @@ export class RoleLoginResponseBuilder {
     });
     snapshot.mustChangePassword = Boolean(params.mustChangePassword);
     return snapshot;
-  }
+  } 
 
   /** Login body: tokens + role-shaped snapshot including permissions contract. */
   toLoginPayload(
@@ -57,6 +57,7 @@ export class RoleLoginResponseBuilder {
       tenantAdmin: snapshot.tenantAdmin,
       platformOwner: snapshot.platformOwner,
       mustChangePassword: snapshot.mustChangePassword,
+      entitlements: snapshot.entitlements,
     };
   }
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, UserAuditAction } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { parseBigIntId } from '@/common/utils/bigint.util';
+import { parseBigIntId, tryParseBigIntId } from '@/common/utils/bigint.util';
 
 export interface AuditLogInput {
   companyId?: string;
@@ -27,7 +27,7 @@ export class AuditService {
         performedBy: input.performedBy ? parseBigIntId(input.performedBy, 'performedBy') : undefined,
         action: input.action,
         entityName: input.entityName,
-        entityId: input.entityId ? parseBigIntId(input.entityId, 'entityId') : undefined,
+        entityId: tryParseBigIntId(input.entityId),
         oldValue: input.oldValue as Prisma.InputJsonValue,
         newValue: input.newValue as Prisma.InputJsonValue,
         ipAddress: input.ipAddress,

@@ -19,10 +19,12 @@ import {
   CreateUserDto,
   InviteUserDto,
   ReplaceModuleAccessDto,
+  ResendInviteDto,
   UpdateMembershipDto,
   UpdateMembershipStatusDto,
   UpdateUserDto,
 } from './dto/user.dto';
+import { computeInviteStatus } from './invite-status.util';
 import { UsersRepository } from './users.repository';
 
 const LAST_ADMIN_MESSAGE =
@@ -98,16 +100,35 @@ export class UsersService {
    */
   async invite(companyId: string, dto: InviteUserDto, actorId: string) {
     const email = dto.email.trim().toLowerCase();
-    const roleId = dto.roleId ?? null;
+    let roleId = dto.roleId ?? null;
 
-    if (roleId) {
-      const role = await this.repository.findCompanyRole(companyId, roleId);
-      if (!role) {
-        throw new BusinessException('roleId must belong to this company', HttpStatus.BAD_REQUEST, [
-          { field: 'roleId', message: 'Invalid role for company' },
-        ]);
+    if (!roleId) {
+      const adminRole = await this.repository.findCompanyRoleByCode(companyId, 'ADMIN');
+      if (!adminRole) {
+        throw new BusinessException(
+          'Company ADMIN role was not found. Cannot invite first Company Admin.',
+          HttpStatus.BAD_REQUEST,
+          [{ field: 'roleId', message: 'ADMIN role is missing for this company' }],
+        );
       }
+      roleId = adminRole.roleId.toString();
     }
+
+    const assignedRole = await this.repository.findCompanyRole(companyId, roleId);
+    if (!assignedRole) {
+      throw new BusinessException('roleId must belong to this company', HttpStatus.BAD_REQUEST, [
+        { field: 'roleId', message: 'Invalid role for company' },
+      ]);
+    }
+
+    const isAdminInvite = assignedRole.roleCode === 'ADMIN';
+    const loginEmployeeId = await this.resolveLoginEmployeeCode(
+      companyId,
+      dto.employeeId,
+      isAdminInvite ? 'ADMIN' : 'USER',
+    );
+    const isPrimaryAdmin =
+      isAdminInvite && !(await this.repository.hasPrimaryAdmin(companyId));
 
     const existingUser = await this.repository.findByEmail(email);
     let temporaryPassword: string | null = null;
@@ -128,7 +149,8 @@ export class UsersService {
         firstName: dto.firstName.trim(),
         lastName: (dto.lastName ?? '').trim(),
         mobile: dto.mobile ?? null,
-        employeeId: dto.employeeId ?? null,
+        employeeId: loginEmployeeId,
+        isPrimaryAdmin,
         passwordHash,
         passwordExpiresDate,
         createdBy: actorId,
@@ -146,7 +168,8 @@ export class UsersService {
       await this.repository.attachMembership({
         userId,
         companyId,
-        employeeId: dto.employeeId ?? null,
+        employeeId: loginEmployeeId,
+        isPrimaryAdmin,
         createdBy: actorId,
       });
 
@@ -226,10 +249,115 @@ export class UsersService {
     const detail = await this.repository.findCompanyUserDetail(userId, companyId);
     if (!detail) throw new NotFoundException('User');
 
-    return serialize({
-      user: this.toInviteUserPayload(detail),
+    const company = await this.repository.findCompanyLoginCode(companyId);
+
+    return this.credentialsResponse(detail, {
       temporaryPassword,
+      employeeId: loginEmployeeId,
+      companyCode: company?.companyCode ?? null,
     });
+  }
+
+  /**
+   * Preferred FE path: POST .../users/:userId/resend-invite
+   * Generates a new temp password. Old hash is replaced.
+   */
+  async resendInvite(
+    companyId: string,
+    userId: string,
+    actorId: string,
+    dto?: ResendInviteDto,
+  ) {
+    return this.reissueTemporaryPassword(companyId, userId, actorId, dto?.sendInviteEmail);
+  }
+
+  /**
+   * Re-issue a one-time temp password for an invited/active member.
+   * Invite does not send email; password is only in this JSON (and original invite response).
+   */
+  async reissueTemporaryPassword(
+    companyId: string,
+    userId: string,
+    actorId: string,
+    sendInviteEmail?: boolean,
+  ) {
+    await this.requireCompanyUser(userId, companyId);
+    const membership = await this.repository.findMembership(userId, companyId);
+    if (!membership) throw new NotFoundException('User');
+    if (membership.status === 'suspended') {
+      throw new ConflictException('User is suspended and cannot reset password');
+    }
+
+    const isAdmin = Boolean(await this.repository.findActiveAdminRole(userId, companyId));
+    let employeeId = membership.employeeId?.trim() || null;
+    if (!employeeId) {
+      employeeId = await this.resolveLoginEmployeeCode(
+        companyId,
+        null,
+        isAdmin ? 'ADMIN' : 'USER',
+      );
+      await this.repository.updateMembership(userId, companyId, { employeeId }, actorId);
+    }
+
+    const temporaryPassword = this.generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+    const passwordExpiresDate = new Date(
+      Date.now() + this.tempPasswordTtlHours * 60 * 60 * 1000,
+    );
+    await this.repository.setTemporaryPassword(userId, passwordHash, passwordExpiresDate);
+
+    await this.auditService.log({
+      companyId,
+      userId,
+      performedBy: actorId,
+      action: UserAuditAction.password_change,
+      entityName: 'UserInvite',
+      entityId: userId,
+      newValue: { reissued: true, employeeId },
+    });
+
+    await this.userContextCache.invalidate(userId);
+
+    if (sendInviteEmail) {
+      const detailForEmail = await this.repository.findCompanyUserDetail(userId, companyId);
+      this.logger.log(
+        `Invite email stub → ${detailForEmail?.email ?? userId} (company ${companyId}) [temp password reissued]`,
+      );
+    }
+
+    const company = await this.repository.findCompanyLoginCode(companyId);
+    const detail = await this.repository.findCompanyUserDetail(userId, companyId);
+    if (!detail) throw new NotFoundException('User');
+
+    return this.credentialsResponse(detail, {
+      temporaryPassword,
+      employeeId,
+      companyCode: company?.companyCode ?? null,
+    });
+  }
+
+  async setPrimaryAdmin(companyId: string, userId: string, actorId: string) {
+    await this.requireCompanyUser(userId, companyId);
+    const adminRole = await this.repository.findActiveAdminRole(userId, companyId);
+    if (!adminRole) {
+      throw new BusinessException(
+        'Primary admin must have roleCode ADMIN',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'userId', message: 'User is not a Company Admin' }],
+      );
+    }
+
+    await this.repository.setPrimaryAdmin(companyId, userId, actorId);
+    await this.auditService.log({
+      companyId,
+      userId,
+      performedBy: actorId,
+      action: UserAuditAction.role_change,
+      entityName: 'PrimaryAdmin',
+      entityId: userId,
+    });
+
+    return this.serializeCompanyUser(userId, companyId);
   }
 
   async update(id: string, companyId: string, dto: UpdateUserDto, actorId: string) {
@@ -481,6 +609,87 @@ export class UsersService {
     return candidate;
   }
 
+  private async resolveLoginEmployeeCode(
+    companyId: string,
+    requested: string | null | undefined,
+    prefix: 'ADMIN' | 'USER',
+  ) {
+    const trimmed = requested?.trim() || '';
+    if (trimmed) {
+      const taken = await this.repository.isEmployeeCodeTaken(companyId, trimmed);
+      if (taken) {
+        throw new BusinessException(
+          'Employee code already exists in this company',
+          HttpStatus.CONFLICT,
+          [{ field: 'employeeId', message: 'Duplicate employee code' }],
+        );
+      }
+      return trimmed;
+    }
+
+    for (let n = 1; n <= 9999; n += 1) {
+      const candidate = `${prefix}${String(n).padStart(3, '0')}`;
+      const taken = await this.repository.isEmployeeCodeTaken(companyId, candidate);
+      if (!taken) return candidate;
+    }
+
+    throw new BusinessException(
+      'Could not allocate an employee login code',
+      HttpStatus.CONFLICT,
+      [{ field: 'employeeId', message: `No free ${prefix}### code` }],
+    );
+  }
+
+  private credentialsResponse(
+    detail: {
+      userId: bigint;
+      username: string;
+      displayName: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+      mobile: string | null;
+      isActive: boolean;
+      companies?: Array<{
+        userCompanyId: bigint;
+        employeeId: string | null;
+        departmentId?: bigint | null;
+        designationId?: bigint | null;
+        branchId?: bigint | null;
+        warehouseId?: bigint | null;
+        status: string;
+        isDefault: boolean;
+        isPrimaryAdmin?: boolean;
+      }>;
+      roles?: Array<{
+        role?: { roleId: bigint; roleCode: string; roleName: string };
+      }>;
+      loginHistory?: Array<{ loginDate: Date }>;
+      authentication?: {
+        lastSuccessfulLogin: Date | null;
+        mustChangePassword: boolean;
+        passwordExpiresDate: Date | null;
+      } | null;
+    },
+    extra: {
+      temporaryPassword: string | null;
+      employeeId: string;
+      companyCode: string | null;
+    },
+  ) {
+    const expiresAt = new Date(
+      Date.now() + this.tempPasswordTtlHours * 60 * 60 * 1000,
+    ).toISOString();
+    return serialize({
+      user: this.toInviteUserPayload(detail),
+      temporaryPassword: extra.temporaryPassword,
+      employeeId: extra.employeeId,
+      companyCode: extra.companyCode,
+      passwordExpiresAt: extra.temporaryPassword ? expiresAt : null,
+      tempPasswordTtlHours: this.tempPasswordTtlHours,
+    });
+  }
+
   /** Meets passwordSchema: 8+ chars, upper, lower, digit. Avoids & ^ which break copy/paste. */
   private generateTemporaryPassword(): string {
     const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -509,30 +718,38 @@ export class UsersService {
     email: string;
     mobile: string | null;
     isActive: boolean;
-    companies: Array<{
+    companies?: Array<{
       userCompanyId: bigint;
       employeeId: string | null;
-      departmentId: bigint | null;
-      designationId: bigint | null;
-      branchId: bigint | null;
-      warehouseId: bigint | null;
+      departmentId?: bigint | null;
+      designationId?: bigint | null;
+      branchId?: bigint | null;
+      warehouseId?: bigint | null;
       status: string;
       isDefault: boolean;
+      isPrimaryAdmin?: boolean;
     }>;
-    roles: Array<{
-      role: { roleId: bigint; roleCode: string; roleName: string };
+    roles?: Array<{
+      role?: { roleId: bigint; roleCode: string; roleName: string };
     }>;
     loginHistory?: Array<{ loginDate: Date }>;
+    authentication?: {
+      lastSuccessfulLogin: Date | null;
+      mustChangePassword: boolean;
+      passwordExpiresDate: Date | null;
+    } | null;
   }) {
-    const membership = detail.companies[0] ?? null;
-    const role = detail.roles[0]?.role ?? null;
-    const lastLoginAt = detail.loginHistory?.[0]?.loginDate?.toISOString() ?? null;
-    const inviteStatus =
-      membership?.status === 'invited'
-        ? 'pending'
-        : membership?.status === 'active'
-          ? 'accepted'
-          : membership?.status ?? null;
+    const membership = detail.companies?.[0] ?? null;
+    const role = detail.roles?.[0]?.role ?? null;
+    const lastLoginAt =
+      detail.authentication?.lastSuccessfulLogin?.toISOString() ??
+      detail.loginHistory?.[0]?.loginDate?.toISOString() ??
+      null;
+    const inviteStatus = computeInviteStatus({
+      lastSuccessfulLogin: detail.authentication?.lastSuccessfulLogin,
+      mustChangePassword: detail.authentication?.mustChangePassword,
+      passwordExpiresDate: detail.authentication?.passwordExpiresDate,
+    });
 
     return {
       userId: detail.userId.toString(),
@@ -548,7 +765,7 @@ export class UsersService {
       isActive: detail.isActive,
       lastLoginAt,
       inviteStatus,
-      isPrimaryAdmin: role?.roleCode === 'ADMIN' ? false : undefined,
+      isPrimaryAdmin: Boolean(membership?.isPrimaryAdmin),
       membership: membership
         ? {
             userCompanyId: membership.userCompanyId.toString(),

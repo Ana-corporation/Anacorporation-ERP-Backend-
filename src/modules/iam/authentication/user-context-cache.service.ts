@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { RedisService } from '@/infrastructure/redis/redis.service';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
+import { parseBigIntId } from '@/common/utils/bigint.util';
 import { AUTH_REDIS_KEYS } from './auth-session.types';
 
 @Injectable()
@@ -11,6 +13,7 @@ export class UserContextCacheService {
   constructor(
     private readonly redisService: RedisService,
     configService: ConfigService,
+    private readonly prisma: PrismaService,
   ) {
     this.ttlSeconds = Number(configService.get<string>('PERMISSION_CACHE_TTL_SECONDS') ?? 300);
   }
@@ -34,8 +37,23 @@ export class UserContextCacheService {
       await this.redisService.del(AUTH_REDIS_KEYS.userContext(userId, companyId));
       return;
     }
+  }
 
-    // Best-effort: invalidate known company scope only (no key scan).
-    // Callers should pass companyId when known.
+  /** Invalidate cached JWT context for all active members of a company. */
+  async invalidateCompany(companyId: string) {
+    const members = await this.prisma.userCompany.findMany({
+      where: {
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        status: 'active',
+      },
+      select: { userId: true },
+    });
+
+    await Promise.all(
+      members.map((m) =>
+        this.redisService.del(AUTH_REDIS_KEYS.userContext(m.userId.toString(), companyId)),
+      ),
+    );
   }
 }

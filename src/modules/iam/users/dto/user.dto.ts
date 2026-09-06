@@ -77,6 +77,14 @@ export const InviteUserSchema = z.object({
   sendInviteEmail: z.boolean().optional().default(true),
 });
 
+export const ResendInviteSchema = z.object({
+  sendInviteEmail: z.boolean().optional().default(true),
+});
+
+export const SetPrimaryAdminSchema = z.object({
+  userId: bigintIdSchema,
+});
+
 export class CreateUserDto extends createZodDto(CreateUserSchema) {}
 export class UpdateUserDto extends createZodDto(UpdateUserSchema) {}
 export class AssignUserRoleDto extends createZodDto(AssignUserRoleSchema) {}
@@ -84,3 +92,5 @@ export class InviteUserDto extends createZodDto(InviteUserSchema) {}
 export class UpdateMembershipDto extends createZodDto(UpdateMembershipSchema) {}
 export class UpdateMembershipStatusDto extends createZodDto(UpdateMembershipStatusSchema) {}
 export class ReplaceModuleAccessDto extends createZodDto(ReplaceModuleAccessSchema) {}
+export class ResendInviteDto extends createZodDto(ResendInviteSchema) {}
+export class SetPrimaryAdminDto extends createZodDto(SetPrimaryAdminSchema) {}

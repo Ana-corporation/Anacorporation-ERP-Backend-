@@ -23,8 +23,9 @@ model Module {
   parent           Module?            @relation("ModuleHierarchy", fields: [parentModuleId], references: [moduleId])
   children         Module[]           @relation("ModuleHierarchy")
   planModules      PlanModule[]
-  companyModules   CompanyModule[]
-  permissions      Permission[]
+  companyModules         CompanyModule[]
+  companyModuleOverrides CompanyModuleOverride[]
+  permissions            Permission[]
   rolePermissions  RolePermission[]
   userModuleAccess UserModuleAccess[]
 

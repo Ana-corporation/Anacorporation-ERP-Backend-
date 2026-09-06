@@ -46,31 +46,16 @@ export class CompaniesController {
   }
 
   @Patch(':id/status')
-  @ApiOperation({ summary: 'Set company status (platform owner / company editor)' })
+  @TenantOptional()
+  @RequirePermissions('companies:edit')
+  @ApiOperation({ summary: 'Set company status' })
   async setStatus(
     @Param('id') id: string,
     @Body() dto: SetCompanyStatusDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const isSuperAdmin = user?.role === 'super_admin';
-    const isPlatformOwner = Boolean(
-      user?.role === 'PLATFORM_OWNER' ||
-        user?.permissions?.includes('platform_companies:edit') ||
-        user?.permissions?.includes('companies:edit'),
-    );
-    const isCompanyEditor = Boolean(user?.permissions?.includes('companies:edit'));
-
-    if (!isSuperAdmin && !isPlatformOwner && !isCompanyEditor) {
-      throw new ForbiddenException('Insufficient permissions');
-    }
-
-    // Tenant isolation:
-    // - Platform owner can update any tenant company.
-    // - Company editor (companies:edit only, not platform) can update only their own company.
-    const crossTenant =
-      user?.role === 'PLATFORM_OWNER' ||
-      user?.permissions?.includes('platform_companies:edit');
-    if (!isSuperAdmin && !crossTenant && isCompanyEditor) {
+    const canEditAnyCompany = Boolean(user?.permissions?.includes('platform_companies:edit'));
+    if (!canEditAnyCompany) {
       if (!user?.companyId || user.companyId.toString() !== id.toString()) {
         throw new ForbiddenException('Company context mismatch');
       }

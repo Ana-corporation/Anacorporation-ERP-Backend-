@@ -12,6 +12,7 @@ model UserCompany {
   defaultCurrencyId BigInt?          @map("default_currency_id")
   licenseType       LicenseType      @default(named) @map("license_type")
   isDefault         Boolean          @default(false) @map("is_default")
+  isPrimaryAdmin    Boolean          @default(false) @map("is_primary_admin")
   hireDate          DateTime?        @map("hire_date") @db.Date
   exitDate          DateTime?        @map("exit_date") @db.Date
   status            MembershipStatus @default(invited)

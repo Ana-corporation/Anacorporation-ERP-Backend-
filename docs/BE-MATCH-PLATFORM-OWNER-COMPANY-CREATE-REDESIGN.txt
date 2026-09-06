@@ -1,0 +1,340 @@
+================================================================================
+MATCH vs ADD — Platform Owner Company Creation Redesign
+Date:       2026-09-01
+Audience:   Product / Backend / Frontend
+Spec:       PLATFORM OWNER — COMPANY CREATION REDESIGN (2026-09-01)
+Status:     PHASE 1 IMPLEMENTED (see list below)
+================================================================================
+
+
+PHASE 1 — DONE (2026-09-01)
+--------------------------------------------------------------------------------
+
+  [x] 1. country required on POST /companies
+  [x] 2. companyCode trim + toUpperCase
+  [x] 3. companyCode /^[A-Z0-9_-]+$/
+  [x] 4. duplicate check on uppercase code → 409
+  [x] 5. companyCode immutable (rejected on PATCH if sent)
+  [x] 6. CompanyStatus unchanged: trial | active | suspended | cancelled
+  [x] 7. status optional on create; DB default trial
+  [x] 8. invite: missing roleId → assign roleCode ADMIN
+  [x] 9. country on Update Company DTO
+  [x] 10. PATCH /companies/:id/status uses @RequirePermissions('companies:edit')
+      (not roleCode / platformOwner boolean). Cross-tenant still requires
+      platform_companies:edit; otherwise companyId must match.
+
+  NOT in Phase 1 (as requested):
+      multi-tenant rewrite, hybrid auth, RBAC, new subscription system,
+      new tables, logo upload, website/subdomain.
+
+
+HOW TO READ THIS FILE
+--------------------------------------------------------------------------------
+
+  MATCH     = already true in ERP-Backend today (keep)
+  PARTIAL   = exists but not exactly as the spec wants
+  ADD       = work we would do if we implement this spec
+  LATER     = spec says Phase-2 / future — do not build now
+
+
+================================================================================
+1. ARCHITECTURE — MATCH (do not change)
+================================================================================
+
+  MATCH  Multi-tenant SaaS: Platform Owner creates a tenant company
+  MATCH  Hybrid auth snapshot: permissions[] + tenantAdmin + platformOwner
+  MATCH  CRUD guards use permissions, not platformOwner boolean
+           POST   /companies          → companies:create
+           GET    /companies          → companies:view
+           PATCH  /companies/:id      → companies:edit
+           DELETE /companies/:id      → companies:delete
+  MATCH  Invite is a separate call (not inside create company)
+           POST /api/v1/companies/{companyId}/users/invite
+           Permission: users:create
+  MATCH  Create company already provisions SYSTEM roles ADMIN/MANAGER/STAFF
+  MATCH  No GST / India-only mandatory fields
+  MATCH  Do not delete DB columns; profile fields already nullable
+
+  ADD    Document this as "tenant provision" vs "Company Admin ERP profile"
+         (product wording — little/no code)
+
+
+================================================================================
+2. WHAT WE FOLLOW TODAY — CREATE COMPANY
+================================================================================
+
+  Endpoint:  POST /api/v1/companies
+
+  DTO today (src/modules/organization/companies/dto/company.dto.ts):
+
+    REQUIRED
+      name
+      companyCode
+
+    OPTIONAL (accepted, not required)
+      legalName
+      domain
+      email
+      phone
+      timezone
+      defaultCurrencyId
+
+    NOT ON CREATE DTO (even if DB has the column)
+      country
+      city
+      logoUrl
+      status          → DB default = trial
+      taxNumber
+      addressLine1/2
+      state
+      postalCode
+
+  Spec listed city/country/logoUrl/status as "current create fields".
+  That is FE/docs wording. Backend create contract is the list above.
+
+  MATCH  Minimum create already works: name + companyCode only
+  MATCH  legalName / domain / email / phone / logo are NOT required
+  MATCH  Existing extra columns stay in Prisma (no drop)
+
+  ADD    Put country on create (required in spec)
+  ADD    Put status on create (optional; default trial is already OK)
+  ADD    Reject unknown extra required-on-FE fields?  (not needed if FE stops sending)
+  ADD    Keep optional profile fields on create for backward compatibility
+         (spec: do not break existing POST bodies that still send email/phone)
+
+
+================================================================================
+3. COMPANY CODE — MATCH / PARTIAL / ADD
+================================================================================
+
+  MATCH    Required
+  MATCH    Unique (DB @@unique + 409 "Company code already exists")
+  MATCH    Stored uppercase: dto.companyCode.trim().toUpperCase() on create
+  MATCH    Not on UpdateCompanySchema → PATCH cannot change companyCode
+  MATCH    Not SAP financial company code — just tenant identifier
+
+  PARTIAL  Format: only min 1 / max 30 — does NOT enforce A-Z 0-9 _ -
+           "acme@123" is currently ACCEPTED
+  PARTIAL  Duplicate check uses raw dto.companyCode, then stores UPPERCASE
+           Risk: existing ACME + new "acme" may miss the unique check
+           (Postgres unique is usually case-sensitive)
+
+  ADD      Regex: ^[A-Z0-9_-]+$ after uppercase  → 400 validation
+  ADD      Uniqueness check on UPPERCASE code before insert
+  ADD      Explicit 409 on duplicate (already ConflictException — keep)
+  ADD      If PATCH ever includes companyCode → 400 IMMUTABLE_COMPANY_CODE
+           (defense in depth; DTO already omits it)
+
+
+  Spec tests vs today:
+
+    TEST 1  "acme" → ACME                 MATCH (store upper)
+    TEST 2  duplicate ACME → 409          PARTIAL (fix case before findByCode)
+    TEST 3  acme@123 → validation error   ADD
+    TEST 4  edit companyCode rejected     MATCH (not in update DTO)
+    TEST 5  minimum fields success        MATCH (name + companyCode)
+    TEST 7  existing profile data kept    MATCH (nullable columns, no wipe)
+
+
+================================================================================
+4. COUNTRY / STATUS
+================================================================================
+
+  COUNTRY
+    MATCH  Column exists: companies.country (nullable)
+    MATCH  Not required today
+    ADD    Required on Platform Owner create (spec)
+    ADD    Validate non-empty string (no country ISO table in this task)
+    ADD    Allow PATCH country (already not on update DTO — ADD to update)
+
+  COMPANY ACCOUNT STATUS  (enum CompanyStatus)
+    Today:  trial | active | suspended | cancelled
+    MATCH  Keep these values in Phase-1 (spec: do not break production)
+    MATCH  Default on create: trial
+    MATCH  PATCH /companies/:id/status exists
+    LATER  Split to ACTIVE/SUSPENDED/ARCHIVED vs subscription TRIAL/ACTIVE/...
+           Spec says do NOT build a new subscription system in this task
+
+  SUBSCRIPTION  (already a separate table)
+    MATCH  company_subscriptions.status: active | expired | cancelled | trial | pending
+    MATCH  Create company does NOT auto-create a subscription row
+    LATER  Align naming UPPERCASE in APIs; keep DB lowercase enums
+
+  ADD (Phase-1 only, small)
+    Optional status on POST create (trial/active/suspended/cancelled)
+    If omitted → trial (current default)
+
+
+================================================================================
+5. DOMAIN / LOGO / PROFILE FIELDS
+================================================================================
+
+  MATCH  domain optional, unique if set — not required on create
+  MATCH  logoUrl column exists — not on create DTO (cannot set on create today)
+  MATCH  legalName, email, phone, city, address*, taxNumber exist as profile columns
+
+  ADD    Clarify in API/docs: domain ≠ website ≠ tenant subdomain
+  LATER  website + tenantSubdomain as separate columns (spec §9)
+  LATER  Logo file upload → storage → logoUrl (spec §10)
+  LATER  Full Company Profile API grouped GENERAL / CONTACT / ADDRESS / LEGAL / BRANDING
+         Spec §8 is "recommended future" — not this task
+
+  ADD (this task if we implement spec)
+    PATCH company: allow country, city, legalName, email, phone, logoUrl, address
+    (legalName/email/phone already on update; country/city/logo/address are NOT)
+
+
+  Update DTO today CAN change:
+    name, legalName, domain, email, phone, timezone, defaultCurrencyId, status
+
+  Update DTO today CANNOT change:
+    companyCode (good)
+    country, city, logoUrl, addressLine1/2, state, postalCode, taxNumber
+
+
+================================================================================
+6. FIRST COMPANY ADMIN INVITE
+================================================================================
+
+  MATCH  POST /api/v1/companies/{companyId}/users/invite
+  MATCH  Body: firstName, lastName, email, employeeId (optional)
+  MATCH  Temp password flow for new users (dev/test compatible)
+  MATCH  sendInviteEmail flag
+  MATCH  Does not create company on invite — company must exist first
+  MATCH  TEST 6 path exists: create company → then invite
+
+  PARTIAL  Spec: backend finds ADMIN role and assigns it
+           Today: roleId is OPTIONAL. If omitted, user may have NO role.
+           FE/Platform Owner must pass the ADMIN roleId (or we ADD default).
+
+  ADD      If invite is "first Company Admin" and roleId omitted:
+             resolve company roleCode ADMIN and assign it
+  ADD      Keep tempPassword in response for current FE; production later = token link
+  LATER    Invitation token → email link → set password (spec §7 production)
+
+  TEST 6   PARTIAL until default ADMIN assignment is added
+
+
+================================================================================
+7. AUTHORIZATION — MATCH / SMALL GAP
+================================================================================
+
+  MATCH  POST create uses @RequirePermissions('companies:create')
+  MATCH  Hybrid login still returns permissions[] / tenantAdmin / platformOwner
+  MATCH  Do not rewrite RBAC
+
+  PARTIAL  PATCH /companies/:id/status extra checks:
+             user.role === 'PLATFORM_OWNER' OR platform_companies:edit
+           Spec: do not authorize CRUD from roleCode / platformOwner flag
+           Main PATCH :id still uses companies:edit only
+
+  ADD      Align setStatus with companies:edit / platform_companies:edit only
+           (optional cleanup — not the core create-contract work)
+
+
+================================================================================
+8. FEATURES TO ADD IF WE IMPLEMENT THIS SPEC (PHASE-1 LIST)
+================================================================================
+
+  These are the ONLY backend changes the spec actually needs.
+  No new tables. No tenant-isolation rewrite.
+
+  A. Create contract (POST /companies)
+     [ ] Required: name, companyCode, country
+     [ ] Optional: status (default trial)
+     [ ] Still accept (optional, backward compatible): legalName, email, phone,
+         domain, timezone, defaultCurrencyId
+     [ ] Do not require: legalName, domain, email, phone, city, logoUrl
+
+  B. companyCode hardening
+     [ ] Uppercase then regex A-Z 0-9 _ -
+     [ ] Unique check on uppercase → 409
+     [ ] Immutable (keep omitted from PATCH; reject if sent)
+
+  C. country
+     [ ] Required on create
+     [ ] Editable on PATCH (add to UpdateCompanySchema)
+
+  D. Invite first admin (small)
+     [ ] Default roleCode ADMIN when roleId omitted on Platform Owner invite
+
+  E. Docs / FE handoff
+     [ ] Create Company = tenant identity only
+     [ ] Profile fields = Company Admin later
+     [ ] domain kept, not required, not SaaS subdomain
+
+  DO NOT ADD in this task:
+     [ ] New subscription product
+     [ ] companies.status rename to ACTIVE/SUSPENDED/ARCHIVED
+     [ ] website / tenantSubdomain columns
+     [ ] Logo upload pipeline
+     [ ] GST mandatory
+     [ ] Auto-create branch / department / users on company create
+     [ ] Change company IDs or tenant isolation
+
+
+================================================================================
+9. WHAT STAYS UNCHANGED
+================================================================================
+
+  [x] Multi-tenant companyId on all tenant data
+  [x] Hybrid RBAC + permission guards
+  [x] Login snapshot fields
+  [x] Prisma Company columns (no drop, no breaking migration)
+  [x] Soft delete
+  [x] SYSTEM role provision on create
+  [x] Invite endpoint path
+  [x] Subscription table (exists; not redesigned here)
+
+
+================================================================================
+10. HONEST MATCH SCORE
+================================================================================
+
+  Spec area                         Today          If we implement Phase-1
+  --------------------------------  -------------  --------------------------
+  Tenant create (not full ERP)      ~80% MATCH     100% (add country)
+  companyCode upper + unique        ~85% PARTIAL   100% (regex + case check)
+  companyCode immutable             MATCH          keep
+  Profile not required on create    MATCH          keep
+  Status Phase-1 compatibility      MATCH          keep trial|active|...
+  Status Phase-2 split              LATER          skip
+  Invite after create               MATCH          optional ADMIN default
+  Auth / hybrid                     MATCH          tiny setStatus cleanup
+  Domain / logo product split       LATER          skip
+  No breaking migration             MATCH          still MATCH
+
+
+================================================================================
+11. RECOMMENDED IMPLEMENTATION ORDER (WHEN APPROVED)
+================================================================================
+
+  1. DTO: country required; companyCode regex + uppercase preprocess
+  2. Service: findByCode(normalized) before create
+  3. Update DTO: country (and optionally city/logoUrl/address) for profile
+  4. Invite: default ADMIN role if roleId missing
+  5. Tests for spec TEST 1–5, 7; TEST 6 with default ADMIN
+  6. FE handoff txt — Create Company form fields vs Company Profile
+
+  Do not start until product confirms:
+    country required on create  YES/NO
+    default ADMIN on invite     YES/NO
+
+
+================================================================================
+KEY FILES (TODAY)
+================================================================================
+
+  prisma/organization/companies.prisma
+  prisma/enums.prisma                         CompanyStatus + SubscriptionStatus
+  src/modules/organization/companies/dto/company.dto.ts
+  src/modules/organization/companies/companies.service.ts
+  src/modules/organization/companies/companies.repository.ts
+  src/modules/organization/companies/companies.controller.ts
+  src/modules/iam/users/company-users.controller.ts   POST .../users/invite
+  src/modules/iam/users/dto/user.dto.ts               InviteUserSchema
+
+
+================================================================================
+END
+================================================================================

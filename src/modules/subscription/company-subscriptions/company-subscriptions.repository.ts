@@ -75,6 +75,7 @@ export class CompanySubscriptionsRepository {
     return this.prisma.companySubscription.update({
       where: { companySubscriptionId: parseBigIntId(id) },
       data: {
+        ...(dto.planId !== undefined ? { planId: parseBigIntId(dto.planId, 'planId') } : {}),
         ...(dto.startDate !== undefined ? { startDate: new Date(dto.startDate) } : {}),
         ...(dto.endDate !== undefined
           ? { endDate: dto.endDate === null ? null : new Date(dto.endDate) }
@@ -83,6 +84,12 @@ export class CompanySubscriptionsRepository {
         ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
         ...(dto.autoRenew !== undefined ? { autoRenew: dto.autoRenew } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
+        ...(dto.cancelAtPeriodEnd !== undefined
+          ? {
+              cancelAtPeriodEnd: dto.cancelAtPeriodEnd,
+              cancelledAt: dto.cancelAtPeriodEnd ? new Date() : null,
+            }
+          : {}),
         updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
         updatedAt: new Date(),
       },
