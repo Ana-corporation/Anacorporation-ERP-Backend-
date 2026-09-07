@@ -8,15 +8,32 @@ import {
 } from '@/common/exceptions/business.exception';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { serialize } from '@/common/utils/bigint.util';
-import { AddPlanModuleDto } from './dto/plan-module.dto';
+import { UserContextCacheService } from '@/modules/iam/authentication/user-context-cache.service';
+import { EntitlementRepository } from '@/modules/subscription/entitlements/entitlement.repository';
+import { EntitlementService } from '@/modules/subscription/entitlements/entitlement.service';
+import { AddPlanModuleDto, ReplacePlanModulesDto } from './dto/plan-module.dto';
 import { PlanModulesRepository } from './plan-modules.repository';
 
 @Injectable()
 export class PlanModulesService {
   constructor(
     private readonly repository: PlanModulesRepository,
+    private readonly entitlementRepository: EntitlementRepository,
+    private readonly entitlementService: EntitlementService,
     private readonly auditService: AuditService,
+    private readonly userContextCache: UserContextCacheService,
   ) {}
+
+  private async refreshCompaniesOnPlan(planId: string, actorId?: string) {
+    const rows = await this.entitlementRepository.findActiveCompanyIdsByPlanId(planId);
+    await Promise.all(
+      rows.map(async (row) => {
+        const companyId = row.companyId.toString();
+        await this.entitlementService.ensureDefaultSettingsForPlan(companyId, actorId);
+        await this.userContextCache.invalidateCompany(companyId);
+      }),
+    );
+  }
 
   async findAll(planId: string, query: PaginationQueryDto) {
     const plan = await this.repository.planExists(planId);
@@ -61,6 +78,8 @@ export class PlanModulesService {
       newValue: { planId, moduleId: dto.moduleId },
     });
 
+    await this.refreshCompaniesOnPlan(planId, actorId);
+
     return serialize(planModule);
   }
 
@@ -77,6 +96,54 @@ export class PlanModulesService {
       entityId: id,
     });
 
+    await this.refreshCompaniesOnPlan(planId, actorId);
+
     return { message: 'Module removed from plan' };
+  }
+
+  async replaceAll(planId: string, dto: ReplacePlanModulesDto, actorId?: string) {
+    const plan = await this.repository.planExists(planId);
+    if (!plan) throw new NotFoundException('Subscription plan');
+
+    const codes = [...new Set(dto.moduleCodes.map((c) => c.trim().toLowerCase()))];
+    const modules = await this.repository.findModulesByCodes(codes);
+
+    if (codes.length !== modules.length) {
+      const found = new Set(modules.map((m) => m.moduleCode.toLowerCase()));
+      const missing = codes.filter((c) => !found.has(c));
+      throw new NotFoundException(`Module(s): ${missing.join(', ')}`);
+    }
+
+    for (const mod of modules) {
+      if (mod.moduleType === 'admin') {
+        throw new BusinessException('Admin modules cannot be assigned to subscription plans');
+      }
+      if (mod.lifecycleStatus !== 'AVAILABLE' && mod.lifecycleStatus !== 'DEPRECATED') {
+        throw new BusinessException(
+          `Module is not assignable to plans (${mod.moduleCode}: ${mod.lifecycleStatus})`,
+        );
+      }
+    }
+
+    await this.repository.deleteAllByPlan(planId);
+    for (const mod of modules) {
+      await this.repository.create(planId, mod.moduleId.toString());
+    }
+
+    await this.auditService.log({
+      performedBy: actorId,
+      action: UserAuditAction.update,
+      entityName: 'PlanModule',
+      entityId: planId,
+      newValue: { moduleCodes: codes },
+    });
+
+    await this.refreshCompaniesOnPlan(planId, actorId);
+
+    const result = await this.repository.findManyByPlan(planId, {
+      page: 1,
+      limit: 100,
+    } as PaginationQueryDto);
+    return serialize(result.items);
   }
 }

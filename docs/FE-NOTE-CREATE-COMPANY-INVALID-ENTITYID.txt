@@ -1,0 +1,61 @@
+================================================================================
+FE NOTE — Create Company 400 "Invalid entityId"
+Date:       2026-09-01
+Audience:   ERP-Frontend
+================================================================================
+
+
+DO FE NEED TO CHANGE THE FORM?
+--------------------------------------------------------------------------------
+
+  NO. Do not add or send entityId.
+
+  POST /api/v1/companies body stays:
+
+    { "name": "...", "country": "...", "status": "active" }   // status optional
+    omit companyCode  (BE auto-generates)
+    omit legalName, email, phone, domain, logo, city
+
+  Invite is still a SECOND call after 200:
+
+    POST /api/v1/companies/{companyId}/users/invite
+    omit roleId  → BE assigns ADMIN
+
+
+WHAT WAS THE ERROR?
+--------------------------------------------------------------------------------
+
+  UI:    "Invalid entityId"
+  HTTP:  POST /api/v1/companies  →  400
+
+  Cause: Backend audit after create (SYSTEM roles ADMIN/MANAGER/STAFF)
+         used entityId = "ADMIN" (text). Audit column is numeric.
+
+  Fix:   Backend (already patched). Restart BE, retry Create.
+
+
+WHAT FE SHOULD DO NOW
+--------------------------------------------------------------------------------
+
+  1. Pull / wait for BE restart (localhost:3002)
+  2. Retry Create company (same form is fine)
+  3. If 409 company code already exists:
+       an earlier failed click may have created the company —
+       pick another name, or delete the leftover company in the list
+  4. Error mapping (optional UX):
+       "Invalid entityId"  →  treat as BE bug / retry after deploy
+       Do not tell the user they entered a wrong Employee code
+       (OWNER001 is invite employeeId, not company create)
+
+
+DO NOT
+--------------------------------------------------------------------------------
+
+  [ ] Send entityId on POST /companies
+  [ ] Change invite payload because of this error
+  [ ] Require companyCode on the create form
+
+
+================================================================================
+END
+================================================================================

@@ -1,5 +1,6 @@
 import { CompanyAccessContextService } from './company-access-context.service';
 import { CompanyAccessContextRepository } from './company-access-context.repository';
+import { EntitlementService } from '@/modules/subscription/entitlements/entitlement.service';
 
 describe('CompanyAccessContextService — supply-chain resource roles', () => {
   const supplyChainModuleId = 11n;
@@ -9,6 +10,35 @@ describe('CompanyAccessContextService — supply-chain resource roles', () => {
     moduleName: 'Supply Chain',
     moduleType: 'product',
   };
+
+  function makeEntitlements(enabled = true) {
+    return {
+      companyId: '15',
+      companyStatus: 'active',
+      isCustom: false,
+      subscription: {
+        status: 'active',
+        planCode: 'pro',
+        planName: 'Professional',
+        startDate: '2026-01-01',
+        endDate: '2027-01-01',
+        autoRenew: true,
+        cancelAtPeriodEnd: false,
+        isValid: true,
+      },
+      modules: [
+        {
+          moduleId: supplyChainModuleId.toString(),
+          code: 'supply-chain',
+          name: 'Supply Chain',
+          lifecycleStatus: 'AVAILABLE',
+          entitled: true,
+          enabled,
+          effectiveAccess: enabled,
+        },
+      ],
+    };
+  }
 
   function makeService(overrides: {
     rolePermissions?: Array<{
@@ -21,6 +51,7 @@ describe('CompanyAccessContextService — supply-chain resource roles', () => {
       moduleId: bigint;
       module: { moduleType: string; moduleCode: string };
     }>;
+    entitlementsEnabled?: boolean;
   }) {
     const repository = {
       findMembership: jest.fn(),
@@ -32,17 +63,17 @@ describe('CompanyAccessContextService — supply-chain resource roles', () => {
       findPlanModuleIds: jest.fn(),
       findCompanyModules: jest.fn(),
       findRolePermissionsByModule: jest.fn().mockResolvedValue(overrides.rolePermissions ?? []),
-      findProductModules: jest.fn().mockResolvedValue([
-        {
-          moduleId: supplyChainModuleId,
-          moduleCode: 'supply-chain',
-          moduleName: 'Supply Chain',
-          lifecycleStatus: 'AVAILABLE',
-        },
-      ]),
+      findProductModules: jest.fn(),
     } as unknown as CompanyAccessContextRepository;
 
-    return { service: new CompanyAccessContextService(repository), repository };
+    const entitlementService = {
+      getEffectiveEntitlements: jest.fn(),
+    } as unknown as EntitlementService;
+
+    return {
+      service: new CompanyAccessContextService(repository, entitlementService),
+      repository,
+    };
   }
 
   it('includes supply-chain when role has vendors:view despite deny override', async () => {
@@ -64,10 +95,7 @@ describe('CompanyAccessContextService — supply-chain resource roles', () => {
     });
 
     const modules = await (service as any).buildModuleSnapshot({
-      userId: '1',
-      companyId: '15',
-      entitledModuleIds: [supplyChainModuleId],
-      companyModuleActiveById: new Map([[supplyChainModuleId.toString(), true]]),
+      entitlements: makeEntitlements(),
       roleId: 99n,
       overrides: [
         {
@@ -81,7 +109,7 @@ describe('CompanyAccessContextService — supply-chain resource roles', () => {
     expect(modules).toHaveLength(1);
     expect(modules[0].moduleCode).toBe('supply-chain');
     expect(modules[0].permissions).toContain('view');
-    expect(modules[0].lifecycleStatus).toBe('AVAILABLE');
+    expect(modules[0].effectiveAccess).toBe(true);
   });
 
   it('maps items:create to supply-chain module permissions', async () => {
@@ -101,14 +129,33 @@ describe('CompanyAccessContextService — supply-chain resource roles', () => {
     });
 
     const modules = await (service as any).buildModuleSnapshot({
-      userId: '1',
-      companyId: '15',
-      entitledModuleIds: [supplyChainModuleId],
-      companyModuleActiveById: new Map([[supplyChainModuleId.toString(), true]]),
+      entitlements: makeEntitlements(),
       roleId: 99n,
       overrides: [],
     });
 
     expect(modules[0].permissions).toEqual(expect.arrayContaining(['view', 'create']));
+  });
+
+  it('sets effectiveAccess false when module disabled in settings', async () => {
+    const { service } = makeService({
+      rolePermissions: [
+        {
+          permission: { permissionCode: 'vendors:view', action: 'view' },
+          module: supplyChainModule,
+          moduleId: supplyChainModuleId,
+        },
+      ],
+    });
+
+    const modules = await (service as any).buildModuleSnapshot({
+      entitlements: makeEntitlements(false),
+      roleId: 99n,
+      overrides: [],
+    });
+
+    expect(modules[0].entitled).toBe(true);
+    expect(modules[0].enabled).toBe(false);
+    expect(modules[0].effectiveAccess).toBe(false);
   });
 });

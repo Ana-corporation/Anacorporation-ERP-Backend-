@@ -15,9 +15,37 @@ const USERS_LIST_FILTER: ListFilterOptions = {
   defaultSortField: 'createdAt',
 };
 
+const COMPANY_USER_AUTH_SELECT = {
+  lastSuccessfulLogin: true,
+  mustChangePassword: true,
+  passwordExpiresDate: true,
+} as const;
+
 @Injectable()
 export class UsersRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  private companyScopedUserInclude(cid: bigint) {
+    return {
+      companies: {
+        where: { companyId: cid, deletedAt: null },
+        take: 1,
+      },
+      roles: {
+        where: { companyId: cid, isActive: true },
+        include: { role: true },
+        take: 1,
+        orderBy: { assignedDate: 'desc' as const },
+      },
+      loginHistory: {
+        where: { companyId: cid, loginResult: 'success' as const },
+        orderBy: { loginDate: 'desc' as const },
+        take: 1,
+        select: { loginDate: true },
+      },
+      authentication: { select: COMPANY_USER_AUTH_SELECT },
+    };
+  }
 
   findManyByCompany(companyId: string, query: PaginationQueryDto) {
     const { skip, limit, page } = getPaginationParams(query);
@@ -53,24 +81,7 @@ export class UsersRepository {
         skip,
         take: limit,
         orderBy: resolveOrderBy(query, USERS_LIST_FILTER),
-        include: {
-          companies: {
-            where: { companyId: cid, deletedAt: null },
-            take: 1,
-          },
-          roles: {
-            where: { companyId: cid, isActive: true },
-            include: { role: true },
-            take: 1,
-            orderBy: { assignedDate: 'desc' },
-          },
-          loginHistory: {
-            where: { companyId: cid, loginResult: 'success' },
-            orderBy: { loginDate: 'desc' },
-            take: 1,
-            select: { loginDate: true },
-          },
-        },
+        include: this.companyScopedUserInclude(cid),
       }),
       this.prisma.user.count({ where }),
     ]).then(([items, total]) => ({ items, total, page, limit }));
@@ -98,6 +109,75 @@ export class UsersRepository {
     });
   }
 
+  findCompanyLoginCode(companyId: string) {
+    return this.prisma.company.findFirst({
+      where: { companyId: parseBigIntId(companyId), deletedAt: null },
+      select: { companyCode: true },
+    });
+  }
+
+  isEmployeeCodeTaken(companyId: string, employeeId: string, exceptUserId?: string) {
+    return this.prisma.userCompany.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        employeeId,
+        deletedAt: null,
+        ...(exceptUserId ? { userId: { not: parseBigIntId(exceptUserId) } } : {}),
+      },
+      select: { userCompanyId: true },
+    });
+  }
+
+  setTemporaryPassword(userId: string, passwordHash: string, passwordExpiresDate: Date) {
+    const uid = parseBigIntId(userId);
+    return this.prisma.userAuthentication.upsert({
+      where: { userId: uid },
+      create: {
+        userId: uid,
+        passwordHash,
+        mustChangePassword: true,
+        passwordExpiresDate,
+        lastPasswordReset: new Date(),
+      },
+      update: {
+        passwordHash,
+        mustChangePassword: true,
+        passwordExpiresDate,
+        lastPasswordReset: new Date(),
+        refreshToken: null,
+        refreshTokenExpiry: null,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  hasPrimaryAdmin(companyId: string) {
+    return this.prisma.userCompany.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        isPrimaryAdmin: true,
+      },
+      select: { userCompanyId: true },
+    });
+  }
+
+  async setPrimaryAdmin(companyId: string, userId: string, updatedBy?: string) {
+    const cid = parseBigIntId(companyId);
+    const uid = parseBigIntId(userId);
+    const actor = updatedBy ? parseBigIntId(updatedBy) : undefined;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.userCompany.updateMany({
+        where: { companyId: cid, deletedAt: null, isPrimaryAdmin: true },
+        data: { isPrimaryAdmin: false, updatedBy: actor, updatedAt: new Date() },
+      });
+      return tx.userCompany.updateMany({
+        where: { userId: uid, companyId: cid, deletedAt: null },
+        data: { isPrimaryAdmin: true, updatedBy: actor, updatedAt: new Date() },
+      });
+    });
+  }
+
   findMembership(userId: string, companyId: string) {
     return this.prisma.userCompany.findFirst({
       where: {
@@ -119,6 +199,17 @@ export class UsersRepository {
     });
   }
 
+  findCompanyRoleByCode(companyId: string, roleCode: string) {
+    return this.prisma.role.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        roleCode,
+        deletedAt: null,
+        status: 'ACTIVE',
+      },
+    });
+  }
+
   /**
    * Company-scoped user snapshot for invite/list responses.
    */
@@ -131,21 +222,7 @@ export class UsersRepository {
           some: { companyId: parseBigIntId(companyId), deletedAt: null },
         },
       },
-      include: {
-        companies: {
-          where: { companyId: parseBigIntId(companyId), deletedAt: null },
-          take: 1,
-        },
-        roles: {
-          where: {
-            companyId: parseBigIntId(companyId),
-            isActive: true,
-          },
-          include: { role: true },
-          take: 1,
-          orderBy: { assignedDate: 'desc' },
-        },
-      },
+      include: this.companyScopedUserInclude(parseBigIntId(companyId)),
     });
   }
 
@@ -188,6 +265,7 @@ export class UsersRepository {
     lastName: string;
     mobile?: string | null;
     employeeId?: string | null;
+    isPrimaryAdmin?: boolean;
     passwordHash: string;
     passwordExpiresDate: Date;
     createdBy?: string;
@@ -226,6 +304,7 @@ export class UsersRepository {
           employeeId: params.employeeId || null,
           status: 'active',
           isDefault: true,
+          isPrimaryAdmin: params.isPrimaryAdmin ?? false,
           createdBy: params.createdBy ? parseBigIntId(params.createdBy) : undefined,
         },
       });
@@ -238,6 +317,7 @@ export class UsersRepository {
     userId: string;
     companyId: string;
     employeeId?: string | null;
+    isPrimaryAdmin?: boolean;
     createdBy?: string;
   }) {
     return this.prisma.userCompany.create({
@@ -247,6 +327,7 @@ export class UsersRepository {
         employeeId: params.employeeId || null,
         status: 'active',
         isDefault: false,
+        isPrimaryAdmin: params.isPrimaryAdmin ?? false,
         createdBy: params.createdBy ? parseBigIntId(params.createdBy) : undefined,
       },
     });

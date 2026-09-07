@@ -1,0 +1,298 @@
+================================================================================
+FE HANDOFF — Platform Owner Create Company (Phase 1)
+Date:       2026-09-01
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend (Phase 1 implemented)
+Related:    docs/BE-MATCH-PLATFORM-OWNER-COMPANY-CREATE-REDESIGN.txt
+================================================================================
+
+
+FE ALIGNED (2026-09-01) — BE CONFIRMS
+--------------------------------------------------------------------------------
+
+  CREATE body:     MATCH  name, country required
+                   MATCH  companyCode OPTIONAL — omit to auto-generate
+                   MATCH  status optional; omit or send trial/active/suspended/cancelled
+  NOT on create:   MATCH  legalName, domain, email, phone, city, logoUrl
+  PATCH body:      MATCH  name, country; NEVER companyCode
+  Status change:   MATCH  PATCH /companies/{id}/status
+  Invite:          MATCH  omit roleId → BE assigns ADMIN; users:create
+  companyCode UI:  MATCH  uppercase, /^[A-Z0-9_-]+$/ max 30, read-only on edit
+  409 duplicate:   MATCH  "Company code already exists"
+
+  ONE FIX for FE list Create button:
+
+    Do NOT check  platform_companies:create
+    That code does NOT exist in the BE catalog.
+
+    Catalog is only:
+      platform_companies:view
+      platform_companies:edit
+
+    Show Create when:
+      permissions.includes("companies:create")
+      OR
+      permissions.includes("platform_companies:edit")
+
+    OWNER001 login typically has BOTH companies:create and platform_companies:edit.
+
+    API POST /companies still requires companies:create on the controller,
+    but PermissionsGuard ALIASES it: platform_companies:edit satisfies
+    companies:create. So either check is enough for the button.
+
+
+WHAT CHANGED (PRODUCT)
+--------------------------------------------------------------------------------
+
+  Platform Owner Create Company = create a SaaS TENANT, not full ERP profile.
+
+  Create form should collect ONLY tenant identity:
+
+    REQUIRED:  name, country
+    AUTO:      companyCode  (omit on POST — BE generates)
+    OPTIONAL:  status  (omit → backend default "trial")
+               companyCode if FE still sends a manual code
+
+  Do NOT require on create:
+
+    legalName, domain, email, phone, city, logoUrl
+
+  Company Admin fills profile later (existing PATCH fields + country now).
+
+
+AUTH (UNCHANGED)
+--------------------------------------------------------------------------------
+
+  Use permissions[], not platformOwner boolean.
+
+    companies:view
+    companies:create     → Create Company
+    companies:edit       → Update company + PATCH status
+    companies:delete
+    users:create         → invite first admin
+
+  Login snapshot still includes: permissions[], tenantAdmin, platformOwner
+
+
+================================================================================
+CREATE COMPANY
+================================================================================
+
+  POST /api/v1/companies
+  Permission: companies:create
+
+  Recommended body (auto companyCode):
+
+  {
+    "name": "Acme Trading",
+    "country": "India"
+  }
+
+  Response includes generated companyCode, e.g. "ACME_TRADING"
+  (collision → ACME_TRADING_2; last resort → CO-000001)
+
+  Optional manual code (backward compatible):
+
+  {
+    "name": "Acme Trading",
+    "companyCode": "ACME",
+    "country": "India",
+    "status": "trial"
+  }
+
+  Still accepted if FE already sends them (backward compatible, not required):
+    legalName, domain, email, phone, timezone, defaultCurrencyId
+
+
+companyCode RULES
+--------------------------------------------------------------------------------
+
+  AUTO (preferred):
+    Omit companyCode on POST.
+    BE generates from name:
+      "Acme Trading" → ACME_TRADING
+      if taken → ACME_TRADING_2 …
+      if still taken → CO-000001 (then CO-000002 …)
+    Show the returned code as read-only after create.
+
+  MANUAL (optional):
+    If FE still sends companyCode:
+      trim + uppercase, /^[A-Z0-9_-]+$/ max 30
+      duplicate → 409
+
+  After create: IMMUTABLE — do not PATCH companyCode.
+
+  FE create form:
+    Hide companyCode input OR show "Will be generated"
+    After 200, display data.companyCode read-only
+
+
+country
+--------------------------------------------------------------------------------
+
+  REQUIRED on create (new).
+  Free text for now (e.g. "India") — no ISO country API in this phase.
+  Editable later via PATCH.
+
+
+status
+--------------------------------------------------------------------------------
+
+  Unchanged enum (do not rename):
+
+    trial | active | suspended | cancelled
+
+  Create: omit field OR send "trial" (default trial).
+  FE dropdown: keep these four values.
+
+
+Errors to handle
+--------------------------------------------------------------------------------
+
+  400  missing country
+  400  invalid companyCode (format)
+  400  companyCode cannot be changed   (if PATCH includes companyCode)
+  409  Company code already exists
+  403  missing companies:create / companies:edit
+
+  Fixed 2026-09-01:
+    POST /companies 400 "Invalid entityId" was a BE audit bug
+    (SYSTEM role provision logged entityId="ADMIN" which is not numeric).
+    Create company should return 200 after BE restart.
+
+
+================================================================================
+UPDATE COMPANY
+================================================================================
+
+  PATCH /api/v1/companies/{companyId}
+  Permission: companies:edit
+
+  NEW: country is allowed
+
+  {
+    "name": "Acme Trading Pte Ltd",
+    "country": "Singapore"
+  }
+
+  Also still patchable:
+    legalName, domain, email, phone, timezone, defaultCurrencyId, status
+
+  DO NOT send companyCode on PATCH — BE rejects it.
+
+  companyId and createdAt remain read-only in UI.
+
+
+STATUS SHORTCUT
+--------------------------------------------------------------------------------
+
+  PATCH /api/v1/companies/{companyId}/status
+  Permission: companies:edit   (guard, not roleCode)
+
+  { "status": "active" }
+
+  Platform Owner (platform_companies:edit) may set status on any company.
+  Company editor without that permission: own company only.
+
+
+================================================================================
+INVITE FIRST COMPANY ADMIN
+================================================================================
+
+  After create, same endpoint as before:
+
+  POST /api/v1/companies/{companyId}/users/invite
+  Permission: users:create
+
+  {
+    "firstName": "Priya",
+    "lastName": "Admin",
+    "email": "priya@acme.example.com",
+    "employeeId": "ADMIN001"
+  }
+
+  NEW: if roleId is omitted / null, BE assigns roleCode ADMIN automatically.
+
+  FE may still pass roleId (ADMIN) — unchanged.
+  Platform Owner Create flow can drop the role picker for "first admin".
+
+  Response (MUST show in UI once — email is a stub, no password is mailed):
+
+  {
+    "user": { ... },
+    "temporaryPassword": "Ab3$........",
+    "employeeId": "ADMIN001",
+    "companyCode": "ANA_MACHINERY_PVT"
+  }
+
+  Login is NOT email. It is:
+    companyCode + employeeId (employee code) + password
+
+  If employeeId was omitted, BE now auto-assigns ADMIN001, ADMIN002, ...
+
+  Resend (preferred):
+    POST /api/v1/companies/{companyId}/users/{userId}/resend-invite
+    Permission: users:create  (platform_companies:edit aliases this)
+    Returns temporaryPassword + employeeId + companyCode.
+
+  Dedicated admins list:
+    GET /api/v1/companies/{companyId}/admins
+
+  Full FE contract:
+    docs/FE-HANDOFF-COMPANY-ADMIN-INVITE-LOGIN.txt
+
+
+================================================================================
+FE UI CHECKLIST
+================================================================================
+
+  Create Company (Platform Owner)
+  [ ] Fields: name, country  (required)
+  [ ] companyCode: omit — show "Generated after save" / read-only after create
+  [ ] status optional — default trial; or hide and let BE default
+  [ ] Remove required * from legalName, email, phone, city, domain, logo
+  [ ] After create → Invite first admin (optional step, same as today)
+
+  Edit Company
+  [ ] companyCode read-only / not in PATCH body
+  [ ] country editable
+
+  Invite first admin
+  [ ] Can omit roleId; BE assigns ADMIN
+  [ ] Or keep sending ADMIN roleId if UI already has it
+  [ ] After invite, show companyCode + employeeId + temporaryPassword (copy once)
+  [ ] If missed: POST .../users/{userId}/reissue-temp-password
+
+  Permissions
+  [ ] Gate create with companies:create
+  [ ] Do not use platformOwner flag for CRUD
+
+
+================================================================================
+WHAT FE SHOULD NOT BUILD YET
+================================================================================
+
+  - website vs tenant subdomain split
+  - Logo file upload
+  - GST / tax mandatory by country
+  - New status names ACTIVE / SUSPENDED / ARCHIVED
+  - New subscription screens tied to this create flow
+
+
+================================================================================
+QA (5 MIN)
+================================================================================
+
+  [ ] POST name + country only → 200, companyCode like ACME_TRADING, status trial
+  [ ] POST without country → 400
+  [ ] POST companyCode "acme@123" → 400
+  [ ] POST duplicate manual ACME → 409
+  [ ] PATCH companyCode → 400 cannot be changed
+  [ ] PATCH country → 200
+  [ ] Invite without roleId → user has ADMIN role
+  [ ] Existing companies with legalName/email still load unchanged
+
+
+================================================================================
+END
+================================================================================

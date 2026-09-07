@@ -29,8 +29,9 @@ model Company {
 
   defaultCurrency     Currency?              @relation(fields: [defaultCurrencyId], references: [currencyId])
   subscriptions       CompanySubscription[]
-  companyModules      CompanyModule[]
-  securityPolicy      CompanySecurityPolicy?
+  companyModules         CompanyModule[]
+  companyModuleOverrides CompanyModuleOverride[]
+  securityPolicy         CompanySecurityPolicy?
   branches            Branch[]
   departments         Department[]
   designations        Designation[]
@@ -59,6 +60,7 @@ model Company {
   customFieldDefinitions CustomFieldDefinition[]
   customFieldValues      CustomFieldValue[]
   fieldConfigurations    CompanyFieldConfiguration[]
+  importSessions         ImportSession[]
 
   @@map("companies")
 }

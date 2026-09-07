@@ -1,10 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
-import { AddPlanModuleDto } from './dto/plan-module.dto';
+import { AddPlanModuleDto, ReplacePlanModulesDto } from './dto/plan-module.dto';
 import { PlanModulesService } from './plan-modules.service';
 
 @ApiTags('Plan Modules')
@@ -36,6 +36,17 @@ export class PlanModulesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.planModulesService.create(planId, dto, user.sub);
+  }
+
+  @Put()
+  @RequirePermissions('plan_modules:manage')
+  @ApiOperation({ summary: 'Replace all modules on a subscription plan' })
+  replaceAll(
+    @Param('planId') planId: string,
+    @Body() dto: ReplacePlanModulesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.planModulesService.replaceAll(planId, dto, user.sub);
   }
 
   @Delete(':id')

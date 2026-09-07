@@ -1,0 +1,577 @@
+================================================================================
+FE HANDOFF — Subscription & Module Entitlement (Backend Complete)
+Date:       2026-09-02
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend (implemented, migrated, tested)
+Related:    docs/SUBSCRIPTION-MODULE-ENTITLEMENT-REDESIGN-ANALYSIS.txt
+            docs/FE-FIX-ASSIGN-SUBSCRIPTION-PLANID.txt  (Assign plan modal fix)
+            docs/FE-HANDOFF-PLATFORM-OWNER-CREATE-COMPANY-PHASE1.txt
+================================================================================
+
+
+TL;DR FOR FE
+--------------------------------------------------------------------------------
+
+  1. Assign subscription = pick a PLAN (planId), NOT individual modules.
+  2. Use backend for entitlement — never compute plan + overrides on client.
+  3. Nav / routes need: effectiveAccess AND permissions.includes("x:y").
+  4. Login + GET /auth/me now include entitled/enabled/effectiveAccess + entitlements{}.
+  5. Product API 403 may include code: MODULE_NOT_ENTITLED | SUBSCRIPTION_INACTIVE.
+
+
+================================================================================
+WHAT BACKEND BUILT
+================================================================================
+
+  Separated three concepts (previously mixed in company_modules):
+
+    Commercial entitlement   plan modules + Platform Owner GRANT/REVOKE overrides
+    Tenant module settings   Company Admin enable / disable (isEnabled)
+    User access              RBAC permissions[] (unchanged)
+
+  Central service: EntitlementService (single source of truth)
+
+  Formula:
+
+    entitled      = planModules + GRANT − REVOKE
+    enabled       = company_modules.isEnabled (default true when entitled)
+    effectiveAccess = subscriptionValid AND entitled AND enabled
+
+  Resolution priority for overrides:
+
+    REVOKE  →  GRANT  →  PLAN default
+
+
+================================================================================
+APPLY ON BE (after pull)
+================================================================================
+
+  npx prisma migrate deploy
+  npx prisma generate
+  node scripts/backfill-company-module-settings.js    (optional)
+  node scripts/seed-subscription-plans.js             (optional — STARTER/PRO/ENTERPRISE)
+  Restart Nest
+
+  Migration: 20260902140000_subscription_entitlement_v1
+
+
+================================================================================
+AUTHORIZATION — DO NOT BREAK
+================================================================================
+
+  FE checks (unchanged contract):
+
+    permissions.includes("vendors:view")
+    permissions.includes("items:edit")
+    etc.
+
+  Identity flags are NOT CRUD gates:
+
+    tenantAdmin, platformOwner, roleCode  → context only
+
+  Full access requires BOTH:
+
+    effectiveAccess on module  (subscription + entitlement + enabled)
+    AND
+    user permission for action
+
+  Example nav helper:
+
+    const canViewVendors =
+      hasEffectiveModule("supply-chain") &&
+      permissions.includes("vendors:view");
+
+  Do NOT:
+
+    if (tenantAdmin) showEverything();
+    if (roleCode === "ADMIN") bypassPermissions();
+
+
+================================================================================
+LOGIN / GET /auth/me — NEW & UPDATED FIELDS
+================================================================================
+
+  POST /api/v1/auth/login
+  GET  /api/v1/auth/me
+
+  activeCompany.modules[] (each item):
+
+  {
+    "moduleId": 10,
+    "moduleCode": "supply-chain",
+    "moduleName": "Supply Chain",
+    "entitled": true,
+    "enabled": true,
+    "effectiveAccess": true,
+    "isActive": true,
+    "lifecycleStatus": "AVAILABLE",
+    "permissions": ["view", "create", "edit", "delete"]
+  }
+
+  isActive === effectiveAccess  (legacy — prefer effectiveAccess)
+
+  activeCompany.subscription:
+
+  {
+    "status": "active",
+    "planCode": "PROFESSIONAL",
+    "planName": "Professional",
+    "startDate": "2026-09-01",
+    "endDate": "2027-09-01",
+    "isCustom": false,
+    "autoRenew": true,
+    "cancelAtPeriodEnd": false,
+    "isValid": true
+  }
+
+  NEW top-level lightweight summary:
+
+  {
+    "permissions": ["subscription:view", "vendors:view", ...],
+    "tenantAdmin": true,
+    "platformOwner": false,
+    "entitlements": {
+      "modules": ["supply-chain"]
+    }
+  }
+
+  entitlements.modules = module codes where effectiveAccess=true
+  Use for quick nav; use effective-entitlements API for settings UI detail.
+
+
+================================================================================
+API REFERENCE — ALL SUBSCRIPTION / ENTITLEMENT ENDPOINTS
+================================================================================
+
+  Base: /api/v1
+  Auth: Bearer token + company context (x-company-id if multi-company)
+
+
+A) EFFECTIVE ENTITLEMENTS (primary read — Platform Owner + Company Admin)
+--------------------------------------------------------------------------------
+
+  GET /companies/{companyId}/effective-entitlements
+  Perm: company_modules:view  (alias: subscription:view, platform_companies:view)
+
+  Response:
+
+  {
+    "companyStatus": "active",
+    "subscription": {
+      "status": "active",
+      "planCode": "PROFESSIONAL",
+      "planName": "Professional",
+      "startDate": "2026-09-01",
+      "endDate": "2027-09-01",
+      "autoRenew": true,
+      "cancelAtPeriodEnd": false,
+      "isValid": true
+    },
+    "modules": [
+      {
+        "moduleId": "10",
+        "code": "supply-chain",
+        "name": "Supply Chain",
+        "lifecycleStatus": "AVAILABLE",
+        "entitled": true,
+        "enabled": true,
+        "effectiveAccess": true,
+        "source": "PLAN",
+        "planIncluded": true,
+        "overrideType": null
+      },
+      {
+        "moduleId": "12",
+        "code": "finance",
+        "name": "Finance",
+        "entitled": true,
+        "enabled": true,
+        "effectiveAccess": true,
+        "source": "GRANT",
+        "planIncluded": false,
+        "overrideType": "GRANT"
+      },
+      {
+        "moduleId": "15",
+        "code": "manufacturing",
+        "name": "Manufacturing",
+        "entitled": false,
+        "enabled": false,
+        "effectiveAccess": false,
+        "source": "NONE",
+        "planIncluded": false,
+        "overrideType": null
+      }
+    ],
+    "isCustom": true
+  }
+
+  source values:
+    PLAN   — included via subscription plan
+    GRANT  — Platform Owner add-on override
+    NONE   — not commercially entitled
+
+  overrideType: "GRANT" | "REVOKE" | null  (active override if any)
+
+
+B) COMPANY SUBSCRIPTION (singular — current live sub)
+--------------------------------------------------------------------------------
+
+  GET   /companies/{companyId}/subscription
+  PATCH /companies/{companyId}/subscription
+  Perm: company_subscriptions:view / :edit
+
+  GET 200:
+
+  {
+    "plan": { "code": "PROFESSIONAL", "name": "Professional", "planId": "3" },
+    "status": "active",
+    "startDate": "2026-09-01",
+    "endDate": "2027-09-01",
+    "billingCycle": "yearly",
+    "autoRenew": true,
+    "cancelAtPeriodEnd": false,
+    "cancelledAt": null
+  }
+
+  PATCH body (any subset):
+
+  {
+    "cancelAtPeriodEnd": true,
+    "autoRenew": false,
+    "planId": "4",
+    "status": "active"
+  }
+
+
+C) SUBSCRIPTION + MODULES (Company Admin settings page)
+--------------------------------------------------------------------------------
+
+  GET /companies/{companyId}/subscription/modules
+  Perm: company_modules:view  (alias: subscription:view)
+
+  Same module matrix as effective-entitlements but scoped to subscription view:
+
+  {
+    "subscription": { ... },
+    "modules": [ ... same shape as effective-entitlements.modules[] ... ]
+  }
+
+  Company Admin page gate:
+
+    permissions.includes("subscription:view")
+    OR permissions.includes("company_modules:view")
+
+  Do NOT call API if user lacks permission — show access denied UI.
+
+
+D) ASSIGN SUBSCRIPTION (Platform Owner — FIX REQUIRED ON FE)
+--------------------------------------------------------------------------------
+
+  POST /companies/{companyId}/subscriptions
+  Perm: company_subscriptions:create
+
+  REQUIRED body:
+
+  {
+    "planId": "3",
+    "startDate": "2026-09-02",
+    "status": "active",
+    "billingCycle": "yearly",
+    "autoRenew": true
+  }
+
+  planId MUST be a string digit ID from GET /subscription/plans — NEVER null.
+
+  WRONG (current bug):
+    Module checkboxes → POST without planId → 400 Validation failed
+
+  CORRECT flow:
+    1. GET /subscription/plans?limit=100&isActive=true
+    2. User selects PLAN (Starter / Professional / Enterprise)
+    3. Show plan.planModules as read-only preview
+    4. POST with planId
+
+  Backend behaviour on assign:
+    - Validates plan isActive
+    - Expires any existing live subscription (no overlap)
+    - Auto-creates company_modules settings (enabled=true) for plan modules
+    - No manual POST to /modules needed after assign
+
+  See: docs/FE-FIX-ASSIGN-SUBSCRIPTION-PLANID.txt
+
+
+E) SUBSCRIPTION HISTORY (unchanged)
+--------------------------------------------------------------------------------
+
+  GET    /companies/{companyId}/subscriptions
+  GET    /companies/{companyId}/subscriptions/{id}
+  PATCH  /companies/{companyId}/subscriptions/{id}
+  DELETE /companies/{companyId}/subscriptions/{id}
+
+
+F) MODULE OVERRIDES (Platform Owner commercial exceptions)
+--------------------------------------------------------------------------------
+
+  GET    /companies/{companyId}/module-overrides
+  POST   /companies/{companyId}/module-overrides
+  PATCH  /companies/{companyId}/module-overrides/{overrideId}
+  DELETE /companies/{companyId}/module-overrides/{overrideId}
+  Perm: company_subscriptions:view / :edit
+
+  POST body:
+
+  {
+    "moduleId": "12",
+    "action": "GRANT",
+    "reason": "Enterprise agreement",
+    "expiresAt": null
+  }
+
+  action: "GRANT" | "REVOKE"
+  expiresAt: "YYYY-MM-DD" | null
+
+
+G) MODULE ACCESS BY CODE (Platform Owner — convenience)
+--------------------------------------------------------------------------------
+
+  PUT /companies/{companyId}/module-access/{moduleCode}
+  Perm: company_subscriptions:edit
+
+  Body:
+
+  {
+    "overrideType": "GRANT",
+    "reason": "Enterprise contract add-on",
+    "effectiveUntil": "2026-12-31"
+  }
+
+  overrideType: "GRANT" | "REVOKE"
+  effectiveUntil maps to backend expiresAt
+
+  Example: PUT .../module-access/finance
+
+
+H) COMPANY MODULE ENABLE/DISABLE (Company Admin tenant settings)
+--------------------------------------------------------------------------------
+
+  PATCH /companies/{companyId}/modules/settings/{moduleId}
+  Perm: company_modules:edit
+
+  Body: { "enabled": true }  or  { "enabled": false }
+
+  403 + code: "MODULE_NOT_ENTITLED" if module not commercially entitled
+
+  Company Admin CANNOT enable non-entitled modules.
+
+
+I) SUBSCRIPTION PLANS CATALOGUE (Platform Owner)
+--------------------------------------------------------------------------------
+
+  GET    /subscription/plans
+  GET    /subscription/plans/{planId}
+  POST   /subscription/plans
+  PATCH  /subscription/plans/{planId}
+  DELETE /subscription/plans/{planId}
+  Perm: subscription_plans:view / :create / :edit / :delete
+
+
+J) PLAN MODULES (configure what each plan includes)
+--------------------------------------------------------------------------------
+
+  GET    /subscription/plans/{planId}/modules
+  POST   /subscription/plans/{planId}/modules          body: { moduleId }
+  PUT    /subscription/plans/{planId}/modules          body: { moduleCodes: [...] }
+  DELETE /subscription/plans/{planId}/modules/{id}
+  Perm: plan_modules:view / plan_modules:manage
+
+  PUT replace example:
+
+  {
+    "moduleCodes": ["supply-chain", "crm"]
+  }
+
+  Replaces entire plan module list. Cache invalidated for companies on that plan.
+
+
+K) ERP MODULE CATALOGUE (unchanged)
+--------------------------------------------------------------------------------
+
+  GET /subscription/modules
+  Perm: subscription_modules:view
+
+
+================================================================================
+403 ERROR CODES (NEW — use for user messaging)
+================================================================================
+
+  Product API denials may include:
+
+  {
+    "success": false,
+    "message": "Module is not included in the company subscription.",
+    "code": "MODULE_NOT_ENTITLED",
+    ...
+  }
+
+  Codes:
+
+    MODULE_NOT_ENTITLED    — company not commercially entitled to module
+    SUBSCRIPTION_INACTIVE  — subscription expired / not active|trial
+    MODULE_DISABLED        — Company Admin disabled the module
+
+  Generic 403 (no code) = user lacks RBAC permission
+
+  Suggested FE messages:
+
+    MODULE_NOT_ENTITLED   → "This module is not included in your subscription."
+    SUBSCRIPTION_INACTIVE → "Your subscription is inactive. Contact support."
+    MODULE_DISABLED       → "This module has been disabled for your company."
+
+
+================================================================================
+UI SCREEN MAP
+================================================================================
+
+  PLATFORM OWNER — Company detail
+  --------------------------------
+    Tab: Subscription
+      GET  .../subscription
+      GET  .../effective-entitlements
+      POST .../subscriptions          (assign plan — use planId!)
+      PATCH .../subscription          (cancel at period end, change plan)
+
+    Tab: Module overrides
+      GET/POST/PATCH/DELETE .../module-overrides
+      OR PUT .../module-access/{moduleCode}
+
+    Tab: Plans (global)
+      GET /subscription/plans
+      PUT /subscription/plans/{id}/modules
+
+  COMPANY ADMIN — Settings → Subscription / Modules
+  -------------------------------------------------
+    Gate: permissions.includes("subscription:view")
+
+    GET .../subscription/modules   OR   .../effective-entitlements
+
+    Show:
+      Current plan, status, renew/end date
+      Module list: entitled | enabled | effectiveAccess | source
+
+    Toggle enabled:
+      PATCH .../modules/settings/{moduleId}
+      Only when entitled=true
+
+  WORKSPACE NAV (all users)
+  -------------------------
+    Show module when:
+      entitlements.modules includes code
+      OR activeCompany.modules[].effectiveAccess === true
+      AND user has view permission for menu items
+
+
+================================================================================
+PERMISSIONS CHEAT SHEET
+================================================================================
+
+  Company Admin (tenant):
+    subscription:view              → view subscription/modules pages
+    company_modules:view           → same (aliased)
+    company_modules:edit           → enable/disable entitled modules
+    vendors:view, items:view, ...  → action within module
+
+  Platform Owner:
+    platform_companies:view/edit   → company detail tabs (aliases many codes)
+    company_subscriptions:create   → assign subscription
+    company_subscriptions:edit     → overrides, patch subscription
+    subscription_plans:view        → plan catalogue
+    plan_modules:manage            → configure plan modules
+
+  OWNER001 typically has platform_companies:* which aliases tenant subscription perms.
+
+
+================================================================================
+CATALOGUE — UNCHANGED
+================================================================================
+
+  Product modules (examples):
+    supply-chain, crm, ...
+
+  Resources under supply-chain (NOT separate product modules):
+    vendors  → vendors:view | create | edit | delete
+    items    → items:view | create | edit | delete
+
+  Do NOT create vendors/items as catalogue modules in FE.
+
+
+================================================================================
+FE STATE HELPERS (recommended)
+================================================================================
+
+  Centralize in one hook/service:
+
+    currentSubscription   from login or GET .../subscription
+    effectiveModules      from login.entitlements.modules or effective-entitlements
+    permissions           from login.permissions
+
+  Helpers:
+
+    hasPermission(code)           → permissions.includes(code)
+    hasEffectiveModule(code)    → entitlements.modules.includes(code)
+    canAccess(module, perm)     → hasEffectiveModule(module) && hasPermission(perm)
+
+  Do NOT recalculate entitled/source client-side.
+
+
+================================================================================
+QA CHECKLIST
+================================================================================
+
+  [ ] Assign subscription sends planId (not null) — no validation error
+  [ ] Plan modules appear in effective-entitlements without manual company_modules grant
+  [ ] source=PLAN for plan modules, source=GRANT for add-ons
+  [ ] GRANT override enables module not on plan
+  [ ] REVOKE override disables plan module
+  [ ] Company Admin disable → effectiveAccess=false → vendors API 403 MODULE_NOT_ENTITLED or MODULE_DISABLED
+  [ ] Expired subscription → SUBSCRIPTION_INACTIVE on product APIs
+  [ ] Login entitlements.modules matches effective-entitlements after fresh login
+  [ ] Company Admin without subscription:view → no API call, access denied UI
+  [ ] Nav uses effectiveAccess + permissions (not tenantAdmin)
+  [ ] Vendors/Items remain under supply-chain
+
+
+================================================================================
+FE MIGRATION — STOP / START
+================================================================================
+
+  STOP:
+    [ ] Module checkboxes on Assign Subscription modal (use plan picker)
+    [ ] POST /subscriptions without planId
+    [ ] Client-side planModules + overrides calculation
+    [ ] Using isActive alone (use effectiveAccess)
+    [ ] tenantAdmin / roleCode for CRUD gates
+    [ ] POST /modules to grant commercial access (use overrides for exceptions)
+
+  START:
+    [ ] Plan picker on Assign Subscription
+    [ ] GET effective-entitlements for module matrix UI
+    [ ] PATCH modules/settings/{moduleId} for Admin toggles
+    [ ] Handle 403 code field in API error handler
+    [ ] subscription:view gate on Company Admin settings page
+    [ ] entitlements.modules for nav
+
+
+================================================================================
+SWAGGER
+================================================================================
+
+  http://localhost:3002/docs
+
+  Tags: Company Entitlements | Company Subscription | Company Subscriptions
+        Company Modules | Plan Modules | Subscription Plans
+
+
+================================================================================
+END
+================================================================================

@@ -47,12 +47,21 @@ function scopeToActiveCompany(snapshot: AuthRoleSnapshot): AuthRoleSnapshot {
   return snapshot;
 }
 
+function attachEntitlements(snapshot: AuthRoleSnapshot): AuthRoleSnapshot {
+  snapshot.entitlements = {
+    modules: snapshot.activeCompany.modules
+      .filter((m) => m.effectiveAccess ?? m.isActive)
+      .map((m) => m.moduleCode),
+  };
+  return snapshot;
+}
+
 /** Drop modules that have no "view" — FE hides them anyway; keeps payload clean. */
 function keepViewableModules(snapshot: AuthRoleSnapshot): AuthRoleSnapshot {
   snapshot.activeCompany.modules = snapshot.activeCompany.modules.filter(
-    (m) => m.isActive && m.permissions.includes('view'),
+    (m) => (m.effectiveAccess ?? m.isActive) && m.permissions.includes('view'),
   );
-  return snapshot;
+  return attachEntitlements(snapshot);
 }
 
 /**

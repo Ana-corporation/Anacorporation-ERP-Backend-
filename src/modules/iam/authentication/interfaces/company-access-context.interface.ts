@@ -31,13 +31,20 @@ export interface CompanyAccessSubscriptionSummary {
   startDate: string | null;
   endDate: string | null;
   isCustom: boolean;
+  autoRenew?: boolean;
+  cancelAtPeriodEnd?: boolean;
+  isValid?: boolean;
 }
 
 export interface CompanyAccessModuleSummary {
   moduleId: number;
   moduleCode: string;
   moduleName: string;
+  /** @deprecated Use effectiveAccess — kept for backward compatibility */
   isActive: boolean;
+  entitled: boolean;
+  enabled: boolean;
+  effectiveAccess: boolean;
   lifecycleStatus?: string | null;
   permissions: Phase1PermissionAction[];
 }

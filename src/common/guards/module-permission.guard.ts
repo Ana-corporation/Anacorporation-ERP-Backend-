@@ -7,7 +7,7 @@ import {
 import { ModulePermissionRequirement } from '@/common/decorators/auth.decorators';
 import { ForbiddenException } from '@/common/exceptions/business.exception';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
-import { checkPermission } from '@/common/utils/permission-check.util';
+import { checkPermission, explainPermissionDenial } from '@/common/utils/permission-check.util';
 
 @Injectable()
 export class ModulePermissionGuard implements CanActivate {
@@ -43,17 +43,16 @@ export class ModulePermissionGuard implements CanActivate {
       return true;
     }
 
-    const allowed = checkPermission(
-      {
-        modules: user.modules ?? [],
-        subscriptionStatus: user.subscriptionStatus ?? 'none',
-      },
-      requirement.moduleCode,
-      requirement.action,
-    );
+    const ctx = {
+      modules: user.modules ?? [],
+      subscriptionStatus: user.subscriptionStatus ?? 'none',
+    };
+
+    const allowed = checkPermission(ctx, requirement.moduleCode, requirement.action);
 
     if (!allowed) {
-      throw new ForbiddenException('Insufficient module permissions');
+      const denial = explainPermissionDenial(ctx, requirement.moduleCode, requirement.action);
+      throw new ForbiddenException(denial.message, denial.code);
     }
 
     return true;

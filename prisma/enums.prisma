@@ -70,6 +70,33 @@ enum ModuleAccessType {
   @@map("module_access_type")
 }
 
+enum CompanyModuleOverrideAction {
+  GRANT
+  REVOKE
+
+  @@map("company_module_override_action")
+}
+
+enum ImportType {
+  VENDOR
+  ITEM
+  OPENING_STOCK
+
+  @@map("import_type")
+}
+
+enum ImportStatus {
+  UPLOADED
+  VALIDATING
+  VALIDATED
+  IMPORTING
+  COMPLETED
+  FAILED
+  EXPIRED
+
+  @@map("import_status")
+}
+
 enum ModuleType {
   product
   admin

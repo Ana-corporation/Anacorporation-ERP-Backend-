@@ -1,0 +1,30 @@
+// shared | import_sessions — bulk import validate → confirm sessions
+
+model ImportSession {
+  importSessionId BigInt       @id @default(autoincrement()) @map("import_session_id")
+  companyId       BigInt       @map("company_id")
+  createdBy       BigInt?      @map("created_by")
+  importType      ImportType   @map("import_type")
+  status          ImportStatus @default(UPLOADED)
+  fileName        String       @map("file_name") @db.VarChar(255)
+  fileMime        String?      @map("file_mime") @db.VarChar(120)
+  fileSizeBytes   Int          @map("file_size_bytes")
+  storageKey      String?      @map("storage_key") @db.VarChar(500)
+  summaryJson     Json?        @map("summary_json")
+  rowsJson        Json?        @map("rows_json")
+  errorMessage    String?      @map("error_message") @db.Text
+  expiresAt       DateTime     @map("expires_at")
+  startedAt       DateTime?    @map("started_at")
+  completedAt     DateTime?    @map("completed_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime?    @map("updated_at")
+  deletedAt       DateTime?    @map("deleted_at")
+  deletedBy       BigInt?      @map("deleted_by")
+  rowVersion      Int          @default(1) @map("row_version")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@index([companyId, importType, createdAt])
+  @@index([status, expiresAt])
+  @@map("import_sessions")
+}

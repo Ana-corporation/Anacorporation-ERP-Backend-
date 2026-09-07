@@ -1,4 +1,5 @@
 import { PERMISSIONS } from '@/common/constants/permissions.constant';
+import { ENTITLEMENT_ERROR_CODES } from '@/common/constants/entitlement.constants';
 import {
   ADMIN_MODULE_CODES,
   Phase1PermissionAction,
@@ -54,7 +55,9 @@ const PERMISSION_CODE_ALIASES: Record<string, string[]> = {
     'companies:edit',
     'subscription:edit',
   ],
-  'company_modules:view': ['platform_companies:view', 'companies:view', 'modules:view'],
+  'company_modules:view': ['platform_companies:view', 'companies:view', 'modules:view', 'subscription:view'],
+  'subscription:view': ['company_modules:view', 'company_subscriptions:view'],
+  'subscription:edit': ['company_subscriptions:edit', 'company_modules:edit'],
   'company_modules:create': ['platform_companies:edit', 'companies:edit', 'modules:edit'],
   'company_modules:edit': ['platform_companies:edit', 'companies:edit', 'modules:edit'],
   'company_modules:delete': ['platform_companies:edit', 'companies:edit', 'modules:edit'],
@@ -109,9 +112,83 @@ export function checkModulePermission(
   action: Phase1PermissionAction,
 ): boolean {
   const mod = modules.find((m) => m.moduleCode === moduleCode);
-  // isActive already means ACTIVE company entitlement + AVAILABLE lifecycle (login snapshot)
-  if (!mod?.isActive) return false;
-  return mod.permissions.includes(action);
+  const canAccess = mod?.effectiveAccess ?? mod?.isActive ?? false;
+  if (!canAccess) return false;
+  return mod!.permissions.includes(action);
+}
+
+const LIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trial']);
+
+export interface ModuleEntitlementCheckResult {
+  allowed: boolean;
+  code?: string;
+  message: string;
+}
+
+/** Commercial + tenant module access without role action check. */
+export function checkModuleEntitlement(
+  ctx: PermissionCheckContext,
+  moduleCode: string,
+): ModuleEntitlementCheckResult {
+  if (!LIVE_SUBSCRIPTION_STATUSES.has(ctx.subscriptionStatus)) {
+    return {
+      allowed: false,
+      code: ENTITLEMENT_ERROR_CODES.SUBSCRIPTION_INACTIVE,
+      message: 'Subscription is not active.',
+    };
+  }
+
+  const mod = ctx.modules.find((m) => m.moduleCode === moduleCode);
+  if (!mod) {
+    return {
+      allowed: false,
+      code: ENTITLEMENT_ERROR_CODES.MODULE_NOT_ENTITLED,
+      message: 'Module is not included in the company subscription.',
+    };
+  }
+
+  if (mod.entitled === false) {
+    return {
+      allowed: false,
+      code: ENTITLEMENT_ERROR_CODES.MODULE_NOT_ENTITLED,
+      message: 'Module is not included in the company subscription.',
+    };
+  }
+
+  if (mod.enabled === false) {
+    return {
+      allowed: false,
+      code: ENTITLEMENT_ERROR_CODES.MODULE_DISABLED,
+      message: 'Module is disabled for this company.',
+    };
+  }
+
+  const canAccess = mod.effectiveAccess ?? mod.isActive ?? false;
+  if (!canAccess) {
+    return {
+      allowed: false,
+      code: ENTITLEMENT_ERROR_CODES.SUBSCRIPTION_INACTIVE,
+      message: 'Module is unavailable under the current subscription.',
+    };
+  }
+
+  return { allowed: true, message: 'OK' };
+}
+
+function resolvePermissionDenial(
+  ctx: PermissionCheckContext,
+  moduleCode: string,
+  action: Phase1PermissionAction,
+): ModuleEntitlementCheckResult {
+  const entitlement = checkModuleEntitlement(ctx, moduleCode);
+  if (!entitlement.allowed) return entitlement;
+
+  const mod = ctx.modules.find((m) => m.moduleCode === moduleCode);
+  if (!mod?.permissions.includes(action)) {
+    return { allowed: false, message: 'Insufficient permissions.' };
+  }
+
+  return { allowed: true, message: 'OK' };
 }
 
 /** Full Phase 1 permission chain for product modules (entitlement snapshot + role). */
@@ -120,13 +197,15 @@ export function checkPermission(
   moduleCode: string,
   action: Phase1PermissionAction,
 ): boolean {
-  // Entitlement is proven by presence of an ACTIVE module in the login snapshot.
-  // Do not allow subscriptionStatus alone to bypass missing company_modules.
-  if (!ctx.modules.some((m) => m.moduleCode === moduleCode && m.isActive)) {
-    return false;
-  }
+  return resolvePermissionDenial(ctx, moduleCode, action).allowed;
+}
 
-  return checkModulePermission(ctx.modules, moduleCode, action);
+export function explainPermissionDenial(
+  ctx: PermissionCheckContext,
+  moduleCode: string,
+  action: Phase1PermissionAction,
+): ModuleEntitlementCheckResult {
+  return resolvePermissionDenial(ctx, moduleCode, action);
 }
 
 function normalizeAction(action: string): Phase1PermissionAction | null {

@@ -6,4 +6,9 @@ export const AddPlanModuleSchema = z.object({
   moduleId: bigintIdSchema,
 });
 
+export const ReplacePlanModulesSchema = z.object({
+  moduleCodes: z.array(z.string().trim().min(1)).default([]),
+});
+
 export class AddPlanModuleDto extends createZodDto(AddPlanModuleSchema) {}
+export class ReplacePlanModulesDto extends createZodDto(ReplacePlanModulesSchema) {}

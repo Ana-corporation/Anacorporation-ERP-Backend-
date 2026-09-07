@@ -71,6 +71,23 @@ export class PlanModulesRepository {
     });
   }
 
+  deleteAllByPlan(planId: string) {
+    return this.prisma.planModule.deleteMany({
+      where: { planId: parseBigIntId(planId) },
+    });
+  }
+
+  findModulesByCodes(moduleCodes: string[]) {
+    if (moduleCodes.length === 0) return Promise.resolve([]);
+    return this.prisma.module.findMany({
+      where: {
+        moduleCode: { in: moduleCodes },
+        deletedAt: null,
+        moduleType: 'product',
+      },
+    });
+  }
+
   planExists(planId: string) {
     return this.prisma.subscriptionPlan.findFirst({
       where: { planId: parseBigIntId(planId), deletedAt: null },

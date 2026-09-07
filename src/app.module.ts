@@ -11,6 +11,7 @@ import { ResponseTransformInterceptor } from './common/interceptors/response-tra
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { ModulePermissionGuard } from './common/guards/module-permission.guard';
+import { ModuleEntitlementGuard } from './common/guards/module-entitlement.guard';
 import { TenantGuard } from './common/guards/tenant.guard';
 import { MustChangePasswordGuard } from './common/guards/must-change-password.guard';
 import { SharedModule } from './modules/shared/shared.module';
@@ -20,6 +21,7 @@ import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { PurchaseModule } from './modules/purchase/purchase.module';
 import { InventoryMasterModule } from './modules/inventory/inventory-master.module';
 import { HealthModule } from './modules/health/health.module';
+import { JobsModule } from './jobs/jobs.module';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { HealthModule } from './modules/health/health.module';
     StorageModule,
     // QueueModule (BullMQ) deferred until cloud — needs Redis and is unused locally.
     HealthModule,
+    JobsModule,
     SharedModule,
     OrganizationModule,
     IamModule,
@@ -45,6 +48,7 @@ import { HealthModule } from './modules/health/health.module';
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: MustChangePasswordGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: ModuleEntitlementGuard },
     { provide: APP_GUARD, useClass: ModulePermissionGuard },
   ],
 })

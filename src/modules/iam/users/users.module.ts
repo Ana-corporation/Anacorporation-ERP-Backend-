@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '@/modules/iam/authentication/auth.module';
 import { EmployeesModule } from '@/modules/organization/employees/employees.module';
+import { CompanyAdminsController } from './company-admins.controller';
 import { CompanyUsersController } from './company-users.controller';
 import { UsersController } from './users.controller';
 import { UsersRepository } from './users.repository';
@@ -8,7 +9,7 @@ import { UsersService } from './users.service';
 
 @Module({
   imports: [AuthModule, EmployeesModule],
-  controllers: [UsersController, CompanyUsersController],
+  controllers: [UsersController, CompanyUsersController, CompanyAdminsController],
   providers: [UsersRepository, UsersService],
   exports: [UsersService, UsersRepository],
 })

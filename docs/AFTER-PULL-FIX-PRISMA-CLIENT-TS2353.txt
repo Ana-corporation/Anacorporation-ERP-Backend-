@@ -1,0 +1,215 @@
+================================================================================
+AFTER PULL FIX — 42 TypeScript errors (TS2353 / TS2339 / TS2724 / TS2305)
+Date:       2026-09-01
+Audience:   ERP-Backend developers (Windows + Mac/Linux)
+Symptom:    nest start --watch fails immediately after git pull
+================================================================================
+
+
+DO NOT COMMIT node_modules OR GENERATED PRISMA CLIENT
+--------------------------------------------------------------------------------
+
+  Pushing local generated files to GitHub will NOT fix this for co-devs.
+
+  Why:
+    - node_modules / .prisma/client are gitignored on purpose
+    - generated engines are OS-specific (Windows vs Mac vs Linux)
+    - committing them makes the repo huge and still goes stale on the next schema change
+
+  The real fix: after pull, regenerate on EACH machine (npm install / after-pull / start:dev).
+
+  After this repo update is pushed, co-devs get extra automation:
+    npm run after-pull     → prisma generate + migrate deploy
+    npm run start:dev      → auto-generate if client is stale
+    git pull               → post-merge hook runs prisma generate
+    npm install            → postinstall prisma generate
+
+
+THIS IS NOT A CODE BUG
+--------------------------------------------------------------------------------
+
+  All 42 errors mean the SAME thing:
+
+    Prisma Client in node_modules is OLD.
+    Source code + prisma/*.prisma were updated on GitHub.
+    Your machine is still using a generated client from before those fields existed.
+
+  Examples of "missing" fields that ARE in the repo schema:
+
+    UserRole.endedAt
+    Role.roleType, Role.systemTemplateKey, Role.status  (enum RoleStatus)
+    Module.lifecycleStatus                              (enum ModuleLifecycleStatus)
+    prisma.companyFieldConfiguration                    (new model)
+
+  TypeScript compiles against node_modules/.prisma/client — until you regenerate,
+  TS will keep saying those properties "do not exist".
+
+
+FIX (DO THIS IN ORDER)
+--------------------------------------------------------------------------------
+
+  1. Stop the running backend (required on Windows)
+
+     nest / npm run start:dev LOCKS query_engine-windows.dll.node
+     If generate fails with EPERM / EBUSY, the server is still running.
+
+     PowerShell:
+       netstat -ano | findstr :3002
+       Stop-Process -Id <PID> -Force
+
+     Or close the terminal that is running start:dev.
+
+  2. Pull latest (if you have not already)
+
+     git checkout development-anc
+     git pull
+
+     Remote: https://github.com/Ana-corporation/Anacorporation-ERP-Backend-
+     Branch: development-anc
+
+  3. Install + regenerate Prisma Client
+
+     cd ERP-Backend
+     npm install
+     npx prisma generate
+
+     Success looks like:
+       Generated Prisma Client (...) to .\node_modules\@prisma\client
+
+     If generate is skipped or you still see old types:
+       Remove-Item -Recurse -Force node_modules\.prisma -ErrorAction SilentlyContinue
+       npx prisma generate
+
+  4. Apply database migrations (same DATABASE_URL as .env)
+
+     npx prisma migrate deploy
+
+     This applies pending IAM + form-config migrations, including:
+       company_field_configurations
+       role lifecycle columns (status, role_type, system_template_key, ...)
+       user_roles.ended_at
+       modules.lifecycle_status
+
+     Do NOT skip this. Generate only fixes TypeScript.
+     Migrate fixes runtime Prisma "column does not exist" / table missing.
+
+  5. Restart
+
+     npm run start:dev
+
+     Expected:
+       [NestApplication] Nest application successfully started
+       Found 0 errors. Watching for file changes.
+
+
+ONE-LINER (after stopping Nest)
+--------------------------------------------------------------------------------
+
+  Windows PowerShell:
+
+    git pull; npm install; npx prisma generate; npx prisma migrate deploy; npm run start:dev
+
+  Mac / Linux:
+
+    git pull && npm install && npx prisma generate && npx prisma migrate deploy && npm run start:dev
+
+
+HOW TO CONFIRM GENERATE WORKED
+--------------------------------------------------------------------------------
+
+  After npx prisma generate, these should exist in generated types:
+
+    node_modules/.prisma/client/index.d.ts
+
+    Search for:
+      endedAt
+      systemTemplateKey
+      RoleStatus
+      ModuleLifecycleStatus
+      CompanyFieldConfiguration
+
+  If those strings are missing, generate did not run against the pulled schema.
+
+
+IF GENERATE FAILS (WINDOWS)
+--------------------------------------------------------------------------------
+
+  Error: EPERM / EBUSY  query_engine-windows.dll.node
+
+  Cause: Nest is still running.
+
+  Fix:
+    1. Stop ALL node processes for this repo (not Cursor tsserver).
+    2. Retry: npx prisma generate
+
+  Error: Environment variable not found: DATABASE_URL
+
+  Cause: no .env in ERP-Backend root.
+
+  Fix: copy .env.example → .env and fill DATABASE_URL + DIRECT_DATABASE_URL
+       Generate can still work without a live DB, but migrate deploy needs the URL.
+
+
+IF MIGRATE FAILS
+--------------------------------------------------------------------------------
+
+  "The table public.company_field_configurations does not exist"
+    → migrate deploy was not run (or ran against a different database than start:dev)
+
+  P3005 / drift
+    → ask lead; do NOT prisma db push on shared Neon without agreement
+
+  Shadow DB / pooler timeout
+    → use DIRECT_DATABASE_URL (non-pooler) in .env for migrate
+
+
+WHAT NOT TO DO
+--------------------------------------------------------------------------------
+
+  [ ] Do NOT comment out endedAt / roleType / lifecycleStatus in source
+  [ ] Do NOT change Prisma types by hand in node_modules
+  [ ] Do NOT skip prisma generate because "npm install already ran"
+        (postinstall can fail silently if Nest locked the engine)
+  [ ] Do NOT mix .env between local Postgres and team Neon
+
+
+ERROR → ROOT CAUSE MAP (all same fix)
+--------------------------------------------------------------------------------
+
+  TS2353  endedAt not in UserRoleWhereInput
+  TS2353  roleType / status / systemTemplateKey not in RoleCreateInput
+  TS2353  lifecycleStatus not in ModuleWhereInput
+  TS2724  RoleStatus not exported from @prisma/client
+  TS2305  ModuleLifecycleStatus not exported from @prisma/client
+  TS2339  companyFieldConfiguration not on PrismaService
+  TS2339  role.systemTemplateKey / role.roleType / role.status missing
+
+  → npx prisma generate  (then migrate deploy for DB)
+
+
+FORM-CONFIG TYPES AFTER GENERATE
+--------------------------------------------------------------------------------
+
+  form-configuration.service Map errors (TS2345 / TS7006) also clear once
+  PrismaService knows companyFieldConfiguration and findOverrides is typed.
+
+  If they remain AFTER a successful generate, restart the TS server in the IDE:
+    VS Code / Cursor: "TypeScript: Restart TS Server"
+
+
+CHECKLIST
+--------------------------------------------------------------------------------
+
+  [ ] Nest / start:dev stopped
+  [ ] git pull on development-anc
+  [ ] npm install
+  [ ] npx prisma generate  (no EPERM)
+  [ ] Grep node_modules/.prisma/client for CompanyFieldConfiguration, RoleStatus, endedAt
+  [ ] npx prisma migrate deploy
+  [ ] npm run start:dev → 0 errors
+  [ ] Login ADMIN001 still works after migrate
+
+
+================================================================================
+END
+================================================================================

@@ -6,6 +6,7 @@ import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { CreateCompanyModuleDto, UpdateCompanyModuleDto } from './dto/company-module.dto';
+import { SetCompanyModuleEnabledDto } from '@/modules/subscription/entitlements/dto/entitlement.dto';
 import { CompanyModulesService } from './company-modules.service';
 
 @ApiTags('Company Modules')
@@ -48,6 +49,19 @@ export class CompanyModulesController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.companyModulesService.create(companyId, dto, user.sub);
+  }
+
+  @Patch('settings/:moduleId')
+  @RequirePermissions('company_modules:edit')
+  @ApiOperation({ summary: 'Enable/disable an entitled module (tenant settings)' })
+  setModuleEnabled(
+    @Param('companyId') companyId: string,
+    @Param('moduleId') moduleId: string,
+    @Body() dto: SetCompanyModuleEnabledDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.companyModulesService.setModuleEnabled(companyId, moduleId, dto.enabled, user.sub);
   }
 
   @Patch(':id')

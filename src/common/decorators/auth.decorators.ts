@@ -2,6 +2,7 @@ import { SetMetadata } from '@nestjs/common';
 import {
   ALLOW_MUST_CHANGE_PASSWORD_KEY,
   IS_PUBLIC_KEY,
+  MODULE_ENTITLEMENT_KEY,
   MODULE_PERMISSION_KEY,
   PERMISSIONS_KEY,
   TENANT_OPTIONAL_KEY,
@@ -21,6 +22,10 @@ export interface ModulePermissionRequirement {
 
 export const RequireModulePermission = (moduleCode: string, action: Phase1PermissionAction) =>
   SetMetadata(MODULE_PERMISSION_KEY, { moduleCode, action } satisfies ModulePermissionRequirement);
+
+/** Product module commercial entitlement (no action — use with PermissionsGuard for CRUD). */
+export const RequireModule = (moduleCode: string) =>
+  SetMetadata(MODULE_ENTITLEMENT_KEY, moduleCode);
 
 export const TenantOptional = () => SetMetadata(TENANT_OPTIONAL_KEY, true);
 

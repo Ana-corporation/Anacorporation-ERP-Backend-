@@ -1,0 +1,24 @@
+// subscription | company_module_overrides
+
+model CompanyModuleOverride {
+  companyModuleOverrideId BigInt                      @id @default(autoincrement()) @map("company_module_override_id")
+  companyId               BigInt                      @map("company_id")
+  moduleId                BigInt                      @map("module_id")
+  action                  CompanyModuleOverrideAction @map("action")
+  reason                  String?                     @db.VarChar(500)
+  expiresAt               DateTime?                   @map("expires_at") @db.Date
+  createdBy               BigInt?                     @map("created_by")
+  createdAt               DateTime                    @default(now()) @map("created_at")
+  updatedBy               BigInt?                     @map("updated_by")
+  updatedAt               DateTime?                   @map("updated_at")
+  deletedBy               BigInt?                     @map("deleted_by")
+  deletedAt               DateTime?                   @map("deleted_at")
+  rowVersion              Int                         @default(1) @map("row_version")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  module  Module  @relation(fields: [moduleId], references: [moduleId])
+
+  @@index([companyId])
+  @@index([moduleId])
+  @@map("company_module_overrides")
+}

@@ -1,0 +1,428 @@
+================================================================================
+PHASE 1 ANALYSIS — Vendor / Item / Opening Stock Bulk Import
+Date:       2026-09-03
+Audience:   ERP-Backend, ERP-Frontend, QA
+Status:     ANALYSIS COMPLETE — ready for Phase 2 implementation
+Related:    FE + BE WORK SPLIT — Vendor / Item / Opening Stock Bulk Import
+================================================================================
+
+
+1. EXISTING IMPLEMENTATION ANALYSIS
+--------------------------------------------------------------------------------
+
+  LIVE (reuse for import):
+
+    Vendors
+      Controller: src/modules/purchase/vendors/vendors.controller.ts
+      Service:    vendors.service.ts → create(companyId, dto, actorId)
+      Route:      POST /api/v1/companies/:companyId/vendors
+      Perm:       vendors:create (+ supply-chain entitlement via PermissionsGuard)
+
+    Items (Item Master)
+      Controller: src/modules/inventory/item-master/items.controller.ts
+      Service:    items.service.ts → create(...)
+                  upsertWarehouseStock(...) for qty
+      Routes:     POST /companies/:companyId/items
+                  PUT  /companies/:companyId/items/:id/warehouses
+      Perm:       items:create / items:edit
+
+    Warehouses
+      Controller: src/modules/organization/warehouses/warehouses.controller.ts
+      Route:      GET/POST /companies/:companyId/warehouses
+      Perm:       warehouses:* (organization module — NOT supply-chain)
+
+    File upload pattern (reuse multer memoryStorage)
+      Items attachments: FileFieldsInterceptor, 10 MB, MIME allow-list
+      StorageService → GCS + file_assets (optional for import files)
+
+    Audit
+      AuditService.log({ companyId, performedBy, action, entityName, entityId, newValue })
+      Global module — reuse for import started / completed
+
+  DEAD / DO NOT USE:
+
+    src/modules/inventory/items/products.*   → Product model does not exist
+    src/modules/inventory/stock/*            → inventoryTransaction models missing
+    Not registered in AppModule
+
+  MISSING TODAY:
+
+    No ImportSession / ImportHistory / ImportRow tables
+    No Excel/CSV parser libraries in package.json
+    No bulk import controllers/services
+    No stock ledger / opening-stock document type
+    No Location / Bin master tables (bin is free-text VARCHAR)
+
+
+2. EXISTING SCHEMA MAPPING
+--------------------------------------------------------------------------------
+
+  VENDOR (prisma/purchase/vendors.prisma)
+  --------------------------------------
+  DB column          Create DTO           Template header (proposed)
+  -----------------  -------------------  --------------------------
+  vendor_code        AUTO (not in DTO)    (generated — do NOT require from Excel)
+  supplier_type      supplierType REQ     Supplier Type *
+  name               name REQ             Name *
+  email              email                Email
+  phone              phone                Phone
+  address            address              Address
+  city               city                 City
+  country            country              Country
+  tax_id             taxId                Tax ID
+  is_active          isActive             Is Active
+
+  Unique: @@unique([companyId, vendorCode])
+  supplierType enum EXACT labels:
+    RM Supplier | Component Supplier | Service Provider | Electrical Suppliers
+  Code prefixes: RM### / CS### / SP### / ES### (max 999 per prefix)
+  FE label "Supplier Code" = vendorCode (auto-generated, not importable today)
+
+
+  ITEM (prisma/inventory/items.prisma)
+  ------------------------------------
+  DB / DTO              Notes
+  --------------------  --------------------------------------------------
+  itemCode              Optional; required only if company itemCodeMode=MANUAL
+                        AUTO mode ignores client code → ITM-######
+  description           REQUIRED
+  itemType              item|service|labor|travel
+  itemGroup             free-text (NOT category ID)
+  uomGroup              free-text (NOT unit ID)
+  barcode, unitPrice, manufacturer, brandName, status, isActive, ...
+  purchase/sales/inventory/planning/production JSON bags (open records)
+
+  Unique: @@unique([companyId, itemCode]) — includes soft-deleted rows
+  NO Category / Unit lookup tables — names are free-text strings
+  preferredVendorId = numeric string vendor ID (company-scoped)
+
+
+  OPENING STOCK (ItemWarehouseStock)
+  ----------------------------------
+  Field                 Notes
+  --------------------  --------------------------------------------------
+  itemId                FK → Item (resolve by itemCode)
+  warehouseId           FK → Warehouse (resolve by warehouseCode)
+  qtyOnHand             Decimal — CURRENTLY direct overwrite via upsert
+  firstBinLocation      VARCHAR free-text (NOT FK)
+  defaultBinLocation    VARCHAR free-text (NOT FK)
+
+  NO Location master table
+  NO stock transaction / ledger model in live schema
+  Live path: PUT /items/:id/warehouses → ItemsService.upsertWarehouseStock
+  Permission today: items:edit (NOT inventory:create)
+
+
+3. REQUIRED DATABASE CHANGES
+--------------------------------------------------------------------------------
+
+  NEW (additive migration):
+
+    import_sessions
+      import_session_id   BIGSERIAL PK
+      company_id          BIGINT NOT NULL  (FK companies)
+      created_by          BIGINT
+      import_type         ENUM: VENDOR | ITEM | OPENING_STOCK
+      status              ENUM: UPLOADED | VALIDATING | VALIDATED
+                                  | IMPORTING | COMPLETED | FAILED | EXPIRED
+      file_name           VARCHAR
+      file_mime           VARCHAR
+      file_size_bytes     INT
+      storage_key         VARCHAR NULL   (optional GCS key; V1 may keep payload in DB)
+      summary_json        JSON           { totalRows, validRows, invalidRows }
+      rows_json           JSONB          validated rows + errors (V1 storage)
+      expires_at          TIMESTAMP
+      started_at / completed_at
+      error_message       TEXT NULL
+      created_at / updated_at
+      deleted_at
+
+    Indexes: (company_id, import_type, created_at desc)
+             (status, expires_at) for expiry job
+
+  NOT required for V1:
+    Separate import_rows table (rows_json is enough for ≤5,000 rows)
+    Stock ledger table (see Risks — decision required)
+    Category / Unit master tables
+
+
+4. REQUIRED BACKEND CHANGES
+--------------------------------------------------------------------------------
+
+  Dependencies:
+    Add: exceljs (or xlsx) + csv-parse
+    Multer already available via @nestjs/platform-express
+
+  New module:
+    src/modules/imports/
+      imports.module.ts
+      import-session.service.ts
+      parsers/excel-parser.service.ts
+      parsers/csv-parser.service.ts
+      dto/import.dto.ts
+      constants/import.constants.ts   (limits, error codes)
+
+  Domain services (call existing create APIs):
+    src/modules/purchase/vendors/vendor-import.service.ts
+    src/modules/inventory/item-master/item-import.service.ts
+    src/modules/inventory/item-master/opening-stock-import.service.ts
+
+  Controllers (under company scope):
+    POST /companies/:companyId/vendors/import/validate
+    POST /companies/:companyId/vendors/import/confirm
+    GET  /companies/:companyId/vendors/import/:importId
+    GET  /companies/:companyId/vendors/import/template
+
+    Same pattern for items + opening-stock:
+    POST /companies/:companyId/items/import/validate|confirm
+    GET  /companies/:companyId/items/import/:importId|template
+    POST /companies/:companyId/inventory/opening-stock/import/validate|confirm
+    GET  /companies/:companyId/inventory/opening-stock/import/:importId|template
+
+  Security on every route:
+    JwtAuthGuard (global)
+    TenantGuard + assertCompanyAccess
+    @RequirePermissions(vendors:create | items:create | items:edit)
+    Entitlement via existing PermissionsGuard (supply-chain)
+
+  Confirm body: { importId } ONLY — never rows[]
+
+
+5. REQUIRED FRONTEND CHANGES (for FE team — BE contract)
+--------------------------------------------------------------------------------
+
+  Shared Import Wizard + 3 dialogs (see work-split Part B)
+
+  Buttons:
+    Vendors list → Import (vendors:create + supply-chain effectiveAccess)
+    Items list   → Import (items:create + supply-chain effectiveAccess)
+    Inventory    → Import Opening Stock (items:edit + supply-chain)
+
+  Confirm sends importId only
+  Map error codes from BE (section 13 of work-split)
+
+
+6. API CONTRACT (V1)
+--------------------------------------------------------------------------------
+
+  VALIDATE (multipart)
+  --------------------
+  POST /api/v1/companies/{companyId}/vendors/import/validate
+  Content-Type: multipart/form-data
+  Field: file  (.xlsx | .csv)
+
+  200:
+  {
+    "importId": "42",
+    "type": "VENDOR",
+    "fileName": "vendors.xlsx",
+    "status": "VALIDATED",
+    "summary": { "totalRows": 100, "validRows": 92, "invalidRows": 8 },
+    "rows": [
+      {
+        "rowNumber": 2,
+        "status": "VALID",
+        "data": { "supplierType": "RM Supplier", "name": "Acme Metals", ... },
+        "errors": []
+      },
+      {
+        "rowNumber": 5,
+        "status": "INVALID",
+        "data": { "supplierType": "", "name": "X" },
+        "errors": [
+          { "field": "supplierType", "code": "MISSING_REQUIRED_FIELD", "message": "..." }
+        ]
+      }
+    ],
+    "expiresAt": "2026-09-04T12:00:00.000Z"
+  }
+
+  CONFIRM
+  -------
+  POST /api/v1/companies/{companyId}/vendors/import/confirm
+  { "importId": "42" }
+
+  200:
+  {
+    "importId": "42",
+    "status": "COMPLETED",
+    "summary": {
+      "totalRows": 100,
+      "importedRows": 90,
+      "skippedRows": 2,
+      "failedRows": 8
+    }
+  }
+
+  GET STATUS
+  ----------
+  GET /api/v1/companies/{companyId}/vendors/import/{importId}
+
+  TEMPLATE
+  --------
+  GET /api/v1/companies/{companyId}/vendors/import/template
+  → downloads .xlsx with header row matching Create DTO fields
+
+
+7. IMPLEMENTATION PLAN
+--------------------------------------------------------------------------------
+
+  Phase 2 — Shared + Vendor Import (START NEXT)
+    [ ] Migration: import_sessions + enums
+    [ ] Add exceljs + csv-parse
+    [ ] ImportsModule: session service, parsers, limits, error codes
+    [ ] VendorImportService: template, validate, confirm → VendorsService.create
+    [ ] Vendor import controller routes
+    [ ] Unit tests: parse + duplicate + confirm
+
+  Phase 3 — Item Master Import
+    [ ] ItemImportService (respect itemCodeMode AUTO/MANUAL)
+    [ ] Template + validate + confirm → ItemsService.create
+    [ ] Duplicate itemCode file+DB checks
+
+  Phase 4 — Opening Stock Import
+    [ ] OpeningStockImportService
+    [ ] Resolve itemCode → itemId, warehouseCode → warehouseId
+    [ ] Bin as free-text (firstBinLocation)
+    [ ] V1: call upsertWarehouseStock (document overwrite semantics)
+    [ ] Decision: additive vs overwrite; ledger deferred unless requested
+
+  Phase 5 — QA
+    [ ] Auth / entitlement / company isolation
+    [ ] File limits / session expiry
+    [ ] Confirm re-validation
+    [ ] Concurrent duplicate unique constraint
+
+
+8. RISKS / CONFLICTS / DECISIONS
+--------------------------------------------------------------------------------
+
+  D1  Vendor codes are AUTO-ONLY today.
+      Decision for V1: Excel must NOT supply vendorCode.
+      Template requires Supplier Type + Name; BE generates RM001 etc.
+      Duplicate check = duplicate NAME in file (warn) + DB unique on code (auto).
+      If product needs imported supplier codes → needs MANUAL vendor code mode (out of V1 unless asked).
+
+  D2  Item codes depend on company itemCodeMode.
+      Decision: Template includes Item Code column.
+      AUTO company → ignore Excel code, auto-generate.
+      MANUAL company → Item Code required; duplicate = ERROR.
+
+  D3  No Category/Unit masters.
+      Decision: Item Group / UOM Group are free-text columns (match schema).
+      Do NOT invent categoryId/unitId resolution.
+
+  D4  Opening stock has NO ledger.
+      Decision V1: use existing upsertWarehouseStock (direct qtyOnHand write).
+      Document as OVERWRITE semantics (re-import replaces qty).
+      Permission: items:edit (existing).
+      Location = free-text bin column, not FK.
+      Building a full stock ledger = separate project.
+
+  D5  Session storage.
+      Decision V1: rows_json on import_sessions (≤5k rows OK).
+      File: parse in memory → discard (or optional GCS via StorageService).
+      Do NOT keep files on local disk.
+
+  D6  Soft-delete unique collision.
+      Deleted vendor/item codes still block reuse (P2002).
+      Import must treat unique violation as DUPLICATE_* error.
+
+  D7  Vendor sequence max 999 per prefix.
+      Large imports of same supplierType may fail late sequences.
+
+  D8  Dead inventory/products modules — never wire import to them.
+
+
+9. FILES THAT WILL BE MODIFIED / ADDED
+--------------------------------------------------------------------------------
+
+  NEW:
+    prisma/shared/import-sessions.prisma  (or prisma/imports/)
+    prisma/migrations/YYYYMMDD_import_sessions/
+    prisma/enums.prisma                   (+ ImportType, ImportStatus)
+    src/modules/imports/**                (shared module)
+    src/modules/purchase/vendors/vendor-import.service.ts
+    src/modules/purchase/vendors/vendor-import.controller.ts
+    src/modules/inventory/item-master/item-import.service.ts
+    src/modules/inventory/item-master/item-import.controller.ts
+    src/modules/inventory/item-master/opening-stock-import.service.ts
+    package.json                          (+ exceljs, csv-parse)
+
+  MODIFY:
+    src/modules/purchase/vendors/vendors.module.ts
+    src/modules/inventory/item-master/items.module.ts
+    src/app.module.ts                     (ImportsModule if standalone)
+    prisma/organization/companies.prisma  (+ relation)
+
+
+10. VENDOR TEMPLATE COLUMNS (LOCKED FOR PHASE 2)
+--------------------------------------------------------------------------------
+
+  Required headers (exact, case-insensitive match):
+    Supplier Type
+    Name
+
+  Optional:
+    Email, Phone, Address, City, Country, Tax ID, Is Active
+
+  Supplier Type allowed values (exact):
+    RM Supplier
+    Component Supplier
+    Service Provider
+    Electrical Suppliers
+
+  NOT on template V1:
+    Vendor Code / Supplier Code (auto-generated)
+    Custom fields
+    companyId
+
+
+11. ITEM TEMPLATE COLUMNS (PHASE 3)
+--------------------------------------------------------------------------------
+
+  Required:
+    Description
+
+  Conditional required (MANUAL itemCodeMode):
+    Item Code
+
+  Optional (core):
+    Item Code, Item Type, Item Group, UOM Group, Barcode,
+    Unit Price, Manufacturer, Brand Name, Status, Is Active
+
+  NOT on template V1:
+    Warehouse / Qty (those belong to Opening Stock import)
+    Custom fields
+    categoryId / unitId
+
+
+12. OPENING STOCK TEMPLATE COLUMNS (PHASE 4)
+--------------------------------------------------------------------------------
+
+  Required:
+    Item Code
+    Warehouse Code
+    Quantity
+
+  Optional:
+    Bin Location   → maps to firstBinLocation (free text)
+
+  NOT on template V1:
+    Location ID (no master)
+    companyId
+
+
+================================================================================
+NEXT STEP
+================================================================================
+
+  Proceed to Phase 2 implementation:
+    Shared import session + parsers + Vendor import APIs
+
+  Opening Stock ledger / additive qty / MANUAL vendor codes deferred
+  unless product explicitly requests them before Phase 4.
+
+================================================================================
+END
+================================================================================

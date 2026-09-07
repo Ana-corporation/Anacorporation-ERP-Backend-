@@ -8,6 +8,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@/common/exceptions/business.exception';
+import { EntitlementService } from '@/modules/subscription/entitlements/entitlement.service';
 import { CompanyAccessContextRepository } from './company-access-context.repository';
 import {
   CompanyAccessContext,
@@ -20,7 +21,10 @@ const PHASE1_ACTION_SET = new Set<string>(PHASE1_PERMISSION_ACTIONS);
 export class CompanyAccessContextService {
   private readonly logger = new Logger(CompanyAccessContextService.name);
 
-  constructor(private readonly repository: CompanyAccessContextRepository) {}
+  constructor(
+    private readonly repository: CompanyAccessContextRepository,
+    private readonly entitlementService: EntitlementService,
+  ) {}
 
   async buildCompanyAccessContext(
     userId: string,
@@ -43,13 +47,13 @@ export class CompanyAccessContextService {
       );
     }
 
-    const [companies, subscription, primaryRole, roleCount, overrides] =
+    const [companies, primaryRole, roleCount, overrides, entitlements] =
       await Promise.all([
         this.repository.findUserCompanies(userId),
-        this.repository.findActiveSubscription(companyId),
         this.repository.findPrimaryUserRole(userId, companyId),
         this.repository.countActiveUserRoles(userId, companyId),
         this.repository.findUserModuleAccess(userId, companyId),
+        this.entitlementService.getEffectiveEntitlements(companyId),
       ]);
 
     if (roleCount > 1) {
@@ -58,12 +62,8 @@ export class CompanyAccessContextService {
       );
     }
 
-    const entitled = await this.resolveEntitledModuleIds(companyId, subscription?.planId);
     const modules = await this.buildModuleSnapshot({
-      userId,
-      companyId,
-      entitledModuleIds: entitled.moduleIds,
-      companyModuleActiveById: entitled.activeByModuleId,
+      entitlements,
       roleId: primaryRole?.roleId,
       overrides,
     });
@@ -100,81 +100,27 @@ export class CompanyAccessContextService {
             }
           : null,
         subscription: {
-          status: subscription?.status ?? 'none',
-          planCode: subscription?.plan.planCode ?? null,
-          planName: subscription?.plan.name ?? null,
-          startDate: subscription?.startDate
-            ? subscription.startDate.toISOString().slice(0, 10)
-            : null,
-          endDate: subscription?.endDate
-            ? subscription.endDate.toISOString().slice(0, 10)
-            : null,
-          isCustom: entitled.isCustom,
+          status: entitlements.subscription.status,
+          planCode: entitlements.subscription.planCode,
+          planName: entitlements.subscription.planName,
+          startDate: entitlements.subscription.startDate,
+          endDate: entitlements.subscription.endDate,
+          isCustom: entitlements.isCustom,
+          autoRenew: entitlements.subscription.autoRenew,
+          cancelAtPeriodEnd: entitlements.subscription.cancelAtPeriodEnd,
+          isValid: entitlements.subscription.isValid,
         },
         modules,
       },
     };
   }
 
-  private async resolveEntitledModuleIds(
-    companyId: string,
-    planId?: bigint,
-  ): Promise<{
-    moduleIds: bigint[];
-    activeByModuleId: Map<string, boolean>;
-    isCustom: boolean;
-  }> {
-    const activeByModuleId = new Map<string, boolean>();
-
-    if (!planId) {
-      return { moduleIds: [], activeByModuleId, isCustom: false };
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const [planModules, companyModules] = await Promise.all([
-      this.repository.findPlanModuleIds(planId),
-      this.repository.findCompanyModules(companyId),
-    ]);
-
-    const planSet = new Set(planModules.map((row) => row.moduleId.toString()));
-    // Workspace entitlement requires an ACTIVE company_modules row (plan alone is not enough).
-    const entitled = new Set<string>();
-
-    for (const row of companyModules) {
-      const key = row.moduleId.toString();
-      const notExpired = !row.expiryDate || row.expiryDate >= today;
-
-      if (row.isActive && notExpired) {
-        entitled.add(key);
-        activeByModuleId.set(key, true);
-      } else {
-        activeByModuleId.set(key, false);
-      }
-    }
-
-    const isCustom =
-      companyModules.length > 0 &&
-      (companyModules.some((row) => !planSet.has(row.moduleId.toString())) ||
-        companyModules.some((row) => !row.isActive));
-
-    return {
-      moduleIds: [...entitled].map((id) => BigInt(id)),
-      activeByModuleId,
-      isCustom,
-    };
-  }
-
   private async buildModuleSnapshot(params: {
-    userId: string;
-    companyId: string;
-    entitledModuleIds: bigint[];
-    companyModuleActiveById: Map<string, boolean>;
+    entitlements: Awaited<ReturnType<EntitlementService['getEffectiveEntitlements']>>;
     roleId?: bigint;
     overrides: Awaited<ReturnType<CompanyAccessContextRepository['findUserModuleAccess']>>;
   }): Promise<CompanyAccessModuleSummary[]> {
-    const { entitledModuleIds, companyModuleActiveById, roleId, overrides } = params;
+    const { entitlements, roleId, overrides } = params;
 
     const permissionsByModuleId = new Map<string, Phase1PermissionAction[]>();
     let supplyChainEntitledByRole: string | null = null;
@@ -205,7 +151,7 @@ export class CompanyAccessContextService {
 
     const grantModuleIds = overrides
       .filter((row) => row.accessType === 'grant' && row.module.moduleType === 'product')
-      .map((row) => row.moduleId);
+      .map((row) => row.moduleId.toString());
 
     const denyModuleIds = new Set(
       overrides
@@ -213,51 +159,43 @@ export class CompanyAccessContextService {
         .map((row) => row.moduleId.toString()),
     );
 
-    // Resource-level vendors:/items: grants imply supply-chain workspace access.
     if (supplyChainEntitledByRole) {
       denyModuleIds.delete(supplyChainEntitledByRole);
     }
 
-    const moduleIdSet = new Set(entitledModuleIds.map((id) => id.toString()));
-    for (const id of grantModuleIds) {
-      moduleIdSet.add(id.toString());
-    }
-    for (const denied of denyModuleIds) {
-      moduleIdSet.delete(denied);
-    }
+    return entitlements.modules
+      .filter((mod) => mod.entitled)
+      .flatMap((mod): CompanyAccessModuleSummary[] => {
+        const key = mod.moduleId;
+        const perms = [...(permissionsByModuleId.get(key) ?? [])];
 
-    const moduleIds = [...moduleIdSet].map((id) => BigInt(id));
-    const productModules = await this.repository.findProductModules(moduleIds);
+        if (grantModuleIds.includes(key) && !perms.includes('view')) {
+          perms.push('view');
+        }
+        if (denyModuleIds.has(key) && !supplyChainEntitledByRole) {
+          return [];
+        }
 
-    for (const row of overrides) {
-      if (row.accessType !== 'grant' || row.module.moduleType !== 'product') continue;
-      const key = row.moduleId.toString();
-      if (!permissionsByModuleId.has(key)) {
-        permissionsByModuleId.set(key, ['view']);
-      }
-    }
+        if (perms.length === 0) return [];
 
-    return productModules
-      .filter((mod) => {
-        const key = mod.moduleId.toString();
-        if (companyModuleActiveById.get(key) !== true) return false;
-        const perms = permissionsByModuleId.get(key) ?? [];
-        return perms.includes('view') || perms.length > 0;
-      })
-      .map((mod) => {
-        const key = mod.moduleId.toString();
-        return {
-          moduleId: Number(mod.moduleId),
-          moduleCode: mod.moduleCode,
-          moduleName: mod.moduleName,
-          isActive: true,
-          lifecycleStatus: mod.lifecycleStatus ?? null,
-          permissions: permissionsByModuleId.get(key) ?? [],
-        };
+        const effectiveAccess = mod.effectiveAccess && entitlements.subscription.isValid;
+
+        return [
+          {
+            moduleId: Number(mod.moduleId),
+            moduleCode: mod.code,
+            moduleName: mod.name,
+            entitled: mod.entitled,
+            enabled: mod.enabled,
+            effectiveAccess,
+            isActive: effectiveAccess,
+            lifecycleStatus: mod.lifecycleStatus,
+            permissions: perms,
+          },
+        ];
       });
   }
 
-  /** Map resource codes (vendors:view) and legacy supply-chain:* to Phase-1 actions. */
   private resolveProductModuleAction(
     permissionCode: string,
     action: string,

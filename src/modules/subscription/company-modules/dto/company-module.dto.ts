@@ -10,6 +10,7 @@ export const CreateCompanyModuleSchema = z.object({
 });
 
 export const UpdateCompanyModuleSchema = z.object({
+  enabled: z.boolean().optional(),
   isActive: z.boolean().optional(),
   activatedDate: z.string().date().optional(),
   expiryDate: z.string().date().optional().nullable(),

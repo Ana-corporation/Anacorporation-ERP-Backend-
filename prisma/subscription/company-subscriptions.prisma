@@ -9,6 +9,8 @@ model CompanySubscription {
   billingCycle          BillingCycle       @default(monthly) @map("billing_cycle")
   amount                Decimal            @default(0) @db.Decimal(12, 2)
   autoRenew             Boolean            @default(true) @map("auto_renew")
+  cancelAtPeriodEnd     Boolean            @default(false) @map("cancel_at_period_end")
+  cancelledAt           DateTime?          @map("cancelled_at")
   status                SubscriptionStatus @default(pending)
   createdBy             BigInt?            @map("created_by")
   createdAt             DateTime           @default(now()) @map("created_at")

@@ -1,0 +1,246 @@
+================================================================================
+FE HANDOFF — Company Admin invite, login credentials, resend
+Date:       2026-09-02
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Related:    FE feed COMPANY ADMIN INVITE & LOGIN CREDENTIALS (2026-09-02)
+            docs/FE-HANDOFF-PLATFORM-OWNER-CREATE-COMPANY-PHASE1.txt
+================================================================================
+
+
+PRODUCT ANSWERS (Q1–Q3)
+--------------------------------------------------------------------------------
+
+  Q1  inviteStatus
+      pending   = never logged in (temp password still valid)
+      accepted  = at least one successful login
+      expired   = never logged in AND temp password TTL elapsed
+      Do NOT treat membership.status=active as "accepted".
+
+  Q2  Temp password TTL
+      Still 24h (config auth.tempPasswordTtlHours).
+      Invite / resend now also return:
+        passwordExpiresAt      ISO string | null
+        tempPasswordTtlHours   number
+
+  Q3  username
+      NOT a login identifier. Login remains:
+        companyCode + employeeCode (membership.employeeId) + password
+
+
+APPLY ON BE
+--------------------------------------------------------------------------------
+
+  Stop Nest → npm install → npx prisma generate → npx prisma migrate deploy
+  (migration 20260902120000_admin_employee_id_and_primary)
+
+
+UNCHANGED (KEEP CALLING)
+--------------------------------------------------------------------------------
+
+  POST /api/v1/companies/{companyId}/users/invite
+  GET  /api/v1/companies/{companyId}/users?roleCode=ADMIN   (fallback still valid)
+  POST /api/v1/auth/login
+  POST /api/v1/auth/change-password
+
+  Invite request shape unchanged. personType EXTERNAL is already on DTO.
+
+
+P0 — WIRE THESE NOW
+================================================================================
+
+1) RESEND INVITE (preferred path — Option A)
+--------------------------------------------------------------------------------
+
+  POST /api/v1/companies/{companyId}/users/{userId}/resend-invite
+  Perm: users:create
+        (platform_companies:edit ALREADY aliases users:create — OWNER001 works)
+
+  Body (optional):
+  { "sendInviteEmail": true }
+
+  Empty body is OK.
+
+  200 data:
+  {
+    "user": { ...same list/invite user object... },
+    "temporaryPassword": "NewTemp9xYz!",
+    "employeeId": "ADMIN001",
+    "companyCode": "ARUN_PD",
+    "passwordExpiresAt": "2026-09-03T...",
+    "tempPasswordTtlHours": 24
+  }
+
+  Errors:
+    404  not a member of this company
+    409  User is suspended and cannot reset password
+    403  missing permission
+
+  Behavior:
+    - New hash stored; previous temp password stops working
+    - mustChangePassword = true
+    - Sessions/refresh tokens cleared
+    - If employeeId was null, BE assigns ADMIN001 / ADMIN002 / ...
+    - Email still STUBBED (no mail sent). Always show temporaryPassword in UI.
+
+  Legacy alias (same behavior, same perm):
+    POST /api/v1/companies/{companyId}/users/{userId}/reissue-temp-password
+
+  FE: add Resend on Company Admins row. Show credentials panel (copy once).
+      Do not persist the password after the dialog closes.
+
+
+2) EMPLOYEE CODE BACKFILL
+--------------------------------------------------------------------------------
+
+  Migration assigns ADMIN001+ to existing ADMIN memberships with null employeeId.
+  After migrate deploy, list should no longer show "—" for those admins.
+
+  Unique per company: (companyId, employeeId) when employeeId is not null.
+
+
+3) SEQUENTIAL ADMIN CODES ON INVITE
+--------------------------------------------------------------------------------
+
+  ADMIN invite, omit employeeId:
+    1st → ADMIN001, 2nd → ADMIN002, ...
+
+  Non-ADMIN invite, omit employeeId:
+    USER001, USER002, ...
+
+  Explicit employeeId already taken → 409
+    message: "Employee code already exists in this company"
+    errors: [{ "field": "employeeId", "message": "Duplicate employee code" }]
+
+  First ADMIN in a company with no primary → isPrimaryAdmin=true
+
+
+P1 — COMPANY ADMINS TAB
+================================================================================
+
+4) LIST ADMINS (fixes 404 on GET /companies/:id/admins)
+--------------------------------------------------------------------------------
+
+  GET /api/v1/companies/{companyId}/admins
+  Perm: users:view  (platform_companies:view aliases this)
+
+  Same paginated envelope as users list:
+  {
+    "items": [ user objects ],
+    "total", "page", "limit", "totalPages"
+  }
+
+  Filter: roleCode ADMIN only.
+
+  Also still works:
+    GET /api/v1/companies/{companyId}/users/admins
+    GET /api/v1/companies/{companyId}/users?roleCode=ADMIN
+
+  Prefer GET /companies/{id}/admins in users-api.ts.
+
+
+5) CHANGE PRIMARY ADMIN
+--------------------------------------------------------------------------------
+
+  PATCH /api/v1/companies/{companyId}/admins/primary
+  Perm: users:edit  (platform_companies:edit aliases this)
+
+  { "userId": "123" }
+
+  Target must be ADMIN member. Clears previous primary; sets this one.
+
+  200: updated user object (isPrimaryAdmin=true).
+
+  GET /companies/{id} already returns:
+    primaryAdminName, primaryAdminEmail
+    userCount, activeUserCount, pendingInviteCount, userLimit
+  After PATCH primary, refetch company summary for Overview tab.
+
+
+6) LIST USER OBJECT — FIELDS TO BIND
+--------------------------------------------------------------------------------
+
+  userId, username, firstName, lastName, email, displayName, isActive
+  lastLoginAt          ISO | null   (user_authentication.last_successful_login)
+  inviteStatus         pending | accepted | expired
+  isPrimaryAdmin       boolean
+
+  membership: {
+    userCompanyId, employeeId, status, isDefault,
+    departmentId, designationId, branchId, warehouseId
+  }
+
+  role: { roleId, roleCode, roleName }
+
+  Table:
+    Employee code  ← membership.employeeId
+    Invite         ← inviteStatus  (not membership.status)
+    Last login     ← lastLoginAt
+    Primary badge  ← isPrimaryAdmin
+
+
+INVITE RESPONSE (ENRICHED, BACKWARD COMPATIBLE)
+--------------------------------------------------------------------------------
+
+  {
+    "user": { ... },
+    "temporaryPassword": "Abc12xyz!" | null,   // null if existing user attached
+    "employeeId": "ADMIN001",
+    "companyCode": "ARUN_PD",
+    "passwordExpiresAt": "...",
+    "tempPasswordTtlHours": 24
+  }
+
+  Login:
+    POST /auth/login
+    { "companyCode", "employeeCode": employeeId, "password": temporaryPassword }
+
+  Username is NOT used at login.
+
+
+PERMISSIONS (NO NEW CODES)
+--------------------------------------------------------------------------------
+
+  users:view    ← also satisfied by platform_companies:view
+  users:create  ← also satisfied by platform_companies:edit   (invite + resend)
+  users:edit    ← also satisfied by platform_companies:edit   (set primary)
+
+  Do NOT require platform_companies:create (does not exist).
+
+
+NOT IN THIS DROP (P2)
+--------------------------------------------------------------------------------
+
+  Real invite email (sendInviteEmail still stubs; credentials only in JSON)
+  Separate tenant-admin reset-password path (use resend-invite for both PO and tenant)
+
+
+FE CHECKLIST
+--------------------------------------------------------------------------------
+
+  [ ] After invite: show companyCode + employeeId + temporaryPassword + copy
+  [ ] Resend button → POST .../users/{userId}/resend-invite
+  [ ] Company Admins list → GET .../admins
+  [ ] Bind inviteStatus + lastLoginAt + membership.employeeId + isPrimaryAdmin
+  [ ] Set primary → PATCH .../admins/primary then refetch GET /companies/{id}
+  [ ] Duplicate employeeId → show 409 field error
+  [ ] Do not store temp password after dialog close
+
+
+QA
+--------------------------------------------------------------------------------
+
+  T1  First ADMIN invite, no employeeId → ADMIN001 + temporaryPassword
+  T2  Second ADMIN same company → ADMIN002
+  T3  Re-invite same email same company → 409
+  T4  resend-invite → new password; old password fails login
+  T5  login companyCode + ADMIN001 + new temp → mustChangePassword true
+  T6  change-password then login again → mustChangePassword false
+  T7  GET users?roleCode=ADMIN → every item has membership.employeeId
+  T8  GET /companies/{id}/admins → ADMIN only, same fields
+  T9  After migrate, previously blank employee codes filled
+  T10 OWNER001 with platform_companies:edit, no extra users:create grant → resend 200
+
+================================================================================
+END
+================================================================================
