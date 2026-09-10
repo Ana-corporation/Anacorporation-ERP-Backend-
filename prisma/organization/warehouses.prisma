@@ -1,27 +1,31 @@
-// organization | warehouses
+// organization | warehouses (Inventory Locations)
 
 model Warehouse {
-  warehouseId   BigInt    @id @default(autoincrement()) @map("warehouse_id")
-  companyId     BigInt    @map("company_id")
-  branchId      BigInt?   @map("branch_id")
-  warehouseCode String    @map("warehouse_code") @db.VarChar(30)
-  name          String    @db.VarChar(150)
-  address       String?   @db.VarChar(255)
-  isActive      Boolean   @default(true) @map("is_active")
-  createdBy     BigInt?   @map("created_by")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedBy     BigInt?   @map("updated_by")
-  updatedAt     DateTime? @map("updated_at")
-  deletedBy     BigInt?   @map("deleted_by")
-  deletedAt     DateTime? @map("deleted_at")
-  rowVersion    Int       @default(1) @map("row_version")
+  warehouseId    BigInt                 @id @default(autoincrement()) @map("warehouse_id")
+  companyId      BigInt                 @map("company_id")
+  branchId       BigInt?                @map("branch_id")
+  warehouseCode  String                 @map("warehouse_code") @db.VarChar(30)
+  name           String                 @db.VarChar(150)
+  address        String?                @db.VarChar(255)
+  locationType   WarehouseLocationType  @default(Store) @map("location_type")
+  binManagement  Boolean                @default(false) @map("bin_management")
+  isDefault      Boolean                @default(false) @map("is_default")
+  isActive       Boolean                @default(true) @map("is_active")
+  createdBy      BigInt?                @map("created_by")
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedBy      BigInt?                @map("updated_by")
+  updatedAt      DateTime?              @map("updated_at")
+  deletedBy      BigInt?                @map("deleted_by")
+  deletedAt      DateTime?              @map("deleted_at")
+  rowVersion     Int                    @default(1) @map("row_version")
 
-  company              Company          @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
-  branch               Branch?          @relation(fields: [branchId], references: [branchId])
-  userCompanies        UserCompany[]
-  userPreferences      UserPreference[]
-  itemStock            ItemWarehouseStock[]
+  company                    Company                       @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  branch                     Branch?                       @relation(fields: [branchId], references: [branchId])
+  userCompanies              UserCompany[]
+  userPreferences            UserPreference[]
+  itemStock                  ItemWarehouseStock[]
   dataAccessPolicyWarehouses DataAccessPolicyWarehouse[]
+  storageBins                StorageBin[]
 
   @@unique([companyId, warehouseCode])
   @@index([companyId])

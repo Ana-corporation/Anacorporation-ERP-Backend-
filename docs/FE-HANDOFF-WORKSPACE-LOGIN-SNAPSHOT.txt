@@ -1,0 +1,101 @@
+================================================================================
+FE HANDOFF — COMPANY ADMIN WORKSPACE AFTER LOGIN
+Date:       2026-09-09
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base:       /api/v1
+File:       docs/FE-HANDOFF-WORKSPACE-LOGIN-SNAPSHOT.txt
+================================================================================
+
+
+1) PROBLEM (FIXED ON BE)
+--------------------------------------------------------------------------------
+
+  Symptom:
+    Roles shows ADMIN + ~40 permissions
+    Modules shows Supply Chain enabled
+    Workspace still shows:
+      "server returned no role, modules, or permissions"
+      "No modules are enabled for this company yet"
+
+  Cause:
+    Workspace does NOT use the Modules page API.
+    Workspace only trusts LOGIN SNAPSHOT:
+
+      POST /auth/login
+      GET  /auth/me
+
+    Those must return ALL three:
+      1. activeCompany.role          (ADMIN)
+      2. activeCompany.modules[]     (enabled product modules)
+      3. permissions[]               (flat codes, non-empty)
+
+
+2) BE STATUS — DONE
+--------------------------------------------------------------------------------
+
+  [x] ADMIN role gets setup pack (org + roles + users + company_modules)
+  [x] ADMIN also gets product workspace perms (vendors:*/items:* + module actions)
+  [x] Login /me fills modules[] for Company ADMIN on entitled products
+  [x] Existing companies synced: npm run seed:org-permissions (BE repo)
+  [x] New companies: pack attached on company create + login backfill
+
+
+3) FE — WHAT TO DO
+--------------------------------------------------------------------------------
+
+  No FE product-rule change.
+
+  After BE deploy + seed (if needed):
+
+    1. Full logout
+    2. Login as Company Admin
+    3. Workspace yellow warning should be GONE
+    4. Supply Chain (or other entitled+enabled modules) should appear
+
+  If warning remains → check Network (below). Do NOT invent role/modules
+  in FE if BE omits them.
+
+
+4) QA CHECKLIST (NETWORK TAB)
+--------------------------------------------------------------------------------
+
+  POST /auth/login  AND  GET /auth/me
+
+  [ ] activeCompany.role.roleCode = "ADMIN"
+        OR systemTemplateKey = "ADMIN"
+  [ ] permissions.length > 0
+        (includes branches:*, roles:*, users:*, company_modules:*, vendors:*, …)
+  [ ] activeCompany.modules.length > 0
+        (e.g. supply-chain when entitled + enabled + subscription valid)
+
+  If ANY empty → still a BE/env issue (wrong DB, API not restarted, seed not run).
+  If ALL present but UI still warns → FE session merge bug.
+
+
+5) OPS (BE ONLY — NOT FE)
+--------------------------------------------------------------------------------
+
+  In ERP-Backend folder (same DB the FE API uses):
+
+    npm run seed:org-permissions
+
+  Expect:
+    Synced … ADMIN setup+product permissions to … ADMIN role(s)
+
+  Then restart API if needed → Admin logout → login.
+
+
+6) REMEMBER
+--------------------------------------------------------------------------------
+
+  Modules page ON  ≠  login modules[] filled   (before this BE fix)
+  After this BE fix: both should align for Company ADMIN.
+
+  New company after this ship: no manual seed required for that company.
+  Old companies: seed once (already done on shared GCP test DB).
+
+
+================================================================================
+END — single handoff for this Workspace/login issue
+================================================================================

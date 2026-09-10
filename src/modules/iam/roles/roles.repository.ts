@@ -123,7 +123,7 @@ export class RolesRepository {
     });
   }
 
-  create(companyId: string, dto: CreateRoleDto, createdBy?: string) {
+  create(companyId: string, dto: CreateRoleDto & { roleCode: string }, createdBy?: string) {
     return this.prisma.role.create({
       data: {
         companyId: parseBigIntId(companyId),
@@ -235,7 +235,7 @@ export class RolesRepository {
   async cloneRole(
     sourceRoleId: string,
     companyId: string,
-    dto: CloneRoleDto,
+    dto: CloneRoleDto & { roleCode: string },
     createdBy?: string,
   ) {
     const source = await this.findById(sourceRoleId, companyId);

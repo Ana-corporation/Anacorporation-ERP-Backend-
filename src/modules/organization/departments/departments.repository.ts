@@ -59,7 +59,7 @@ export class DepartmentsRepository {
     });
   }
 
-  create(companyId: string, dto: CreateDepartmentDto, createdBy?: string) {
+  create(companyId: string, dto: CreateDepartmentDto & { departmentCode: string }, createdBy?: string) {
     return this.prisma.department.create({
       data: {
         companyId: parseBigIntId(companyId),

@@ -1,0 +1,99 @@
+================================================================================
+FE HANDOFF — AUTO-GENERATE roleCode ON CUSTOM ROLE CREATE
+Date:       2026-09-09
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base path:  /api/v1
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  [x] roleCode optional on POST create (omit / null / "")
+  [x] Auto-generated from roleName when omitted (unique per company)
+  [x] Explicit roleCode still accepted (normalized + uniqueness + reserved check)
+  [x] roleCode immutable on PATCH (UpdateRoleSchema has no roleCode)
+  [x] Clone: roleCode optional; auto from roleName (or uniqueness from source)
+  [x] Max length 40; charset A-Z 0-9 underscore
+
+
+CREATE
+--------------------------------------------------------------------------------
+
+  POST /companies/{companyId}/roles
+
+  Preferred body:
+
+    {
+      "roleName": "Purchase Approver",
+      "description": "optional"
+    }
+
+  Also OK:
+
+    {
+      "roleCode": "PURCHASE_APPROVER",
+      "roleName": "Purchase Approver"
+    }
+
+  Response always includes final roleCode, e.g.:
+
+    {
+      "roleId": "…",
+      "roleCode": "PURCHASE_APPROVER",
+      "roleName": "Purchase Approver",
+      "roleType": "CUSTOM",
+      "status": "ACTIVE"
+    }
+
+
+GENERATION RULES
+--------------------------------------------------------------------------------
+
+  From roleName "Purchase Approver":
+    → PURCHASE_APPROVER
+
+  If taken:
+    → PURCHASE_APPROVER_2, _3, …
+
+  Empty normalize fallback: ROLE
+  Max length: 40 (DB VarChar(40))
+  Charset: A-Z, 0-9, underscore
+
+
+ERRORS
+--------------------------------------------------------------------------------
+
+  Duplicate explicit code:
+    Conflict + code ROLE_CODE_EXISTS
+    "Role code already exists in this company"
+
+  Reserved system code (ADMIN, MANAGER, STAFF, …):
+    400 + code ROLE_CODE_RESERVED
+    "Role code ADMIN is reserved"
+
+  Missing roleName:
+    400 validation
+
+
+CLONE
+--------------------------------------------------------------------------------
+
+  POST /companies/{companyId}/roles/{roleId}/clone
+
+  roleCode optional — same rules as create.
+  If omitted, generated from clone roleName (unique).
+
+
+FE FOLLOW-UP
+--------------------------------------------------------------------------------
+
+  - Hide / optional Role code on Create (name + description only)
+  - Show returned roleCode on success / role card
+  - Edit: keep roleCode read-only
+
+
+================================================================================
+END
+================================================================================

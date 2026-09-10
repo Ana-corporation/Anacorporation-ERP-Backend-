@@ -41,10 +41,10 @@ export const SYSTEM_ROLE_TEMPLATES: SystemRoleTemplate[] = [
     templateKey: 'ADMIN',
     defaultRoleCode: 'ADMIN',
     defaultRoleName: 'Administrator',
-    description: 'Company administrator',
+    description: 'Company administrator — includes org, roles, users, module settings',
     requiredModules: [],
     scope: 'company',
-    templateVersion: 2,
+    templateVersion: 5,
   },
   {
     templateKey: 'MANAGER',

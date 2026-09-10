@@ -50,33 +50,81 @@ export class WarehousesRepository {
     });
   }
 
-  create(companyId: string, dto: CreateWarehouseDto, createdBy?: string) {
-    return this.prisma.warehouse.create({
-      data: {
-        companyId: parseBigIntId(companyId),
-        warehouseCode: dto.warehouseCode.trim().toUpperCase(),
-        name: dto.name.trim(),
-        branchId: dto.branchId ? parseBigIntId(dto.branchId) : undefined,
-        address: dto.address,
-        isActive: dto.isActive ?? true,
-        createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
+  countActiveBins(warehouseId: string) {
+    return this.prisma.storageBin.count({
+      where: {
+        warehouseId: parseBigIntId(warehouseId),
+        deletedAt: null,
+        isActive: true,
       },
     });
   }
 
-  update(id: string, dto: UpdateWarehouseDto, updatedBy?: string) {
-    return this.prisma.warehouse.update({
-      where: { warehouseId: parseBigIntId(id) },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(dto.branchId !== undefined
-          ? { branchId: dto.branchId === null ? null : parseBigIntId(dto.branchId) }
-          : {}),
-        ...(dto.address !== undefined ? { address: dto.address } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-        updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
-        updatedAt: new Date(),
+  countBins(warehouseId: string) {
+    return this.prisma.storageBin.count({
+      where: {
+        warehouseId: parseBigIntId(warehouseId),
+        deletedAt: null,
       },
+    });
+  }
+
+  create(companyId: string, dto: CreateWarehouseDto & { warehouseCode: string }, createdBy?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.isDefault) {
+        await tx.warehouse.updateMany({
+          where: { companyId: parseBigIntId(companyId), deletedAt: null, isDefault: true },
+          data: { isDefault: false, updatedAt: new Date() },
+        });
+      }
+
+      return tx.warehouse.create({
+        data: {
+          companyId: parseBigIntId(companyId),
+          warehouseCode: dto.warehouseCode.trim().toUpperCase(),
+          name: dto.name.trim(),
+          branchId: parseBigIntId(dto.branchId),
+          address: dto.address,
+          locationType: dto.locationType ?? 'Store',
+          binManagement: dto.binManagement ?? false,
+          isDefault: dto.isDefault ?? false,
+          isActive: dto.isActive ?? true,
+          createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
+        },
+      });
+    });
+  }
+
+  update(id: string, companyId: string, dto: UpdateWarehouseDto, updatedBy?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.isDefault === true) {
+        await tx.warehouse.updateMany({
+          where: {
+            companyId: parseBigIntId(companyId),
+            deletedAt: null,
+            isDefault: true,
+            NOT: { warehouseId: parseBigIntId(id) },
+          },
+          data: { isDefault: false, updatedAt: new Date() },
+        });
+      }
+
+      return tx.warehouse.update({
+        where: { warehouseId: parseBigIntId(id) },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+          ...(dto.branchId !== undefined
+            ? { branchId: dto.branchId === null ? null : parseBigIntId(dto.branchId) }
+            : {}),
+          ...(dto.address !== undefined ? { address: dto.address } : {}),
+          ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+          ...(dto.locationType !== undefined ? { locationType: dto.locationType } : {}),
+          ...(dto.binManagement !== undefined ? { binManagement: dto.binManagement } : {}),
+          ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {}),
+          updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
+          updatedAt: new Date(),
+        },
+      });
     });
   }
 
@@ -87,6 +135,7 @@ export class WarehousesRepository {
         deletedAt: new Date(),
         deletedBy: deletedBy ? parseBigIntId(deletedBy) : undefined,
         isActive: false,
+        isDefault: false,
       },
     });
   }

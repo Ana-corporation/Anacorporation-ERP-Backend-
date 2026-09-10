@@ -36,6 +36,7 @@ model Company {
   departments         Department[]
   designations        Designation[]
   warehouses          Warehouse[]
+  storageBins         StorageBin[]
   employees           Employee[]
   vendors             Vendor[]
   items               Item[]

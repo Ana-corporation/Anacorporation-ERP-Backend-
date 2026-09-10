@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { optionalOrgCodeSchema } from '@/common/zod/org-code.schema';
 
 export const CreateDesignationSchema = z.object({
-  designationCode: z.string().min(1).max(30),
+  designationCode: optionalOrgCodeSchema,
   name: z.string().min(1).max(150),
   gradeLevel: z.coerce.number().int().min(1).max(99).optional(),
   isActive: z.boolean().optional().default(true),

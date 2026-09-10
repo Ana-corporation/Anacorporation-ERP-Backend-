@@ -3,6 +3,7 @@ import { UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { parseBigIntId } from '@/common/utils/bigint.util';
+import { COMPANY_ADMIN_SETUP_PERMISSION_CODES } from '@/common/constants/permissions.constant';
 import {
   SystemRoleTemplate,
   resolveCompanySystemTemplates,
@@ -21,6 +22,7 @@ export class SystemRoleProvisioningService {
    * Create missing SYSTEM role rows for a company from the product template registry.
    * Idempotent: skips existing (companyId, roleCode) or (companyId, systemTemplateKey).
    * Never provisions PLATFORM_OWNER into customer companies.
+   * ADMIN always gets org structure permission pack (branches/departments/designations/warehouses).
    */
   async provisionForCompany(params: {
     companyId: string;
@@ -53,6 +55,10 @@ export class SystemRoleProvisioningService {
         });
       } else {
         skipped.push(template.templateKey);
+      }
+
+      if (template.templateKey === 'ADMIN') {
+        await this.ensureAdminSetupPermissions(result.roleId);
       }
     }
 
@@ -98,6 +104,36 @@ export class SystemRoleProvisioningService {
         deletedAt: null,
       },
       orderBy: { roleId: 'asc' },
+    });
+  }
+
+  /**
+   * Attach Company Setup + product workspace rights to ADMIN.
+   * Setup pack alone is not enough for login modules[] (needs vendors/items product codes).
+   * Idempotent (skipDuplicates).
+   */
+  private async ensureAdminSetupPermissions(roleId: bigint) {
+    const permissions = await this.prisma.permission.findMany({
+      where: {
+        permissionCode: { in: [...COMPANY_ADMIN_SETUP_PERMISSION_CODES] },
+      },
+      select: { permissionId: true, moduleId: true },
+    });
+    if (permissions.length === 0) {
+      this.logger.warn(
+        `ADMIN setup permissions missing from catalog (role ${roleId}) — will rely on login seed/backfill`,
+      );
+      return;
+    }
+
+    await this.prisma.rolePermission.createMany({
+      data: permissions.map((permission) => ({
+        roleId,
+        moduleId: permission.moduleId,
+        permissionId: permission.permissionId,
+        isAllowed: true,
+      })),
+      skipDuplicates: true,
     });
   }
 

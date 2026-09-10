@@ -1,0 +1,208 @@
+================================================================================
+DESIGN NOTE — OVERRIDE EXPIRY PRESETS (NOT IMPLEMENTED YET)
+Date:       2026-09-08
+Audience:   FE + BE (discussion / future work)
+Status:     PROPOSAL ONLY — do not build until approved
+Related:    Commercial module override (GRANT / REVOKE)
+================================================================================
+
+
+GOAL
+--------------------------------------------------------------------------------
+
+  Make it easy for Platform Owner to set how long a GRANT/REVOKE lasts
+  without typing a calendar date every time.
+
+  Presets (suggested):
+    - No expiry (lifetime / forever)
+    - 6 months
+    - 1 year
+    - 3 years
+    - 5 years
+    - 10 years
+    - Custom date (optional advanced)
+
+
+================================================================================
+1) CURRENT BEHAVIOR (TODAY — ALREADY LIVE)
+--------------------------------------------------------------------------------
+
+  Override create payload roughly:
+
+    {
+      "moduleId": "...",
+      "action": "GRANT" | "REVOKE",
+      "reason": "...",
+      "expiresAt": "YYYY-MM-DD" | null   // optional
+    }
+
+  - expiresAt omitted / null  → override never auto-ends (BE keeps it active)
+  - expiresAt set             → BE stops applying after that date
+
+  FREE company lifetime subscription is SEPARATE:
+    company subscription endDate = null  → plan forever
+    override expiry                 → only for GRANT/REVOKE exceptions
+
+
+================================================================================
+2) PROPOSED UX FLOW (PLATFORM OWNER)
+--------------------------------------------------------------------------------
+
+  Screen: Commercial module override (existing modal)
+
+  Step A — Choose Module (AVAILABLE catalogue only)
+  Step B — Choose Action (GRANT / REVOKE)
+  Step C — Choose Duration (NEW)
+
+       Duration options:
+         [ ] No expiry (lifetime)
+         [ ] 6 months
+         [ ] 1 year
+         [ ] 3 years
+         [ ] 5 years
+         [ ] 10 years
+         [ ] Custom date…   → show date picker
+
+  Step D — Reason (required)
+  Step E — Save override
+
+  Defaults (recommended):
+    - Duration default = "No expiry (lifetime)" for GRANT on FREE companies
+    - Or default = "1 year" if PO prefers time-boxed grants (product decision)
+
+
+================================================================================
+3) HOW FE SHOULD COMPUTE expiresAt (NO BE CHANGE REQUIRED FOR V1)
+--------------------------------------------------------------------------------
+
+  FE-only approach (simplest — no API change):
+
+    today = company/local date (or UTC date — pick one and document)
+
+    duration → expiresAt:
+      No expiry     → omit expiresAt OR send null
+      6 months      → today + 6 months
+      1 year        → today + 1 year
+      3 years       → today + 3 years
+      5 years       → today + 5 years
+      10 years      → today + 10 years
+      Custom        → user-picked date
+
+  Then POST existing override API with computed expiresAt.
+
+  Pros: ship FE fast, BE already supports null + date
+  Cons: FE owns date math; timezone edge cases
+
+
+================================================================================
+4) OPTIONAL BE ENHANCEMENT (LATER — IF WANTED)
+--------------------------------------------------------------------------------
+
+  Accept a duration enum so FE does not compute dates:
+
+    POST .../module-overrides
+    {
+      "moduleId": "...",
+      "action": "GRANT",
+      "reason": "...",
+      "duration": "NONE" | "M6" | "Y1" | "Y3" | "Y5" | "Y10" | "CUSTOM",
+      "expiresAt": "YYYY-MM-DD"   // required only when duration=CUSTOM
+    }
+
+  BE maps:
+    NONE  → expiresAt = null
+    M6    → start/today + 6 months
+    Y1    → + 1 year
+    Y3    → + 3 years
+    Y5    → + 5 years
+    Y10   → + 10 years
+    CUSTOM → use expiresAt from body
+
+  Pros: single source of truth for date math
+  Cons: API + validation work
+
+
+================================================================================
+5) RELATIONSHIP TO FREE / LIFETIME PLAN
+--------------------------------------------------------------------------------
+
+  Company on FREE (subscription endDate = null):
+    - Supply Chain access comes from PLAN — no override needed
+    - If PO GRANTs another module later (when AVAILABLE):
+        → choose "No expiry" for lifetime grant
+        → or choose 6m / 1y / … for temporary grant
+
+  Do NOT confuse:
+    Plan lifetime     = subscription.endDate null
+    Override lifetime = override.expiresAt null
+
+
+================================================================================
+6) DISPLAY / LIST FLOW
+--------------------------------------------------------------------------------
+
+  Override list row should show:
+    Module | Action | Reason | Expires | Status
+
+  Expires column:
+    null        → "No expiry" / "Lifetime"
+    future date → show date + relative ("in 11 months")
+    past date   → "Expired" (inactive)
+
+  Edit flow:
+    Change duration → recompute expiresAt (or send duration enum to BE)
+
+
+================================================================================
+7) EDGE CASES
+--------------------------------------------------------------------------------
+
+  - REVOKE with expiry: after expiry, REVOKE stops → plan access returns
+  - GRANT with expiry: after expiry, GRANT stops → module falls back to plan
+  - Replacing override on same module: last write wins (or upsert — confirm BE)
+  - Company plan change (FREE → paid): overrides still apply until expired/deleted
+  - Module not AVAILABLE: cannot select (catalogue rule stays)
+
+
+================================================================================
+8) RECOMMENDED SHIP ORDER
+--------------------------------------------------------------------------------
+
+  Phase 1 (FE only — recommended first):
+    Add duration radio/select in modal
+    Map to expiresAt / null
+    Keep existing BE API
+
+  Phase 2 (optional BE):
+    Add duration enum on create/update
+    BE computes expiresAt
+    FE sends duration only
+
+  Phase 3 (nice):
+    Audit log shows "duration: 1 year"
+    Reminder job before expiry (email/notif) — out of scope now
+
+
+================================================================================
+9) DECISIONS NEEDED BEFORE BUILD
+--------------------------------------------------------------------------------
+
+  [ ] Default duration: No expiry vs 1 year?
+  [ ] Date basis: UTC date vs company timezone?
+  [ ] Month math: calendar months (Jan 31 + 1m → Feb 28) OK?
+  [ ] FE-only Phase 1 vs BE duration enum Phase 2 first?
+  [ ] Exact preset list: keep 6m / 1y / 3y / 5y / 10y?
+
+
+================================================================================
+10) OUT OF SCOPE (THIS NOTE)
+--------------------------------------------------------------------------------
+
+  - Implementing presets in code (explicitly NOT done)
+  - Payment / billing periods
+  - Changing FREE plan endDate behavior
+
+
+================================================================================
+END — Proposal only; confirm decisions then FE Phase 1 or BE Phase 2
+================================================================================

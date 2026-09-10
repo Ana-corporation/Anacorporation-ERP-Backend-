@@ -1,0 +1,149 @@
+================================================================================
+SESSION SUMMARY — Merge development-anc → Testing-anc + GCP setup
+Date:       2026-09-07
+Repo:       Ana-corporation / Anacorporation-ERP-Backend-
+Local path: c:\ERP-Backend
+================================================================================
+
+
+WHAT WAS DONE (IN ORDER)
+--------------------------------------------------------------------------------
+
+1) PUSHED YOUR WORK TO development-anc
+   - Committed subscription entitlements, company admin invite, vendor bulk import
+   - Pushed to:
+     https://github.com/Ana-corporation/Anacorporation-ERP-Backend-/tree/development-anc
+   - Commit: 8ddd832
+
+
+2) MERGED development-anc INTO Testing-anc (GCP base)
+   - Fetched remote branch Testing-anc (co-dev GCP Cloud SQL branch)
+   - Checked out Testing-anc locally
+   - Merged ana/development-anc into Testing-anc
+   - Result: NO merge conflicts
+   - package.json kept BOTH:
+       - NestJS 11 + GCP scripts (from Testing)
+       - exceljs + csv-parse (from development / vendor import)
+   - Merge commit: 91690ba
+   - Pushed to:
+     https://github.com/Ana-corporation/Anacorporation-ERP-Backend-/tree/Testing-anc
+
+
+3) INSTALLED DEPENDENCIES + BUILD
+   - Ran: npm install --legacy-peer-deps
+   - Ran: prisma generate
+   - Ran: npm run build  → SUCCESS
+
+
+4) INSTALLED CO-DEV GCP .env
+   - Copied: c:\Users\swent\Downloads\env  →  c:\ERP-Backend\.env
+   - This .env uses GCP Cloud SQL (NOT Neon):
+       GCP_SQL_INSTANCE_CONNECTION_NAME = ...swenter-db-dev
+       GCP_SQL_USER / PASSWORD / DATABASE = swenter-dev
+       GCP_SQL_SCHEMA = Erp_test_db
+       GOOGLE_APPLICATION_CREDENTIALS = ./gcp-service-account.json
+   - App builds DATABASE_URL from GCP_SQL_* when proxy is running
+
+
+CURRENT LOCAL STATE
+--------------------------------------------------------------------------------
+
+  Branch:   Testing-anc  (tracks ana/Testing-anc)
+  Code:     GCP Cloud SQL wiring + your entitlement + vendor import features
+  Build:    OK
+  .env:     GCP Cloud SQL credentials installed
+  tmp/:     untracked (not pushed — ignore)
+
+
+WHAT IS INCLUDED IN Testing-anc NOW
+--------------------------------------------------------------------------------
+
+  From Testing-anc (co-dev):
+    [x] Switch from Neon → GCP Cloud SQL
+    [x] GCP_SQL_* env + Auth Proxy scripts
+    [x] Schema Erp_test_db
+    [x] NestJS 11 upgrade / package patches
+
+  From development-anc (your work):
+    [x] Subscription EntitlementService + overrides
+    [x] Company admin invite / employee codes / primary admin
+    [x] Vendor bulk import (validate / confirm / template)
+    [x] import_sessions migration
+    [x] Subscription expiry job
+    [x] FE handoff docs
+
+
+NOT DONE YET (BLOCKED — NEED FILES FROM CO-DEV)
+--------------------------------------------------------------------------------
+
+  prisma migrate deploy  →  NOT RUN YET
+  npm run start:dev      →  NOT CONNECTED TO GCP YET
+
+  Missing files:
+
+  1) gcp-service-account.json
+     Put in: c:\ERP-Backend\gcp-service-account.json
+     Needed for Cloud SQL Auth Proxy login
+
+  2) Cloud SQL Auth Proxy binary
+     Expected at: c:\ERP-Backend\.migrate-tmp\cloud-sql-proxy.exe
+     Or get from co-dev / Google Cloud SQL Auth Proxy install
+
+  Without these two, Nest cannot open a tunnel to GCP PostgreSQL.
+
+
+HOW TO FINISH CONNECTION (WHEN FILES ARRIVE)
+--------------------------------------------------------------------------------
+
+  Step A — Place files
+    c:\ERP-Backend\gcp-service-account.json
+    c:\ERP-Backend\.migrate-tmp\cloud-sql-proxy.exe   (if using project script)
+
+  Step B — Start proxy (keep terminal open)
+    cd c:\ERP-Backend
+    npm run db:proxy
+
+  Step C — Apply migrations on GCP DB
+    npx prisma migrate deploy
+
+  Step D — Start API
+    npm run start:dev
+
+  Health check:
+    http://localhost:3002/api/v1/health
+
+
+IMPORTANT RULES
+--------------------------------------------------------------------------------
+
+  [x] .env must NEVER be committed to GitHub
+  [x] gcp-service-account.json must NEVER be committed
+  [x] Testing-anc is the GCP testing branch
+  [x] development-anc remains your feature branch history
+  [ ] After GCP works, optionally merge Testing-anc back into development-anc
+      so both stay aligned
+
+
+BRANCH MAP (AFTER THIS SESSION)
+--------------------------------------------------------------------------------
+
+  development-anc
+    → your features (already pushed earlier)
+
+  Testing-anc
+    → GCP base + your features merged (pushed as 91690ba)
+    → USE THIS for local testing against GCP Cloud PostgreSQL
+
+
+NEXT MESSAGE TO SEND WHEN READY
+--------------------------------------------------------------------------------
+
+  "I added gcp-service-account.json"
+
+  Then we can run:
+    db:proxy → migrate deploy → start:dev
+
+
+================================================================================
+END
+================================================================================

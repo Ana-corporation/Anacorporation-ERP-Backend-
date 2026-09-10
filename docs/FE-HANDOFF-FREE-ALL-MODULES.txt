@@ -1,0 +1,86 @@
+================================================================================
+FE HANDOFF — FREE = ALL EXISTING PRODUCT MODULES (MANDATORY)
+Date:       2026-09-09
+Audience:   ERP-Frontend, Platform Owner UI, QA
+Backend:    ERP-Backend
+Base path:  /api/v1
+Supersedes: docs/FE-HANDOFF-CLEAN-CATALOGUE-SUPPLY-CHAIN.txt
+            (supply-chain-only FREE is reversed by product decision)
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  [x] FREE.plan_modules = ALL existing active product modules
+  [x] Those modules set to AVAILABLE (Option A) so entitlements/login surface them
+  [x] No dummy modules created — only what already exists in catalogue
+  [x] Future modules: re-run seed → auto-attached to FREE (dynamic query)
+  [x] STARTER / PROFESSIONAL / ENTERPRISE remain isActive=false
+  [x] Assign FREE: amount=0, status=active, endDate=null (forever)
+
+
+WHAT EXISTS TODAY (EXAMPLE — FROM SEED)
+--------------------------------------------------------------------------------
+
+  Product modules already in DB (attached to FREE, no dummies added):
+    - supply-chain
+    - financials
+    - hcm
+    - manufacturing
+    - crm
+    - projects
+
+  When a new product module is seeded later, run:
+    npm run seed:subscription-plans
+  → FREE picks it up automatically (allProductModules query).
+
+
+PLANS LIST
+--------------------------------------------------------------------------------
+
+  GET /subscription/plans?isActive=true
+    → FREE (and future paid when activated)
+
+  FREE row:
+    planCode: FREE
+    price: 0
+    isFree: true
+    requiresPayment: false
+    isActive: true
+
+
+ASSIGN FREE
+--------------------------------------------------------------------------------
+
+  POST /companies/{companyId}/subscriptions
+
+    {
+      "planId": "<FREE planId>",
+      "startDate": "2026-09-09",
+      "status": "active"
+    }
+
+  After assign — login / me / effective-entitlements:
+    subscription.planCode = "FREE"
+    subscription.isValid  = true
+    modules entitled      = all FREE plan modules (all existing product modules)
+
+
+FE ACTION
+--------------------------------------------------------------------------------
+
+  Trust BE entitlements / catalogue as-is.
+  No FE hardcode of module lists.
+  No FE change required for this BE drop.
+
+
+RE-SEED
+--------------------------------------------------------------------------------
+
+  npm run seed:subscription-plans
+
+
+================================================================================
+END
+================================================================================

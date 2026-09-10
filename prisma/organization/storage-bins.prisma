@@ -1,0 +1,25 @@
+// organization | storage_bins
+
+model StorageBin {
+  storageBinId BigInt    @id @default(autoincrement()) @map("storage_bin_id")
+  companyId    BigInt    @map("company_id")
+  warehouseId  BigInt    @map("warehouse_id")
+  binCode      String    @map("bin_code") @db.VarChar(50)
+  binName      String?   @map("bin_name") @db.VarChar(150)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdBy    BigInt?   @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedBy    BigInt?   @map("updated_by")
+  updatedAt    DateTime? @map("updated_at")
+  deletedBy    BigInt?   @map("deleted_by")
+  deletedAt    DateTime? @map("deleted_at")
+  rowVersion   Int       @default(1) @map("row_version")
+
+  company   Company   @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
+
+  @@unique([warehouseId, binCode])
+  @@index([companyId])
+  @@index([warehouseId])
+  @@map("storage_bins")
+}

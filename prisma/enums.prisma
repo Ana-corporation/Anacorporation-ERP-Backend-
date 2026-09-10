@@ -77,6 +77,15 @@ enum CompanyModuleOverrideAction {
   @@map("company_module_override_action")
 }
 
+enum WarehouseLocationType {
+  Warehouse
+  Store
+  Godown
+  Other
+
+  @@map("warehouse_location_type")
+}
+
 enum ImportType {
   VENDOR
   ITEM

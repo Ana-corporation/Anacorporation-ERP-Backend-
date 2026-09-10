@@ -2,8 +2,15 @@ import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { bigintIdSchema } from '@/common/zod/common.schemas';
 
+/** Empty / null roleCode → undefined so BE can auto-generate. */
+const optionalRoleCodeSchema = z.preprocess((value) => {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'string' && value.trim() === '') return undefined;
+  return value;
+}, z.string().trim().min(1).max(40).optional());
+
 export const CreateRoleSchema = z.object({
-  roleCode: z.string().trim().min(1).max(40),
+  roleCode: optionalRoleCodeSchema,
   roleName: z.string().trim().min(1).max(120),
   description: z.string().optional(),
 });
@@ -18,7 +25,7 @@ export const SetRolePermissionsSchema = z.object({
 });
 
 export const CloneRoleSchema = z.object({
-  roleCode: z.string().trim().min(1).max(40),
+  roleCode: optionalRoleCodeSchema,
   roleName: z.string().trim().min(1).max(120),
   description: z.string().optional(),
 });

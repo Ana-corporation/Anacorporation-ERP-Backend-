@@ -1,0 +1,48 @@
+================================================================================
+FE HANDOFF — COMPANY ADMIN company_modules:view|edit (MODULES TAB)
+Date:       2026-09-09
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base path:  /api/v1
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  [x] company_modules:view + company_modules:edit on ADMIN setup pack
+  [x] Login backfill includes these codes
+  [x] Company-create ADMIN provision attaches them
+  [x] Existing companies backfilled (npm run seed:org-permissions)
+  [x] NOT granting subscription:view / plans:* / platform codes to Company Admin
+  [x] On FREE/plan assign: entitled modules default ENABLED=true
+       (ensureDefaultSettingsForPlan already does this)
+
+
+PRODUCT LAYERS (UNCHANGED)
+--------------------------------------------------------------------------------
+
+  1) Platform Owner → assign FREE / plan (entitlement)
+  2) Company Admin → Modules tab (company_modules:view|edit) → enable/disable
+  3) Roles → permission matrix on ENABLED modules
+
+
+QA
+--------------------------------------------------------------------------------
+
+  1. Logout + login as Company Admin
+  2. GET /auth/me → includes company_modules:view and company_modules:edit
+  3. Company Setup → Modules opens (no "Subscription & modules unavailable")
+  4. Entitled modules (e.g. Supply Chain) visible; enable if needed
+  5. Roles permission matrix shows enabled modules
+
+
+OPS
+--------------------------------------------------------------------------------
+
+  npm run seed:org-permissions
+
+
+================================================================================
+END
+================================================================================

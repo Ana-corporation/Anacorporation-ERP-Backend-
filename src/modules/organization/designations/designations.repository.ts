@@ -58,7 +58,7 @@ export class DesignationsRepository {
     });
   }
 
-  create(companyId: string, dto: CreateDesignationDto, createdBy?: string) {
+  create(companyId: string, dto: CreateDesignationDto & { designationCode: string }, createdBy?: string) {
     return this.prisma.designation.create({
       data: {
         companyId: parseBigIntId(companyId),

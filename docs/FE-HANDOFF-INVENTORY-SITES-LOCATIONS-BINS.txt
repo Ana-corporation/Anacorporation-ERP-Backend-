@@ -1,0 +1,136 @@
+================================================================================
+FE HANDOFF — INVENTORY SITES / LOCATIONS / BINS (BE CHECK vs FE FEED)
+Date:       2026-09-10
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base:       /api/v1
+Replaces:   older notes in FE-HANDOFF-INVENTORY-SETUP-PHASE1A.txt for field contract
+Related:    FE-HANDOFF-AUTO-ORG-CODES.txt
+================================================================================
+
+
+VERDICT
+--------------------------------------------------------------------------------
+
+  BE already supports this hierarchy and field set.
+  FE can wire Inventory Sites / Locations / Storage Bins to live APIs.
+
+  Site = Branch API        /companies/{companyId}/branches
+  Location = Warehouse API /companies/{companyId}/warehouses
+  Storage Bin              /companies/{companyId}/storage-bins
+
+
+================================================================================
+1) SITE / BRANCH — MATCH
+================================================================================
+
+  Perms:   branches:view | create | edit | delete
+  Codes:   omit branchCode on POST → BE auto-generates (immutable on PATCH)
+  Fields:  name*, city, country, address, phone, isActive
+  Phone:   BE accepts it; Inventory Sites form may omit (FE only)
+
+  BE OK — no change needed.
+
+
+================================================================================
+2) WAREHOUSE / INVENTORY LOCATION — MATCH
+================================================================================
+
+  Perms:   warehouses:view | create | edit | delete
+  Parent:  branchId required on create
+  Codes:   omit warehouseCode on POST → BE auto-generates (immutable on PATCH)
+
+  Fields BE persists:
+    name*, branchId*, address, locationType, binManagement, isDefault, isActive
+
+  locationType enum: Warehouse | Store | Godown | Other (default Store)
+  isDefault: at most one per company (BE clears previous)
+  binManagement Off → bins rejected with BIN_MANAGEMENT_DISABLED
+
+  First-location defaults (Main Store, Main site, copy address, Default On):
+    → FE form prefills only. BE accepts whatever FE sends.
+    → Auto-create MAIN site + Main Store on company create = NOT shipped (P2)
+
+  BE OK for API contract.
+
+
+================================================================================
+3) STORAGE BIN — MOSTLY MATCH (+ 1 GAP)
+================================================================================
+
+  Perms:   warehouses:view | create | edit | delete  (same as Phase 1A)
+
+  Create body (prefer warehouseId only):
+
+    {
+      "warehouseId": "5",
+      "binCode": "GOD-01-04-03",
+      "binName": "Rack 01 - Shelf 04 - Position 03",
+      "isActive": true
+    }
+
+  BE also still accepts inventoryLocationId as alias (same value).
+  Response always includes BOTH warehouseId + inventoryLocationId (same id).
+  List filter: ?warehouseId= preferred; ?inventoryLocationId= still works.
+
+  Bin Code: NOT auto-generated — user types; BE uppercases; unique per location.
+  Gates: parent must be active + binManagement=true.
+
+  GAP (FE edit form shows Location dropdown):
+    PATCH today does NOT accept warehouseId / inventoryLocationId.
+    Bin stays on the location it was created under.
+    If FE needs “move bin to another location” on edit → BE follow-up required.
+
+
+================================================================================
+4) ID NAMING — ALIGNED WITH FE
+================================================================================
+
+  Screen label     = Inventory Location
+  API / DB field   = warehouseId   ← send this
+  Do NOT send both ids with different values.
+
+  BE:
+    [x] Required create field resolved from warehouseId (or alias)
+    [x] Accepts inventoryLocationId as alias
+    [x] Response includes warehouseId (and optional alias inventoryLocationId)
+    [x] List filter supports ?warehouseId=
+
+
+================================================================================
+5) ERROR CODES (USE THESE)
+================================================================================
+
+  BRANCH_CODE_EXISTS
+  WAREHOUSE_CODE_EXISTS     (prefer this; older docs said WAREHOUSE_CODE_DUPLICATE)
+  BRANCH_REQUIRED
+  BIN_CODE_DUPLICATE
+  BIN_MANAGEMENT_DISABLED
+  LOCATION_INACTIVE
+  LOCATION_HAS_BINS         (cannot turn binManagement off / delete location with bins)
+
+
+================================================================================
+6) FE CHECKLIST
+================================================================================
+
+  [ ] Sites create: omit branchCode; show returned code read-only
+  [ ] Locations create: omit warehouseCode; send branchId + location fields
+  [ ] First location: FE prefills name/site/address/type/default (BE does not invent)
+  [ ] Bins create: warehouseId only; binCode typed by user
+  [ ] Bins list filter: ?warehouseId=
+  [ ] Gate empty bins page in FE when no binManagement locations
+  [ ] Do not create duplicate Site/Location in Org vs Inventory — same APIs
+
+
+================================================================================
+7) NOT IN THIS PHASE
+================================================================================
+
+  Opening Stock / Current Stock / Stock Movements
+  Company bootstrap MAIN + Main Store (P2)
+
+
+================================================================================
+END
+================================================================================

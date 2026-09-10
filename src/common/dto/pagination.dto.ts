@@ -36,6 +36,8 @@ export const ListQuerySchema = z.object({
   deviceUuid: z.string().optional(),
   moduleId: bigintIdSchema.optional(),
   planId: bigintIdSchema.optional(),
+  warehouseId: bigintIdSchema.optional(),
+  inventoryLocationId: bigintIdSchema.optional(),
   /** ERP catalogue filters */
   moduleType: z.enum(['admin', 'product']).optional(),
   lifecycleStatus: z

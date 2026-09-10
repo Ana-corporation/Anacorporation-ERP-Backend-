@@ -65,6 +65,9 @@ export class CompanyAccessContextService {
     const modules = await this.buildModuleSnapshot({
       entitlements,
       roleId: primaryRole?.roleId,
+      isCompanyAdmin:
+        primaryRole?.role?.roleCode === 'ADMIN' ||
+        primaryRole?.role?.systemTemplateKey === 'ADMIN',
       overrides,
     });
 
@@ -118,9 +121,10 @@ export class CompanyAccessContextService {
   private async buildModuleSnapshot(params: {
     entitlements: Awaited<ReturnType<EntitlementService['getEffectiveEntitlements']>>;
     roleId?: bigint;
+    isCompanyAdmin?: boolean;
     overrides: Awaited<ReturnType<CompanyAccessContextRepository['findUserModuleAccess']>>;
   }): Promise<CompanyAccessModuleSummary[]> {
-    const { entitlements, roleId, overrides } = params;
+    const { entitlements, roleId, isCompanyAdmin = false, overrides } = params;
 
     const permissionsByModuleId = new Map<string, Phase1PermissionAction[]>();
     let supplyChainEntitledByRole: string | null = null;
@@ -169,10 +173,18 @@ export class CompanyAccessContextService {
         const key = mod.moduleId;
         const perms = [...(permissionsByModuleId.get(key) ?? [])];
 
+        // Company ADMIN: workspace must list every entitled product (Modules UI ON),
+        // even when RolePermissions were only the org/IAM setup pack.
+        if (isCompanyAdmin) {
+          for (const action of PHASE1_PERMISSION_ACTIONS) {
+            if (!perms.includes(action)) perms.push(action);
+          }
+        }
+
         if (grantModuleIds.includes(key) && !perms.includes('view')) {
           perms.push('view');
         }
-        if (denyModuleIds.has(key) && !supplyChainEntitledByRole) {
+        if (denyModuleIds.has(key) && !supplyChainEntitledByRole && !isCompanyAdmin) {
           return [];
         }
 

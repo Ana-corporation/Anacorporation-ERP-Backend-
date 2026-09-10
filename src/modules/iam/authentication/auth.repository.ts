@@ -12,8 +12,13 @@ import { parseBigIntId } from '@/common/utils/bigint.util';
 export class AuthRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Process-local cache so login+/me don't re-run heavy upserts every request. */
-  private static securityOrgSeedReady = false;
+  /**
+   * Process-local cache so login+/me don't re-run heavy upserts every request.
+   * Bump SECURITY_ORG_SEED_VERSION when backfill codes expand so running
+   * Node processes re-attach new ADMIN packs without a full redeploy dance.
+   */
+  private static readonly SECURITY_ORG_SEED_VERSION = 2;
+  private static securityOrgSeedReadyVersion = 0;
   private static securityOrgSeedInFlight: Promise<void> | null = null;
 
   findUserByEmail(email: string) {
@@ -35,7 +40,12 @@ export class AuthRepository {
    * Idempotent + single-flight — safe on concurrent login /me / signup.
    */
   async ensurePermissionsSeeded() {
-    if (AuthRepository.securityOrgSeedReady) return;
+    if (
+      AuthRepository.securityOrgSeedReadyVersion ===
+      AuthRepository.SECURITY_ORG_SEED_VERSION
+    ) {
+      return;
+    }
     if (AuthRepository.securityOrgSeedInFlight) {
       await AuthRepository.securityOrgSeedInFlight;
       return;
@@ -43,7 +53,8 @@ export class AuthRepository {
 
     AuthRepository.securityOrgSeedInFlight = this.runSecurityOrgSeed()
       .then(() => {
-        AuthRepository.securityOrgSeedReady = true;
+        AuthRepository.securityOrgSeedReadyVersion =
+          AuthRepository.SECURITY_ORG_SEED_VERSION;
       })
       .finally(() => {
         AuthRepository.securityOrgSeedInFlight = null;
@@ -312,7 +323,10 @@ export class AuthRepository {
       ),
     ];
 
-    const primaryRole = userRoles[0]?.role;
+    const primaryRole =
+      userRoles.find(
+        (ur) => ur.role.roleCode === 'ADMIN' || ur.role.systemTemplateKey === 'ADMIN',
+      )?.role ?? userRoles[0]?.role;
 
     return {
       user: membership.user,

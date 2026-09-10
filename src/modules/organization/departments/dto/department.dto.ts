@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { bigintIdSchema } from '@/common/zod/common.schemas';
+import { optionalOrgCodeSchema } from '@/common/zod/org-code.schema';
 
 export const CreateDepartmentSchema = z.object({
-  departmentCode: z.string().min(1).max(30),
+  departmentCode: optionalOrgCodeSchema,
   name: z.string().min(1).max(150),
   parentDepartmentId: bigintIdSchema.optional(),
   isActive: z.boolean().optional().default(true),

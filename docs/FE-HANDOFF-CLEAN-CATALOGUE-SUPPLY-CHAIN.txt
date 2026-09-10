@@ -1,0 +1,112 @@
+================================================================================
+FE HANDOFF — CLEAN CATALOGUE + FREE (SUPPLY-CHAIN ONLY)
+Date:       2026-09-08
+Audience:   ERP-Frontend, Platform Owner UI, QA
+Backend:    ERP-Backend
+Base path:  /api/v1
+Related:    docs/FE-HANDOFF-FREE-SUBSCRIPTION.txt (superseded in part by this)
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  SUPERSEDED by: docs/FE-HANDOFF-FREE-ALL-MODULES.txt (2026-09-09)
+  Product decision: FREE must include ALL existing product modules, not
+  supply-chain only. This clean-catalogue feed is historical only.
+
+  [x] (historical) AVAILABLE was briefly supply-chain only — reversed
+  [x] See FE-HANDOFF-FREE-ALL-MODULES.txt for current truth
+
+
+MODULES (SOURCE OF TRUTH)
+--------------------------------------------------------------------------------
+
+  AVAILABLE (commercially live):
+    - supply-chain   (Supply Chain & Inventory)
+
+  DEVELOPMENT (hidden from entitlements catalogue unless GRANTed later):
+    - crm
+    - financials
+    - hcm
+    - manufacturing
+    - projects
+    - (any other non-live product modules)
+
+  Entitlement / login snapshot only surfaces AVAILABLE | DEPRECATED.
+  FE can remove isCommerciallyAvailableModuleCode filters — BE is clean.
+
+
+PLANS
+--------------------------------------------------------------------------------
+
+  Active / assignable:
+    FREE
+      planCode:         FREE
+      price:            0
+      isFree:           true
+      requiresPayment:  false
+      isActive:         true
+      plan_modules:     supply-chain only
+
+  Inactive (not returned by ?isActive=true):
+    STARTER, PROFESSIONAL, ENTERPRISE
+
+
+LIST PLANS (PO UI)
+--------------------------------------------------------------------------------
+
+  GET /subscription/plans?isActive=true
+
+  Expect short list — FREE (and future paid when activated).
+
+  Example FREE row:
+
+    {
+      "planCode": "FREE",
+      "name": "Free",
+      "price": "0",
+      "isActive": true,
+      "isFree": true,
+      "requiresPayment": false
+    }
+
+
+ASSIGN FREE
+--------------------------------------------------------------------------------
+
+  POST /companies/{companyId}/subscriptions
+
+    {
+      "planId": "<FREE planId>",
+      "startDate": "2026-09-08",
+      "status": "active"
+    }
+
+  BE applies:
+    amount=0, status=active, endDate=null (forever), autoRenew=false default
+
+  After assign, login / me / entitlements:
+    subscription.planCode = "FREE"
+    subscription.isValid  = true
+    modules entitled      = supply-chain only
+
+
+FE ACTION
+--------------------------------------------------------------------------------
+
+  Remove commercial hide-filters for modules/plans.
+  Trust:
+    - GET /subscription/plans?isActive=true
+    - entitlement / login module list
+
+
+RE-SEED (ops)
+--------------------------------------------------------------------------------
+
+  npm run seed:subscription-plans
+
+
+================================================================================
+END
+================================================================================

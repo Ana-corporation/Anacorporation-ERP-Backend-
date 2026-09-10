@@ -1,0 +1,128 @@
+================================================================================
+FE HANDOFF — AUTO-GENERATE ORG CODES (BRANCH / DEPT / DESIGNATION / WAREHOUSE)
+Date:       2026-09-09
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base path:  /api/v1
+Related:    FE-HANDOFF-AUTO-ROLE-CODE.txt (same pattern as roleCode)
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  [x] Codes optional on create for all 4 org entities
+  [x] Auto-generated when omitted / null / "" (unique per company + entity)
+  [x] Response always includes final *Code
+  [x] Max length 30; charset A-Z, 0-9, underscore (normalized)
+  [x] Immutable on PATCH (Update*Schema omits code fields)
+  [x] Error codes documented (EXISTS per entity)
+
+
+CREATE
+--------------------------------------------------------------------------------
+
+  POST /companies/{companyId}/branches
+  POST /companies/{companyId}/departments
+  POST /companies/{companyId}/designations
+  POST /companies/{companyId}/warehouses
+
+
+  Preferred (omit code):
+
+    Branch:      { "name": "Head Office", "isActive": true }
+    Department:  { "name": "Operations", "isActive": true }
+    Designation: { "name": "Manager", "gradeLevel": 2, "isActive": true }
+    Warehouse:   {
+                   "name": "Main Store",
+                   "branchId": "<required>",
+                   "locationType": "Store",
+                   "binManagement": false,
+                   "isDefault": true,
+                   "isActive": true
+                 }
+
+  Also OK (explicit code):
+
+    { "branchCode": "HQ", "name": "Head Office", ... }
+    { "departmentCode": "OPS", "name": "Operations", ... }
+    { "designationCode": "MGR", "name": "Manager", ... }
+    { "warehouseCode": "WH_HQ", "name": "Main Store", "branchId": "…", ... }
+
+  Response always includes the final code field for that entity.
+
+
+GENERATION RULES
+--------------------------------------------------------------------------------
+
+  From name "Head Office":
+    → HEAD_OFFICE
+
+  If taken in this company for that entity type:
+    → HEAD_OFFICE_2, HEAD_OFFICE_3, …
+
+  Empty normalize fallbacks:
+    Branch      → BR
+    Department  → DEPT
+    Designation → DESIG
+    Warehouse   → WH
+
+  Max length: 30 (DB VarChar(30) on all four)
+  Charset after normalize: A-Z, 0-9, underscore
+  (Client hyphens / spaces / punctuation → underscore)
+
+
+ERRORS
+--------------------------------------------------------------------------------
+
+  Missing name:
+    400 validation
+
+  Duplicate explicit code:
+    Conflict + entity-specific code:
+      BRANCH_CODE_EXISTS
+      DEPARTMENT_CODE_EXISTS
+      DESIGNATION_CODE_EXISTS
+      WAREHOUSE_CODE_EXISTS
+    Message: "{Entity} code already exists in this company"
+
+  Warehouse without branchId:
+    400 + BRANCH_REQUIRED (unchanged)
+
+
+PATCH / UPDATE
+--------------------------------------------------------------------------------
+
+  Do NOT send / cannot change:
+    branchCode | departmentCode | designationCode | warehouseCode
+
+  FE: show Code read-only on Edit.
+
+
+FE CLIENT NOTES
+--------------------------------------------------------------------------------
+
+  Organization create forms:
+    - Hide / optional Code on Create (name + other fields only)
+    - Show returned *Code on success / table row
+    - Edit: Code read-only
+
+  org-api:
+    - Omit branchCode / departmentCode / designationCode / warehouseCode
+      when blank on POST
+
+
+QA CHECKLIST
+--------------------------------------------------------------------------------
+
+  1. POST branch with only name "Head Office" → 201 + branchCode HEAD_OFFICE
+  2. Second branch same name → HEAD_OFFICE_2
+  3. POST with explicit branchCode that exists → conflict BRANCH_CODE_EXISTS
+  4. Same for department / designation / warehouse
+  5. PATCH cannot change code
+  6. One-site company: create single HQ branch by name only — works
+
+
+================================================================================
+END
+================================================================================

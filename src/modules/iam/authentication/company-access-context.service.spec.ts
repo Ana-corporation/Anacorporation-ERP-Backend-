@@ -158,4 +158,34 @@ describe('CompanyAccessContextService — supply-chain resource roles', () => {
     expect(modules[0].enabled).toBe(false);
     expect(modules[0].effectiveAccess).toBe(false);
   });
+
+  it('includes entitled product modules for company ADMIN with no product RolePermissions', async () => {
+    const { service } = makeService({ rolePermissions: [] });
+
+    const modules = await (service as any).buildModuleSnapshot({
+      entitlements: makeEntitlements(),
+      roleId: 99n,
+      isCompanyAdmin: true,
+      overrides: [],
+    });
+
+    expect(modules).toHaveLength(1);
+    expect(modules[0].moduleCode).toBe('supply-chain');
+    expect(modules[0].permissions).toEqual(
+      expect.arrayContaining(['view', 'create', 'edit', 'delete', 'approve']),
+    );
+  });
+
+  it('still omits entitled modules for non-admin when RolePermissions empty', async () => {
+    const { service } = makeService({ rolePermissions: [] });
+
+    const modules = await (service as any).buildModuleSnapshot({
+      entitlements: makeEntitlements(),
+      roleId: 99n,
+      isCompanyAdmin: false,
+      overrides: [],
+    });
+
+    expect(modules).toHaveLength(0);
+  });
 });

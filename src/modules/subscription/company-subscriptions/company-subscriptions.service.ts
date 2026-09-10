@@ -45,15 +45,22 @@ export class CompanySubscriptionsService {
   async findCurrent(companyId: string) {
     const subscription = await this.entitlementRepository.findLiveSubscription(companyId);
     if (!subscription) {
-      return serialize({ status: 'none', plan: null });
+      return serialize({ status: 'none', plan: null, isValid: false });
     }
+    const planCode = subscription.plan.planCode;
+    const price = Number(subscription.plan.price ?? 0);
     return serialize({
       plan: {
-        code: subscription.plan.planCode,
+        code: planCode,
         name: subscription.plan.name,
         planId: subscription.planId.toString(),
+        price,
+        isFree: planCode.toUpperCase() === 'FREE',
+        requiresPayment: price > 0,
       },
+      planCode,
       status: subscription.status,
+      isValid: true,
       startDate: subscription.startDate.toISOString().slice(0, 10),
       endDate: subscription.endDate?.toISOString().slice(0, 10) ?? null,
       billingCycle: subscription.billingCycle,
@@ -69,6 +76,22 @@ export class CompanySubscriptionsService {
     if (!plan.isActive) {
       throw new BusinessException('Subscription plan is not active');
     }
+
+    const isFreePlan = plan.planCode.toUpperCase() === 'FREE';
+    const isNoPayment = isFreePlan || Number(plan.price) === 0;
+
+    // No payment gateway — free / zero-price plans activate without checkout.
+    const createDto: CreateCompanySubscriptionDto = {
+      planId: dto.planId,
+      startDate: dto.startDate,
+      billingCycle: dto.billingCycle,
+      amount: isNoPayment ? 0 : dto.amount,
+      autoRenew: isFreePlan ? (dto.autoRenew ?? false) : dto.autoRenew,
+      status:
+        isNoPayment && (!dto.status || dto.status === 'pending') ? 'active' : dto.status,
+      // FREE is forever (null endDate). Expiry job ignores null.
+      ...(isFreePlan ? {} : dto.endDate ? { endDate: dto.endDate } : {}),
+    };
 
     const live = await this.entitlementRepository.findLiveSubscription(companyId);
     if (live) {
@@ -87,11 +110,11 @@ export class CompanySubscriptionsService {
       });
     }
 
-    const startDate = new Date(dto.startDate);
-    const endDate = dto.endDate ? new Date(dto.endDate) : undefined;
+    const startDate = new Date(createDto.startDate);
+    const endDate = createDto.endDate ? new Date(createDto.endDate) : undefined;
     this.validateDateRange(startDate, endDate);
 
-    const subscription = await this.repository.create(companyId, dto, actorId);
+    const subscription = await this.repository.create(companyId, createDto, actorId);
     await this.entitlementService.ensureDefaultSettingsForPlan(companyId, actorId);
 
     await this.auditService.log({
@@ -100,7 +123,15 @@ export class CompanySubscriptionsService {
       action: UserAuditAction.create,
       entityName: 'CompanySubscription',
       entityId: subscription.companySubscriptionId.toString(),
-      newValue: { planId: dto.planId, startDate: dto.startDate, status: subscription.status },
+      newValue: {
+        planId: createDto.planId,
+        planCode: plan.planCode,
+        startDate: createDto.startDate,
+        status: subscription.status,
+        amount: Number(subscription.amount),
+        endDate: subscription.endDate,
+        noPayment: isNoPayment,
+      },
     });
 
     await this.userContextCache.invalidateCompany(companyId);

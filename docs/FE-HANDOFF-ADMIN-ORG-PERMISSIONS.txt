@@ -1,0 +1,61 @@
+================================================================================
+FE HANDOFF — COMPANY ADMIN ORG PERMISSIONS (16 CODES)
+Date:       2026-09-09
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base path:  /api/v1
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  [x] FIX A — company-create ADMIN template attaches 16 org perms
+  [x] FIX B — existing companies: login backfill + npm run seed:org-permissions
+  [x] FIX C — login / auth/me includes codes after re-login
+  [x] Not on FREE plan / subscription (RBAC only)
+
+
+WHAT WAS FIXED
+--------------------------------------------------------------------------------
+
+  1) ORG_STRUCTURE_PERMISSION_CODES exported in permissions.constant.ts
+     (16 codes: branches|departments|designations|warehouses × view/create/edit/delete)
+
+  2) COMPANY_ADMIN_BACKFILL_PERMISSION_CODES now includes those 16
+     → ensurePermissionsSeeded() on login/me grants to every roleCode=ADMIN
+
+  3) SystemRoleProvisioningService — after ADMIN role create/ensure,
+     attaches the 16 org permissions (idempotent)
+
+  4) ADMIN systemTemplateKey templateVersion bumped to 3
+
+
+FE ACTION (QA)
+--------------------------------------------------------------------------------
+
+  Existing company (e.g. Ana Machinery):
+    1. Backend ran: npm run seed:org-permissions  (or restart API + login once)
+    2. Company Admin: logout + login
+    3. GET /auth/me → permissions include warehouses:view, branches:view, …
+    4. Company Setup → Organization → all 4 tabs open (no "No access")
+    5. GET /companies/{id}/warehouses → 200
+
+  New company:
+    1. Platform Owner creates company (ADMIN provisioned with 16 codes)
+    2. Company Admin login — Organization works without manual role edit
+
+
+OPS / RE-SEED
+--------------------------------------------------------------------------------
+
+  Immediate backfill all ADMIN roles:
+
+    npm run seed:org-permissions
+
+  After API restart, login also backfills missing codes automatically.
+
+
+================================================================================
+END
+================================================================================

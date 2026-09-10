@@ -1,0 +1,303 @@
+================================================================================
+FE HANDOFF — INVENTORY PHASE 1A (SETUP ONLY)
+Date:       2026-09-07
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Branch:     Testing-anc
+Base path:  /api/v1
+Auth:       JWT + company tenant scope
+Related FE: Inventory Setup — Sites / Branches, Locations, Storage Bins
+Out of scope: Opening Stock, Current Stock, Stock Movements (Phase 1B / 2)
+================================================================================
+
+
+STATUS
+---------------- ----------------------------------------------------------------
+
+  Branches (Sites) CRUD:           ALREADY LIVE — reuse (no BE change)
+  Warehouses (Locations) CRUD:     EXTENDED — 3 new fields persisted
+  Storage Bins CRUD:               NEW — live endpoints
+  Company bootstrap MAIN/Store:    NOT DONE (optional P2)
+  Migration on GCP Erp_test_db:    APPLIED (20260907140000_inventory_setup_phase1a)
+
+  FE can drop local overlay / localStorage fallback and use API as source of truth.
+
+
+================================================================================
+1) SITES / BRANCHES — REUSE (NO CHANGE)
+================================================================================
+
+  FE maps: Site = Branch
+
+  GET    /companies/{companyId}/branches
+  POST   /companies/{companyId}/branches
+  PATCH  /companies/{companyId}/branches/{branchId}
+  DELETE /companies/{companyId}/branches/{branchId}
+
+  Permissions:
+    branches:view | branches:create | branches:edit | branches:delete
+
+  Create / update body (camelCase):
+
+    {
+      "branchCode": "SITE001",
+      "name": "Coimbatore",
+      "address": "optional",
+      "city": "Coimbatore",
+      "country": "India",
+      "phone": null,
+      "isActive": true
+    }
+
+  Response row:
+
+    {
+      "branchId": "1",
+      "companyId": "10",
+      "branchCode": "SITE001",
+      "name": "Coimbatore",
+      "address": "...",
+      "city": "...",
+      "country": "...",
+      "phone": null,
+      "isActive": true
+    }
+
+  Rules:
+    - branchCode UNIQUE within company
+    - Soft delete / isActive preferred
+
+
+================================================================================
+2) INVENTORY LOCATIONS — WAREHOUSES (EXTENDED)
+================================================================================
+
+  FE maps: Inventory Location = Warehouse
+
+  Paths (unchanged):
+
+    GET    /companies/{companyId}/warehouses
+    GET    /companies/{companyId}/warehouses/{warehouseId}
+    POST   /companies/{companyId}/warehouses
+    PATCH  /companies/{companyId}/warehouses/{warehouseId}
+    DELETE /companies/{companyId}/warehouses/{warehouseId}
+
+  Permissions:
+    warehouses:view | warehouses:create | warehouses:edit | warehouses:delete
+
+  --------------------------------------------------
+  NEW FIELDS (persist + echo on list/detail/create/update)
+  --------------------------------------------------
+
+    locationType     string enum:
+                       "Warehouse" | "Store" | "Godown" | "Other"
+                       default on create if omitted: "Store"
+    binManagement    boolean  default false
+    isDefault        boolean  default false
+                       at most ONE default per company
+                       (setting true clears previous company default)
+
+  Create body FE should send:
+
+    {
+      "warehouseCode": "LOC001",
+      "name": "Main Warehouse",
+      "branchId": "2",
+      "address": "optional",
+      "isActive": true,
+      "locationType": "Warehouse",
+      "binManagement": true,
+      "isDefault": false
+    }
+
+  Update body (partial OK):
+
+    {
+      "name": "Main Warehouse",
+      "branchId": "2",
+      "address": "...",
+      "isActive": true,
+      "locationType": "Store",
+      "binManagement": false,
+      "isDefault": true
+    }
+
+  Notes:
+    - branchId REQUIRED on create (same company)
+    - warehouseCode UNIQUE within company (uppercased by BE)
+    - warehouseCode is NOT updatable via PATCH (immutable today)
+    - List is paginated: { items, total, page, limit, totalPages }
+
+  Example response row:
+
+    {
+      "warehouseId": "5",
+      "companyId": "10",
+      "branchId": "2",
+      "warehouseCode": "LOC001",
+      "name": "Main Warehouse",
+      "address": "...",
+      "isActive": true,
+      "locationType": "Warehouse",
+      "binManagement": true,
+      "isDefault": false
+    }
+
+  FE action:
+    Remove client-side overlay for locationType / binManagement / isDefault.
+    Trust API response.
+
+
+================================================================================
+3) STORAGE BINS — NEW API
+================================================================================
+
+  Paths:
+
+    GET    /companies/{companyId}/storage-bins
+    GET    /companies/{companyId}/storage-bins/{storageBinId}
+    POST   /companies/{companyId}/storage-bins
+    PATCH  /companies/{companyId}/storage-bins/{storageBinId}
+    DELETE /companies/{companyId}/storage-bins/{storageBinId}
+
+  Optional list filters:
+
+    GET .../storage-bins?inventoryLocationId={id}
+    GET .../storage-bins?warehouseId={id}
+
+    (inventoryLocationId === warehouseId; either works)
+
+  Permissions (Phase 1A Option A — matches FE today):
+
+    warehouses:view   → list / get
+    warehouses:create → create
+    warehouses:edit   → update
+    warehouses:delete → delete
+
+  Create body (send either or both location keys):
+
+    {
+      "inventoryLocationId": "5",
+      "warehouseId": "5",
+      "binCode": "GOD-01-04-03",
+      "binName": "Rack 01 - Shelf 04 - Position 03",
+      "isActive": true
+    }
+
+  Update body (partial):
+
+    {
+      "binCode": "GOD-01-04-03",
+      "binName": "Rack 01 - Shelf 04 - Position 03",
+      "isActive": true
+    }
+
+  Response row (always includes BOTH id aliases):
+
+    {
+      "storageBinId": "11",
+      "companyId": "10",
+      "inventoryLocationId": "5",
+      "warehouseId": "5",
+      "binCode": "GOD-01-04-03",
+      "binName": "Rack 01 - Shelf 04 - Position 03",
+      "isActive": true
+    }
+
+  Rules:
+    1. Parent warehouse must exist in same company
+    2. Parent must have binManagement = true  else 400 BIN_MANAGEMENT_DISABLED
+    3. Parent must be active                 else 400 LOCATION_INACTIVE
+    4. binCode UNIQUE within inventory location (uppercased by BE)
+    5. Soft delete via DELETE
+    6. Block delete when stock qty > 0       → later (Phase 1B+)
+
+  FE action:
+    Stop localStorage fallback when these endpoints return 200.
+
+
+================================================================================
+4) ERROR CONTRACT
+================================================================================
+
+  Prefer:
+
+    {
+      "success": false,
+      "message": "Bin code must be unique within the inventory location",
+      "code": "BIN_CODE_DUPLICATE"
+    }
+
+  Useful codes shipped:
+
+    WAREHOUSE_CODE_DUPLICATE
+    BIN_CODE_DUPLICATE
+    BIN_MANAGEMENT_DISABLED
+    LOCATION_HAS_BINS          — disable binManagement OR delete location with bins
+    LOCATION_INACTIVE
+    BRANCH_REQUIRED            — create warehouse without branchId
+
+  Zod validation failures (bad locationType etc.) return standard validation errors.
+
+
+================================================================================
+5) ACCEPTANCE CHECKLIST (FE ↔ BE)
+================================================================================
+
+  [x] Branches CRUD still works (Sites UI)
+  [x] Warehouses CRUD still works (Locations UI)
+  [x] POST/PATCH warehouse accepts locationType, binManagement, isDefault
+  [x] GET warehouse list/detail returns those 3 fields
+  [x] locationType enum validated
+  [x] Cannot turn binManagement off when active bins exist
+  [x] Cannot delete location while bins exist
+  [x] Storage Bins CRUD endpoints live
+  [x] Bin requires parent with binManagement=true
+  [x] Bin code unique per location
+  [x] Tenant isolation by companyId
+  [ ] Optional bootstrap MAIN site + Main Store (P2 — not shipped)
+
+
+================================================================================
+6) WHAT FE MUST NOT EXPECT YET
+================================================================================
+
+  - Opening Stock APIs
+  - Current Stock / stock_balances
+  - Stock Movements / transfers / GRN / issues
+  - Auto-create MAIN + Main Store on company create
+
+
+================================================================================
+7) LOCAL RUN (BE)
+================================================================================
+
+  Terminal 1:  npm.cmd run db:proxy
+  Terminal 2:  npm.cmd run start:dev
+
+  Health:   http://localhost:3002/api/v1/health
+            expect "database":"connected"
+
+  Swagger:  http://localhost:3002/docs
+            tags: Warehouses, Storage Bins
+
+  FE base:  http://localhost:3002/api/v1
+  CORS:     http://localhost:3001  (set CORS_ORIGIN if FE uses another origin)
+
+
+================================================================================
+8) DB NOTES (GCP)
+================================================================================
+
+  Instance:  swenter-db-dev
+  Database:  swenter-dev
+  Schema:    Erp_test_db
+
+  New table:     storage_bins
+  Extended:      warehouses (+ location_type, bin_management, is_default)
+  Enum type:     warehouse_location_type
+
+
+================================================================================
+END — FE can wire Setup against live BE now
+================================================================================

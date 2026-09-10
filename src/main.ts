@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { applyGcpSqlDatabaseUrl } from './config/gcp-sql-url';
 import { SimpleLogger } from './common/logger/simple.logger';
 import { requestLogger } from './common/logger/request-logger.middleware';
+import { PrismaService } from './infrastructure/prisma/prisma.service';
 
 function loadEnvFile() {
   const envPath = path.join(process.cwd(), '.env');
@@ -112,6 +113,16 @@ async function bootstrap() {
   logger.log(`API listening on ${port}`);
   logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
   logger.log(`Swagger docs    → http://0.0.0.0:${port}/docs`);
+
+  try {
+    const prisma = app.get(PrismaService);
+    const dbStart = Date.now();
+    await prisma.$queryRaw`SELECT 1`;
+    logger.log(`Database connected (${Date.now() - dbStart}ms)`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Database disconnected: ${message}`);
+  }
 }
 
 bootstrap();

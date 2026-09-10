@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { optionalOrgCodeSchema } from '@/common/zod/org-code.schema';
 
 export const CreateBranchSchema = z.object({
-  branchCode: z.string().min(1).max(30),
+  branchCode: optionalOrgCodeSchema,
   name: z.string().min(1).max(150),
   address: z.string().max(255).optional(),
   city: z.string().max(100).optional(),

@@ -72,8 +72,12 @@ export class CompanyAccessContextRepository {
     });
   }
 
-  findPrimaryUserRole(userId: string, companyId: string) {
-    return this.prisma.userRole.findFirst({
+  /**
+   * Prefer company ADMIN when the user has multiple active roles.
+   * Lowest roleId alone can pick a stale/empty custom role and empty the login snapshot.
+   */
+  async findPrimaryUserRole(userId: string, companyId: string) {
+    const roles = await this.prisma.userRole.findMany({
       where: {
         userId: parseBigIntId(userId),
         companyId: parseBigIntId(companyId),
@@ -83,6 +87,14 @@ export class CompanyAccessContextRepository {
       include: { role: true },
       orderBy: { roleId: 'asc' },
     });
+    if (roles.length === 0) return null;
+
+    const admin =
+      roles.find(
+        (ur) =>
+          ur.role.roleCode === 'ADMIN' || ur.role.systemTemplateKey === 'ADMIN',
+      ) ?? null;
+    return admin ?? roles[0];
   }
 
   countActiveUserRoles(userId: string, companyId: string) {

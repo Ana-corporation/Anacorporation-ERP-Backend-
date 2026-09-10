@@ -194,6 +194,67 @@ export const DEFAULT_ADMIN_PERMISSIONS: PermissionCode[] = PERMISSIONS.filter(
  * Idempotent backfill for company roleCode ADMIN (login + seed).
  * Existing DEMO admins may predate newer shared-module codes — grant on re-login.
  */
+export const ORG_STRUCTURE_PERMISSION_CODES = [
+  'branches:view',
+  'branches:create',
+  'branches:edit',
+  'branches:delete',
+  'departments:view',
+  'departments:create',
+  'departments:edit',
+  'departments:delete',
+  'designations:view',
+  'designations:create',
+  'designations:edit',
+  'designations:delete',
+  'warehouses:view',
+  'warehouses:create',
+  'warehouses:edit',
+  'warehouses:delete',
+] as const satisfies readonly PermissionCode[];
+
+/** Roles & Users — required for Company Setup tabs. */
+export const COMPANY_ADMIN_IAM_PERMISSION_CODES = [
+  'roles:view',
+  'roles:create',
+  'roles:edit',
+  'roles:delete',
+  'users:view',
+  'users:create',
+  'users:edit',
+  'users:delete',
+] as const satisfies readonly PermissionCode[];
+
+/** Tenant Modules tab — enable/disable entitled modules (not platform subscription:view). */
+export const COMPANY_ADMIN_MODULE_SETTINGS_PERMISSION_CODES = [
+  'company_modules:view',
+  'company_modules:edit',
+] as const satisfies readonly PermissionCode[];
+
+/**
+ * Product workspace pack for Company ADMIN.
+ * Required so login `/auth/me` → activeCompany.modules[] is non-empty when
+ * company Modules UI shows entitled products (Modules UI does not use RBAC).
+ * Supply-chain uses vendors:* / items:*; other products use module:action.
+ */
+export const COMPANY_ADMIN_PRODUCT_PERMISSION_CODES = [
+  ...SUPPLY_CHAIN_RESOURCE_PERMISSIONS.map((p) => p.code),
+  ...PRODUCT_MODULES.flatMap((mod) =>
+    PHASE1_PERMISSION_ACTIONS.map((action) => `${mod.code}:${action}`),
+  ),
+] as const satisfies readonly PermissionCode[];
+
+/**
+ * Full Company Setup pack attached to system ADMIN on provision + backfill.
+ * Org + roles + users + company module settings + product workspace (no platform-only codes).
+ */
+export const COMPANY_ADMIN_SETUP_PERMISSION_CODES = [
+  ...ORG_STRUCTURE_PERMISSION_CODES,
+  ...COMPANY_ADMIN_IAM_PERMISSION_CODES,
+  ...COMPANY_ADMIN_MODULE_SETTINGS_PERMISSION_CODES,
+  ...COMPANY_ADMIN_PRODUCT_PERMISSION_CODES,
+] as const satisfies readonly PermissionCode[];
+
 export const COMPANY_ADMIN_BACKFILL_PERMISSION_CODES = [
   'permission_sets:view',
   'permission_sets:create',
@@ -209,4 +270,5 @@ export const COMPANY_ADMIN_BACKFILL_PERMISSION_CODES = [
   'custom_fields:delete',
   'form_configurations:view',
   'form_configurations:edit',
+  ...COMPANY_ADMIN_SETUP_PERMISSION_CODES,
 ] as const satisfies readonly PermissionCode[];

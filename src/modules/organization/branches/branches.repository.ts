@@ -50,7 +50,7 @@ export class BranchesRepository {
     });
   }
 
-  create(companyId: string, dto: CreateBranchDto, createdBy?: string) {
+  create(companyId: string, dto: CreateBranchDto & { branchCode: string }, createdBy?: string) {
     return this.prisma.branch.create({
       data: {
         companyId: parseBigIntId(companyId),

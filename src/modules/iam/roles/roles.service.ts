@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
 import { UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
@@ -23,6 +24,11 @@ import {
 } from './dto/role.dto';
 import { RolesRepository } from './roles.repository';
 import { ROLE_ERROR_CODES, isSystemRole } from './role.constants';
+import {
+  allocateUniqueRoleCode,
+  isReservedRoleCode,
+  normalizeRoleCodeBase,
+} from './role-code.util';
 
 function displayName(user: {
   displayName?: string | null;
@@ -64,10 +70,16 @@ export class RolesService {
   }
 
   async create(companyId: string, dto: CreateRoleDto, actorId: string) {
-    const existing = await this.repository.findByCode(companyId, dto.roleCode.toUpperCase());
-    if (existing) throw new ConflictException('Role code already exists', ROLE_ERROR_CODES.ROLE_CODE_EXISTS);
+    const roleCode = await this.resolveRoleCodeForCreate(companyId, {
+      roleCode: dto.roleCode,
+      roleName: dto.roleName,
+    });
 
-    const role = await this.repository.create(companyId, dto, actorId);
+    const role = await this.repository.create(
+      companyId,
+      { ...dto, roleCode },
+      actorId,
+    );
 
     await this.auditService.log({
       companyId,
@@ -75,6 +87,7 @@ export class RolesService {
       action: UserAuditAction.create,
       entityName: 'Role',
       entityId: role.roleId.toString(),
+      newValue: { roleCode, roleName: role.roleName, roleType: 'CUSTOM' },
     });
 
     return serialize(this.mapRoleRow(role as any));
@@ -221,11 +234,18 @@ export class RolesService {
     const source = await this.repository.findById(id, companyId);
     if (!source) throw new NotFoundException('Role');
 
-    const code = dto.roleCode.trim().toUpperCase();
-    const duplicate = await this.repository.findByCode(companyId, code);
-    if (duplicate) throw new ConflictException('Role code already exists', ROLE_ERROR_CODES.ROLE_CODE_EXISTS);
+    const roleCode = await this.resolveRoleCodeForCreate(companyId, {
+      roleCode: dto.roleCode,
+      roleName: dto.roleName,
+      fallbackFromCode: source.roleCode,
+    });
 
-    const cloned = await this.repository.cloneRole(id, companyId, dto, actorId);
+    const cloned = await this.repository.cloneRole(
+      id,
+      companyId,
+      { ...dto, roleCode },
+      actorId,
+    );
     if (!cloned) throw new NotFoundException('Role');
 
     await this.auditService.log({
@@ -246,6 +266,49 @@ export class RolesService {
     });
 
     return serialize(this.mapRoleRow(cloned as any));
+  }
+
+  /**
+   * Explicit roleCode → normalize + reserved/duplicate checks.
+   * Omitted/blank → auto from roleName (or source code on clone) + uniqueness suffix.
+   */
+  private async resolveRoleCodeForCreate(
+    companyId: string,
+    params: { roleCode?: string; roleName: string; fallbackFromCode?: string },
+  ): Promise<string> {
+    const isTaken = async (code: string) =>
+      Boolean(await this.repository.findByCode(companyId, code));
+
+    if (params.roleCode) {
+      const code = normalizeRoleCodeBase(params.roleCode);
+      if (isReservedRoleCode(code)) {
+        throw new BusinessException(
+          `Role code ${code} is reserved`,
+          HttpStatus.BAD_REQUEST,
+          undefined,
+          ROLE_ERROR_CODES.ROLE_CODE_RESERVED,
+        );
+      }
+      if (await isTaken(code)) {
+        throw new ConflictException(
+          'Role code already exists in this company',
+          ROLE_ERROR_CODES.ROLE_CODE_EXISTS,
+        );
+      }
+      return code;
+    }
+
+    const preferredBase = normalizeRoleCodeBase(params.roleName || params.fallbackFromCode || 'ROLE');
+    // Avoid landing on reserved codes without a suffix when auto-generating.
+    let base = preferredBase;
+    if (isReservedRoleCode(base)) {
+      base = `${base}_CUSTOM`.slice(0, 40);
+    }
+
+    return allocateUniqueRoleCode({
+      preferredBase: base,
+      isTaken: async (code) => isReservedRoleCode(code) || (await isTaken(code)),
+    });
   }
 
   /**

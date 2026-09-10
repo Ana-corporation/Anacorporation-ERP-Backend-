@@ -15,15 +15,36 @@ export class PlansService {
     private readonly auditService: AuditService,
   ) {}
 
+  /** Derived flags for FE (no DB columns). */
+  private decoratePlan(plan: Record<string, unknown>) {
+    const planCode = String(plan.planCode ?? '').toUpperCase();
+    const price = Number(plan.price ?? 0);
+    return {
+      ...plan,
+      isFree: planCode === 'FREE',
+      requiresPayment: price > 0,
+    };
+  }
+
   async findAll(query: PaginationQueryDto) {
     const { items, total, page, limit } = await this.repository.findMany(query);
-    return serialize(toPaginatedResult(items, total, page, limit));
+    const result = serialize(toPaginatedResult(items, total, page, limit)) as {
+      items: Record<string, unknown>[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    };
+    return {
+      ...result,
+      items: result.items.map((item) => this.decoratePlan(item)),
+    };
   }
 
   async findOne(id: string) {
     const plan = await this.repository.findById(id);
     if (!plan) throw new NotFoundException('Subscription plan');
-    return serialize(plan);
+    return this.decoratePlan(serialize(plan) as Record<string, unknown>);
   }
 
   async create(dto: CreateSubscriptionPlanDto, actorId?: string) {
@@ -41,7 +62,7 @@ export class PlansService {
       newValue: { planCode: code, name: plan.name },
     });
 
-    return serialize(plan);
+    return this.decoratePlan(serialize(plan) as Record<string, unknown>);
   }
 
   async update(id: string, dto: UpdateSubscriptionPlanDto, actorId?: string) {
@@ -57,8 +78,7 @@ export class PlansService {
       entityId: id,
       newValue: dto as Record<string, unknown>,
     });
-
-    return serialize(plan);
+    return this.decoratePlan(serialize(plan) as Record<string, unknown>);
   }
 
   async remove(id: string, actorId?: string) {

@@ -18,5 +18,8 @@ if (-not $instance) {
   throw "GCP_SQL_INSTANCE_CONNECTION_NAME is missing in .env"
 }
 
-Write-Host "Starting Cloud SQL Auth Proxy for $instance on 127.0.0.1:5432"
-& $proxy --credentials-file $sa --port 5432 $instance
+$port = (Get-Content $envFile | Where-Object { $_ -match '^GCP_SQL_PORT=(.*)$' } | ForEach-Object { $Matches[1].Trim().Trim('"') } | Select-Object -First 1)
+if (-not $port) { $port = '5432' }
+
+Write-Host "Starting Cloud SQL Auth Proxy for $instance on 127.0.0.1:$port"
+& $proxy --credentials-file $sa --address 127.0.0.1 --port $port $instance

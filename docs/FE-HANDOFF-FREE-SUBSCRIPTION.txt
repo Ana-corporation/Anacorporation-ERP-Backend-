@@ -1,0 +1,146 @@
+================================================================================
+FE HANDOFF — FREE SUBSCRIPTION (ALL MODULES, NO PAYMENT)
+Date:       2026-09-08
+Audience:   ERP-Frontend, Platform Owner UI, QA
+Backend:    ERP-Backend
+Base path:  /api/v1
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  SUPERSEDED IN PART by: docs/FE-HANDOFF-CLEAN-CATALOGUE-SUPPLY-CHAIN.txt
+  (2026-09-08) — FREE now attaches supply-chain ONLY; other modules DEVELOPMENT.
+
+  [x] FREE plan seeded (planCode=FREE, price=0)
+  [x] FREE attaches AVAILABLE product modules only (supply-chain)
+  [x] Assign FREE → no payment; status defaults to active; endDate=null (forever)
+  [x] Entitlements use existing engine (no FE freeAccess flag)
+  [x] Plans list returns derived isFree / requiresPayment
+  [x] STARTER / PROFESSIONAL / ENTERPRISE inactive (hidden from ?isActive=true)
+
+
+SEED (BE / ops)
+--------------------------------------------------------------------------------
+
+  npm run seed:subscription-plans
+
+  Creates/updates:
+    FREE, STARTER, PROFESSIONAL, ENTERPRISE
+
+  FREE:
+    planCode:     FREE
+    name:         Free
+    price:        0
+    billingCycle: monthly   ← DB enum has no "none"/"free"; monthly is fine
+    maxUsers:     null (unlimited)
+    modules:      every active product module in catalogue
+
+  Note: seed promotes DEVELOPMENT/TESTING/INTERNAL product modules to
+  AVAILABLE so the entitlement catalogue can surface them for FREE.
+
+
+ASSIGN TO COMPANY (Platform Owner)
+--------------------------------------------------------------------------------
+
+  POST /companies/{companyId}/subscriptions
+
+  Body:
+
+    {
+      "planId": "<FREE planId from GET /subscription/plans>",
+      "startDate": "2026-09-08",
+      "status": "active"
+    }
+
+  Optional fields may be omitted. BE applies for FREE / price=0:
+
+    amount      = 0
+    status      = active   (even if FE sends pending / omits status)
+    endDate     = null     (forever — only when planCode=FREE)
+    autoRenew   = false    (default for FREE; FE may override)
+
+  No payment gateway / invoice call exists or is invoked.
+
+
+LIST PLANS
+--------------------------------------------------------------------------------
+
+  GET /subscription/plans
+
+  Each plan row now includes derived fields (no new DB columns):
+
+    {
+      "planId": "...",
+      "planCode": "FREE",
+      "name": "Free",
+      "price": "0",
+      "billingCycle": "monthly",
+      "isActive": true,
+      "isFree": true,
+      "requiresPayment": false
+    }
+
+  PO UI: hide payment step when isFree === true OR requiresPayment === false.
+
+
+LOGIN / ME / ENTITLEMENTS (NO FE SPECIAL CASE)
+--------------------------------------------------------------------------------
+
+  Use existing snapshot:
+
+    activeCompany.subscription.planCode  = "FREE"
+    activeCompany.subscription.status    = "active"
+    activeCompany.subscription.isValid   = true
+    activeCompany.subscription.endDate   = null
+
+  modules[] come from entitlement engine:
+    plan modules − REVOKE + GRANT, with company enable/disable
+
+  Do NOT hardcode "show all modules" on FE.
+  FREE is just another plan with a full plan_modules set.
+
+
+CURRENT SUBSCRIPTION HELPER
+--------------------------------------------------------------------------------
+
+  GET /companies/{companyId}/subscriptions/current
+
+  Returns (among other fields):
+
+    planCode, status, isValid: true,
+    plan: { code, name, planId, price, isFree, requiresPayment },
+    endDate: null
+
+
+UPGRADE LATER
+--------------------------------------------------------------------------------
+
+  Assign a paid plan via the same POST subscriptions endpoint.
+  Previous live sub is expired; entitlements recompute from new plan.
+
+
+ACCEPTANCE
+--------------------------------------------------------------------------------
+
+  [x] FREE appears in GET /subscription/plans with isFree=true
+  [x] FREE has all active product modules in plan_modules
+  [x] Assign FREE with no payment
+  [ ] Company login shows all modules entitled (verify after assign)
+  [ ] Nav / guards unlock like any entitled company
+  [x] Cancel / change plan path unchanged (replace subscription)
+
+
+NOTES
+--------------------------------------------------------------------------------
+
+  - billingCycle cannot be "none" without a Prisma enum migration; use monthly.
+  - isFree / requiresPayment are API-derived, not DB columns.
+  - Other seeded plans still have price=0 today; assign also auto-activates
+    them (no payment gateway). Only FREE forces forever (null endDate).
+
+
+================================================================================
+END
+================================================================================

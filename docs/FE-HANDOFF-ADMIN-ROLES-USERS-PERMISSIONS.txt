@@ -1,0 +1,62 @@
+================================================================================
+FE HANDOFF — COMPANY ADMIN: ORG + ROLES + USERS PERMISSIONS
+Date:       2026-09-09
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base path:  /api/v1
+Related:    docs/FE-HANDOFF-ADMIN-ORG-PERMISSIONS.txt
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  [x] ADMIN template includes:
+        - org 16 (branches/departments/designations/warehouses)
+        - roles:view|create|edit|delete
+        - users:view|create|edit|delete
+  [x] Existing companies backfilled (npm run seed:org-permissions)
+  [x] Login /auth/me backfill includes these codes
+  [x] custom_fields:* already in login backfill pack
+  [x] No platform-only codes (companies:*, plans:*, …) forced on Company Admin
+
+
+CODES ON COMPANY ADMIN (SETUP PACK)
+--------------------------------------------------------------------------------
+
+  Organization (16):
+    branches:*  departments:*  designations:*  warehouses:*
+
+  Roles (4):
+    roles:view | create | edit | delete
+
+  Users (4):
+    users:view | create | edit | delete
+
+  Also backfilled on login (Hybrid pack extras):
+    permission_sets:*, data_access_policies:*, custom_fields:*, form_configurations:*
+
+
+FE QA
+--------------------------------------------------------------------------------
+
+  1. Logout + login as Company Admin (Ana Machinery)
+  2. GET /auth/me → permissions include roles:view, users:view, warehouses:view
+  3. Company Setup → Roles & Permissions → list loads
+  4. Company Setup → Users → list loads
+  5. Company Setup → Organization → all 4 tabs load
+
+  New company: ADMIN provisioned with setup pack automatically.
+
+
+OPS
+--------------------------------------------------------------------------------
+
+  npm run seed:org-permissions
+
+  (script now syncs org + roles + users to every roleCode=ADMIN)
+
+
+================================================================================
+END
+================================================================================
