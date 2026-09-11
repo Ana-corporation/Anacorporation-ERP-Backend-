@@ -99,7 +99,7 @@ export class AuthController {
     @CompanyId() companyId: string,
     @Body() dto: ChangePasswordDto,
   ) {
-    return this.authService.changePassword(user.sub, companyId, dto);
+    return this.authService.changePassword(user.sub, companyId, dto, user.sessionId);
   }
 
   @Post('logout')

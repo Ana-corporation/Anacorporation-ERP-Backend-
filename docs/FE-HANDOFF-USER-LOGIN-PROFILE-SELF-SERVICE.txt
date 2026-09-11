@@ -1,0 +1,255 @@
+================================================================================
+FE HANDOFF — USER LOGIN PROFILE + SELF-SERVICE + AUDIT
+Date:       2026-09-11
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base:       /api/v1
+Auth:       Bearer JWT (logged-in user, active company from token)
+Related:    FE-USER-LOGIN-PROFILE-MENU.txt
+            AUTH-API-AND-LOGIN-TEST-REFERENCE.txt
+            FE-HANDOFF-WORKSPACE-LOGIN-SNAPSHOT.txt
+            FE-HANDOFF-ADMIN-ROLES-USERS-PERMISSIONS.txt
+================================================================================
+
+
+VERDICT
+--------------------------------------------------------------------------------
+
+  BE shipped. FE can wire My Profile / header photo / membership labels.
+
+  Login is still per USER (employeeCode + password).
+  Department / Designation / Warehouse are membership labels, NOT logins.
+
+  No extra permission codes for /users/me*.
+  Any authenticated member of the active company can read/patch SELF only.
+
+
+================================================================================
+1) LOGIN SNAPSHOT  (header + profile)
+================================================================================
+
+  Same shape on:
+
+    POST /auth/login
+    GET  /auth/me
+
+  Keep using existing fields:
+    user, companies[], activeCompany, permissions[], entitlements,
+    tenantAdmin, platformOwner, mustChangePassword
+    accessToken on login only
+
+  NEW on user:
+
+    {
+      "userId": "12",
+      "username": "priya",
+      "displayName": "Mohana Priya",
+      "email": "priya@ana.com",
+      "phone": "+91xxxxxxxxxx",
+      "avatarUrl": "https://... or null",
+      "employeeCode": "ANA03"
+    }
+
+  NEW on activeCompany.membership:
+
+    {
+      "departmentId": "4",
+      "departmentName": "Purchase",
+      "designationId": "2",
+      "designationName": "Executive",
+      "warehouseId": "14",
+      "warehouseName": "Main Store",
+      "status": "ACTIVE"
+    }
+
+  Role stays on activeCompany.role (unchanged):
+    roleId, roleCode, roleName, systemTemplateKey, roleType
+
+  Unknown org fields → null. Show "—" in UI.
+  Do NOT drop permissions[] or activeCompany.modules[] — workspace still needs them.
+
+  IDs are STRINGS ("12"), same as the rest of this API.
+  membership.status is "ACTIVE" or "INACTIVE" (not lowercase).
+
+  phone   = User.mobile
+  avatarUrl = User.profilePhoto (absolute URL FE can load)
+  employeeCode = membership employee code (UserCompany.employeeId)
+
+  Platform owner: user profile still returned; membership org fields may be null.
+
+
+================================================================================
+2) SELF PROFILE APIs
+================================================================================
+
+  Scope: ALWAYS the JWT user + active company. Never send another userId.
+
+  ------------------------------------------------------------------------------
+  GET /users/me
+  ------------------------------------------------------------------------------
+
+    200
+
+    {
+      "user": { ...same as /auth/me user... },
+      "membership": { ...same as activeCompany.membership... } | null,
+      "role": { ...same as activeCompany.role... } | null
+    }
+
+    FE may call this instead of parsing the full /auth/me workspace snapshot.
+    Allowed while mustChangePassword=true (same as GET /auth/me).
+
+  ------------------------------------------------------------------------------
+  PATCH /users/me
+  ------------------------------------------------------------------------------
+
+    Body — ONLY these keys:
+
+      {
+        "displayName": "Mohana Priya",
+        "phone": "+91xxxxxxxxxx"
+      }
+
+    Send one or both. Empty phone string clears it (null).
+
+    200  same payload as GET /users/me (updated)
+
+    REJECTED if body contains:
+      email, employeeCode, employeeId, roleId, departmentId, designationId,
+      warehouseId, status, companyId, permissions, password
+
+      → 422  "These fields cannot be changed on your profile"
+      extra unknown keys → 400 (strict body)
+
+    Admin changes those via existing:
+
+      PATCH /companies/{companyId}/users/{userId}
+      PUT   /companies/{companyId}/users/{userId}/role
+      PATCH /companies/{companyId}/users/{userId}/membership   (dept / designation / warehouse)
+
+  ------------------------------------------------------------------------------
+  POST /users/me/avatar
+  ------------------------------------------------------------------------------
+
+    multipart/form-data
+    field name: file   (required)
+
+    Allowed: image/jpeg, image/png, image/webp
+    Max:     2 MB
+    Rejected: svg, exe, html, js, other types
+
+    200  { "avatarUrl": "https://..." }
+
+    Next GET /auth/me or GET /users/me includes the same avatarUrl on user.
+
+  ------------------------------------------------------------------------------
+  PATCH /users/me/settings   (optional — personal prefs only)
+  ------------------------------------------------------------------------------
+
+    {
+      "locale": "en-IN",
+      "dateFormat": "DD/MM/YYYY"
+    }
+
+    Send one or both.
+    200  { "locale": "en-IN", "dateFormat": "DD/MM/YYYY" }
+
+    Not company modules. Not other users' prefs.
+
+
+================================================================================
+3) CHANGE PASSWORD  (unchanged path)
+================================================================================
+
+  POST /auth/change-password
+
+    {
+      "currentPassword": "...",
+      "newPassword": "...",
+      "confirmPassword": "..."
+    }
+
+  currentPassword required except first-login (mustChangePassword=true).
+  After success: mustChangePassword=false.
+  Other refresh sessions for this user+company are revoked (this session kept).
+
+
+================================================================================
+4) AUTHORIZATION
+================================================================================
+
+  Login identifies WHO.
+  permissions[] decides WHAT (workspace / admin screens).
+
+  /users/me* does NOT need users:edit or any extra code.
+  User A cannot PATCH user B via /users/me — userId comes from the token only.
+
+  Store Manager still cannot call admin:
+
+    PATCH /companies/{companyId}/users/{otherUserId}
+
+
+================================================================================
+5) AUDIT FIELDS  (list + detail)
+================================================================================
+
+  Applied on: vendors, items, warehouses, storage-bins, roles, users invite/list/detail.
+
+  Extra fields (in addition to createdBy / createdAt):
+
+    "createdByUserId": "12",
+    "createdByName": "Mohana Priya",
+    "updatedByUserId": "12",
+    "updatedByName": "Mohana Priya",
+    "deletedByUserId": null,
+    "deletedByName": null,
+    "approvedByUserId": null,
+    "approvedByName": null
+
+  createdAt / updatedAt already existed.
+  Names are displayName (fallback first+last, then username).
+  FE can show later; My Profile does not depend on this.
+
+
+================================================================================
+6) FE CHECKLIST
+================================================================================
+
+  [ ] Header / avatar: user.avatarUrl from login or GET /users/me
+  [ ] Profile read-only: email, employeeCode, departmentName, designationName,
+        warehouseName, membership.status, role.roleName
+  [ ] Profile editable: displayName, phone  → PATCH /users/me
+  [ ] Photo: POST /users/me/avatar  field=file
+  [ ] Null org fields → show "—"
+  [ ] Do not send roleId / departmentId on PATCH /users/me
+  [ ] IDs as strings
+  [ ] Menu / workspace still from /auth/me permissions[] + modules[]
+      (profile APIs do not replace the workspace snapshot)
+
+
+================================================================================
+7) QA
+================================================================================
+
+  [ ] Invite Priya → she logs in with HER employee code only
+  [ ] Same department as Kumar → two different tokens / userIds
+  [ ] GET /auth/me includes membership names after Admin assigned dept/warehouse
+  [ ] PATCH /users/me { "roleId": "1" } → rejected
+  [ ] PATCH /users/me { "displayName": "Priya K" } → 200, next /me shows new name
+  [ ] POST avatar → avatarUrl on next /me
+  [ ] Store Manager token cannot PATCH another user via admin URL
+  [ ] Create vendor → createdByUserId = logged-in user, createdByName present
+
+
+================================================================================
+8) NOT IN THIS FILE
+================================================================================
+
+  Department login / shared department password  — will not be added
+  Second JWT / auth module
+  Moving bins / inventory sites  — see FE-HANDOFF-INVENTORY-SITES-LOCATIONS-BINS.txt
+
+
+================================================================================
+END
+================================================================================

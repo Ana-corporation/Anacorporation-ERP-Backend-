@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, UserAuditAction } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { parseBigIntId, tryParseBigIntId } from '@/common/utils/bigint.util';
+import {
+  actorDisplayName,
+  applyAuditActors,
+  collectActorIds,
+  RecordAuditFields,
+} from '@/common/utils/record-audit.util';
 
 export interface AuditLogInput {
   companyId?: string;
@@ -33,5 +39,39 @@ export class AuditService {
         ipAddress: input.ipAddress,
       },
     });
+  }
+
+  async loadActorNames(userIds: string[]): Promise<Map<string, string>> {
+    const names = new Map<string, string>();
+    const unique = [...new Set(userIds.filter((id) => /^\d+$/.test(id)))];
+    if (unique.length === 0) return names;
+
+    const users = await this.prisma.user.findMany({
+      where: { userId: { in: unique.map((id) => BigInt(id)) } },
+      select: {
+        userId: true,
+        displayName: true,
+        firstName: true,
+        lastName: true,
+        username: true,
+      },
+    });
+
+    for (const user of users) {
+      names.set(user.userId.toString(), actorDisplayName(user));
+    }
+    return names;
+  }
+
+  async withAuditList<T extends Record<string, unknown>>(
+    records: T[],
+  ): Promise<Array<T & RecordAuditFields>> {
+    const names = await this.loadActorNames(collectActorIds(records));
+    return records.map((record) => applyAuditActors(record, names));
+  }
+
+  async withAudit<T extends Record<string, unknown>>(record: T): Promise<T & RecordAuditFields> {
+    const [row] = await this.withAuditList([record]);
+    return row;
   }
 }

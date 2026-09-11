@@ -37,13 +37,14 @@ export class StorageBinsService {
   async findAll(companyId: string, query: PaginationQueryDto) {
     const { items, total, page, limit } = await this.repository.findManyByCompany(companyId, query);
     const mapped = items.map((item) => this.mapBin(serialize(item) as Record<string, unknown>));
-    return toPaginatedResult(mapped, total, page, limit);
+    const withAudit = await this.auditService.withAuditList(mapped);
+    return toPaginatedResult(withAudit, total, page, limit);
   }
 
   async findOne(id: string, companyId: string) {
     const bin = await this.repository.findById(id, companyId);
     if (!bin) throw new NotFoundException('Storage bin');
-    return this.mapBin(serialize(bin) as Record<string, unknown>);
+    return this.auditService.withAudit(this.mapBin(serialize(bin) as Record<string, unknown>));
   }
 
   async create(companyId: string, dto: CreateStorageBinDto, actorId: string) {
@@ -86,7 +87,7 @@ export class StorageBinsService {
       newValue: { binCode: code, warehouseId },
     });
 
-    return this.mapBin(serialize(bin) as Record<string, unknown>);
+    return this.auditService.withAudit(this.mapBin(serialize(bin) as Record<string, unknown>));
   }
 
   async update(id: string, companyId: string, dto: UpdateStorageBinDto, actorId: string) {
@@ -116,7 +117,7 @@ export class StorageBinsService {
       newValue: dto as Record<string, unknown>,
     });
 
-    return this.mapBin(serialize(bin) as Record<string, unknown>);
+    return this.auditService.withAudit(this.mapBin(serialize(bin) as Record<string, unknown>));
   }
 
   async remove(id: string, companyId: string, actorId: string) {

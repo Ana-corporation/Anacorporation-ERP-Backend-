@@ -59,14 +59,16 @@ export class RolesService {
       companyId,
       query,
     );
-    const mapped = items.map((role) => this.mapRoleRow(role as any));
-    return serialize(toPaginatedResult(mapped, total, page, limit));
+    const mapped = await this.auditService.withAuditList(
+      items.map((role) => serialize(this.mapRoleRow(role as any)) as Record<string, unknown>),
+    );
+    return toPaginatedResult(mapped, total, page, limit);
   }
 
   async findOne(id: string, companyId: string) {
     const role = await this.repository.findById(id, companyId);
     if (!role) throw new NotFoundException('Role');
-    return serialize(this.mapRoleRow(role as any));
+    return this.presentRole(role);
   }
 
   async create(companyId: string, dto: CreateRoleDto, actorId: string) {
@@ -90,7 +92,7 @@ export class RolesService {
       newValue: { roleCode, roleName: role.roleName, roleType: 'CUSTOM' },
     });
 
-    return serialize(this.mapRoleRow(role as any));
+    return this.presentRole(role);
   }
 
   async update(id: string, companyId: string, dto: UpdateRoleDto, actorId: string) {
@@ -119,7 +121,7 @@ export class RolesService {
     });
 
     const fresh = await this.repository.findById(id, companyId);
-    return serialize(this.mapRoleRow((fresh ?? role) as any));
+    return this.presentRole(fresh ?? role);
   }
 
   async remove(id: string, companyId: string, actorId: string, dto?: DeleteRoleDto) {
@@ -227,7 +229,7 @@ export class RolesService {
       newValue: { permissionCodes: dto.permissionCodes ?? [] },
     });
 
-    return serialize(this.mapRoleRow(role as any));
+    return this.presentRole(role);
   }
 
   async clone(id: string, companyId: string, dto: CloneRoleDto, actorId: string) {
@@ -265,7 +267,7 @@ export class RolesService {
       },
     });
 
-    return serialize(this.mapRoleRow(cloned as any));
+    return this.presentRole(cloned);
   }
 
   /**
@@ -324,7 +326,7 @@ export class RolesService {
     const role = await this.repository.findById(id, companyId);
     if (!role) throw new NotFoundException('Role');
     if (role.status === 'INACTIVE') {
-      return serialize(this.mapRoleRow(role as any));
+      return this.presentRole(role);
     }
 
     const assignedCount = await this.repository.countActiveAssignees(companyId, id);
@@ -352,14 +354,14 @@ export class RolesService {
       },
     });
 
-    return serialize(this.mapRoleRow(updated as any));
+    return this.presentRole(updated);
   }
 
   async reactivate(id: string, companyId: string, actorId: string) {
     const role = await this.repository.findById(id, companyId);
     if (!role) throw new NotFoundException('Role');
     if (role.status === 'ACTIVE') {
-      return serialize(this.mapRoleRow(role as any));
+      return this.presentRole(role);
     }
 
     const updated = await this.repository.setStatus(id, 'ACTIVE', actorId);
@@ -378,7 +380,7 @@ export class RolesService {
       },
     });
 
-    return serialize(this.mapRoleRow(updated as any));
+    return this.presentRole(updated);
   }
 
   async assignPerson(
@@ -586,6 +588,12 @@ export class RolesService {
     if (!membership) {
       throw new BusinessException('User must be a member of this company');
     }
+  }
+
+  private presentRole(role: any) {
+    return this.auditService.withAudit(
+      serialize(this.mapRoleRow(role)) as Record<string, unknown>,
+    );
   }
 
   private mapRoleRow(role: any) {

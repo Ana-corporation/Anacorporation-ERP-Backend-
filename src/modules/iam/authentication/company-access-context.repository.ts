@@ -19,6 +19,9 @@ export class CompanyAccessContextRepository {
       include: {
         user: true,
         company: true,
+        department: { select: { departmentId: true, name: true } },
+        designation: { select: { designationId: true, name: true } },
+        warehouse: { select: { warehouseId: true, name: true } },
       },
     });
   }

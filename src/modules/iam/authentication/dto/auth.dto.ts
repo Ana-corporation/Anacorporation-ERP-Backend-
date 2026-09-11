@@ -35,7 +35,7 @@ export const CompanySummarySchema = z.object({
 
 export const ChangePasswordSchema = z
   .object({
-    currentPassword: z.string().min(1),
+    currentPassword: z.string().min(1).optional(),
     newPassword: passwordSchema,
     confirmPassword: z.string().min(1),
   })
@@ -43,10 +43,13 @@ export const ChangePasswordSchema = z
     message: 'Passwords do not match',
     path: ['confirmPassword'],
   })
-  .refine((data) => data.newPassword !== data.currentPassword, {
-    message: 'New password must be different from current password',
-    path: ['newPassword'],
-  });
+  .refine(
+    (data) => !data.currentPassword || data.newPassword !== data.currentPassword,
+    {
+      message: 'New password must be different from current password',
+      path: ['newPassword'],
+    },
+  );
 
 export class LoginDto extends createZodDto(LoginSchema) {}
 export class RefreshTokenDto extends createZodDto(RefreshTokenSchema) {}

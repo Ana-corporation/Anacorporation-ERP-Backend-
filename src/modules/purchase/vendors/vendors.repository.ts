@@ -103,7 +103,7 @@ export class VendorsRepository {
 
   create(
     companyId: string,
-    dto: Omit<CreateVendorDto, 'customFields'>,
+    dto: Omit<CreateVendorDto, 'customFields' | 'attachments'>,
     vendorCode: string,
     createdBy?: string,
     client: DbClient = this.prisma,
@@ -129,7 +129,7 @@ export class VendorsRepository {
 
   update(
     id: string,
-    dto: UpdateVendorDto,
+    dto: Omit<UpdateVendorDto, 'customFields' | 'attachments'>,
     updatedBy?: string,
     client: DbClient = this.prisma,
   ) {

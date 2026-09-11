@@ -44,7 +44,11 @@ export class ItemsService {
       companyId,
       query,
     );
-    return serialize(toPaginatedResult(items, total, page, limit));
+    const pageResult = serialize(toPaginatedResult(items, total, page, limit));
+    const withAudit = await this.auditService.withAuditList(
+      pageResult.items as unknown as Record<string, unknown>[],
+    );
+    return { ...pageResult, items: withAudit };
   }
 
   async findOne(id: string, companyId: string, userId?: string) {
@@ -59,7 +63,7 @@ export class ItemsService {
         );
       }
     }
-    return serialize(item);
+    return this.auditService.withAudit(serialize(item) as Record<string, unknown>);
   }
 
   async create(companyId: string, dto: CreateItemDto, actorId: string) {
@@ -108,7 +112,7 @@ export class ItemsService {
       newValue: { itemCode: item.itemCode, description: item.description, itemCodeMode: mode },
     });
 
-    return serialize(item);
+    return this.auditService.withAudit(serialize(item) as Record<string, unknown>);
   }
 
   async getItemSettings(companyId: string, actorId?: string) {
@@ -177,7 +181,7 @@ export class ItemsService {
       newValue: dto as Record<string, unknown>,
     });
 
-    return serialize(item);
+    return this.auditService.withAudit(serialize(item) as Record<string, unknown>);
   }
 
   async remove(id: string, companyId: string, actorId: string) {

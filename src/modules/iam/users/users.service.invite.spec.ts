@@ -39,7 +39,7 @@ describe('UsersService — invite default ADMIN', () => {
 
     const service = new UsersService(
       repository as never,
-      { log: jest.fn() } as never,
+      { log: jest.fn(), withAudit: jest.fn(async (row) => row) } as never,
       { get: jest.fn().mockReturnValue(24) } as never,
       { invalidate: jest.fn() } as never,
       { ensureLinkedForInvite: jest.fn() } as never,

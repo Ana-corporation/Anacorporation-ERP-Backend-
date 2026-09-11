@@ -47,7 +47,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
       if (multerCode === 'LIMIT_FILE_SIZE') {
         status = HttpStatus.BAD_REQUEST;
-        message = 'File too large (max 10 MB)';
+        message = 'File too large';
       } else if (multerCode.startsWith('LIMIT_')) {
         status = HttpStatus.BAD_REQUEST;
         message = exception.message || 'Invalid file upload';

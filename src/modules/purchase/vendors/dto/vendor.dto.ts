@@ -30,8 +30,10 @@ export const CreateVendorSchema = z.object({
   country: optionalTrimmed(100),
   taxId: optionalTrimmed(80),
   isActive: z.boolean().optional(),
-  /** Advanced SAP-style fields live here (payment, bank, accounting, remarks). */
+  /** Advanced SAP-style fields live here (payment, bank, accounting, remarks, attachments). */
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Optional top-level alias; FE also sends metadata.attachments. */
+  attachments: z.array(z.record(z.string(), z.unknown())).optional(),
   /** Company-defined custom fields (UDF) — validated against definitions. */
   customFields: z.record(z.string(), z.unknown()).optional(),
 });
@@ -49,6 +51,8 @@ export const UpdateVendorSchema = z.object({
   taxId: optionalTrimmed(80),
   isActive: z.boolean().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /** Optional top-level alias; FE also sends metadata.attachments. */
+  attachments: z.array(z.record(z.string(), z.unknown())).optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
 });
 

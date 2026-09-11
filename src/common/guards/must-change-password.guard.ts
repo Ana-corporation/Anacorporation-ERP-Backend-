@@ -72,6 +72,8 @@ export class MustChangePasswordGuard implements CanActivate {
 
     if (allowedExact.has(normalized)) return true;
 
+    if (normalized === '/users/me' && m === 'GET') return true;
+
     // switch-company still issues new tokens — allow so multi-company invitees can switch
     if (normalized === '/auth/switch-company' && m === 'POST') return true;
 

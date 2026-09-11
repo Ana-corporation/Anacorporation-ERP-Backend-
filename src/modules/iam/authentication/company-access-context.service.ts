@@ -10,6 +10,7 @@ import {
 } from '@/common/exceptions/business.exception';
 import { EntitlementService } from '@/modules/subscription/entitlements/entitlement.service';
 import { CompanyAccessContextRepository } from './company-access-context.repository';
+import { mapLoginMembership, mapLoginUserProfile } from './auth-profile.mapper';
 import {
   CompanyAccessContext,
   CompanyAccessModuleSummary,
@@ -74,12 +75,7 @@ export class CompanyAccessContextService {
     const user = membership.user;
 
     return {
-      user: {
-        userId: user.userId.toString(),
-        username: user.username,
-        displayName: user.displayName ?? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
-        email: user.email,
-      },
+      user: mapLoginUserProfile(user, membership),
       companies: companies.map((row) => ({
         companyId: row.company.companyId.toString(),
         companyCode: row.company.companyCode,
@@ -92,6 +88,7 @@ export class CompanyAccessContextService {
         companyCode: company.companyCode,
         name: company.name,
         status: company.status,
+        membership: mapLoginMembership(membership),
         role: primaryRole?.role
           ? {
               roleId: primaryRole.role.roleId.toString(),

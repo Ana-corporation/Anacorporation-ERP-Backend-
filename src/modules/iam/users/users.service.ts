@@ -48,14 +48,10 @@ export class UsersService {
   }
   async findAll(companyId: string, query: PaginationQueryDto) {
     const { items, total, page, limit } = await this.repository.findManyByCompany(companyId, query);
-    return serialize(
-      toPaginatedResult(
-        items.map((item) => this.toInviteUserPayload(item)),
-        total,
-        page,
-        limit,
-      ),
+    const mapped = await this.auditService.withAuditList(
+      items.map((item) => serialize(this.toInviteUserPayload(item)) as Record<string, unknown>),
     );
+    return toPaginatedResult(mapped, total, page, limit);
   }
 
   /** Platform Owner Company Admins tab — ADMIN role only. */
@@ -67,12 +63,14 @@ export class UsersService {
     if (companyId) {
       const detail = await this.repository.findCompanyUserDetail(id, companyId);
       if (!detail) throw new NotFoundException('User');
-      return serialize(this.toInviteUserPayload(detail));
+      return this.auditService.withAudit(
+        serialize(this.toInviteUserPayload(detail)) as Record<string, unknown>,
+      );
     }
 
     const user = await this.repository.findById(id);
     if (!user) throw new NotFoundException('User');
-    return serialize(user);
+    return this.auditService.withAudit(serialize(user) as Record<string, unknown>);
   }
 
   async create(companyId: string, dto: CreateUserDto, actorId: string) {
@@ -640,7 +638,7 @@ export class UsersService {
     );
   }
 
-  private credentialsResponse(
+  private async credentialsResponse(
     detail: {
       userId: bigint;
       username: string;
@@ -650,6 +648,10 @@ export class UsersService {
       email: string;
       mobile: string | null;
       isActive: boolean;
+      createdBy?: bigint | null;
+      createdAt?: Date;
+      updatedBy?: bigint | null;
+      updatedAt?: Date | null;
       companies?: Array<{
         userCompanyId: bigint;
         employeeId: string | null;
@@ -680,14 +682,17 @@ export class UsersService {
     const expiresAt = new Date(
       Date.now() + this.tempPasswordTtlHours * 60 * 60 * 1000,
     ).toISOString();
-    return serialize({
-      user: this.toInviteUserPayload(detail),
+    const user = await this.auditService.withAudit(
+      serialize(this.toInviteUserPayload(detail)) as Record<string, unknown>,
+    );
+    return {
+      user,
       temporaryPassword: extra.temporaryPassword,
       employeeId: extra.employeeId,
       companyCode: extra.companyCode,
       passwordExpiresAt: extra.temporaryPassword ? expiresAt : null,
       tempPasswordTtlHours: this.tempPasswordTtlHours,
-    });
+    };
   }
 
   /** Meets passwordSchema: 8+ chars, upper, lower, digit. Avoids & ^ which break copy/paste. */
@@ -718,6 +723,10 @@ export class UsersService {
     email: string;
     mobile: string | null;
     isActive: boolean;
+    createdBy?: bigint | null;
+    createdAt?: Date;
+    updatedBy?: bigint | null;
+    updatedAt?: Date | null;
     companies?: Array<{
       userCompanyId: bigint;
       employeeId: string | null;
@@ -785,6 +794,10 @@ export class UsersService {
             roleName: role.roleName,
           }
         : null,
+      createdBy: detail.createdBy ?? null,
+      createdAt: detail.createdAt ?? null,
+      updatedBy: detail.updatedBy ?? null,
+      updatedAt: detail.updatedAt ?? null,
     };
   }
 

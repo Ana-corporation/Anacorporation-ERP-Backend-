@@ -35,13 +35,17 @@ export class WarehousesService {
 
   async findAll(companyId: string, query: PaginationQueryDto) {
     const { items, total, page, limit } = await this.repository.findManyByCompany(companyId, query);
-    return serialize(toPaginatedResult(items, total, page, limit));
+    const pageResult = serialize(toPaginatedResult(items, total, page, limit));
+    const withAudit = await this.auditService.withAuditList(
+      pageResult.items as unknown as Record<string, unknown>[],
+    );
+    return { ...pageResult, items: withAudit };
   }
 
   async findOne(id: string, companyId: string) {
     const warehouse = await this.repository.findById(id, companyId);
     if (!warehouse) throw new NotFoundException('Warehouse');
-    return serialize(warehouse);
+    return this.auditService.withAudit(serialize(warehouse) as Record<string, unknown>);
   }
 
   async create(companyId: string, dto: CreateWarehouseDto, actorId: string) {
@@ -83,7 +87,7 @@ export class WarehousesService {
       },
     });
 
-    return serialize(warehouse);
+    return this.auditService.withAudit(serialize(warehouse) as Record<string, unknown>);
   }
 
   async update(id: string, companyId: string, dto: UpdateWarehouseDto, actorId: string) {
@@ -114,7 +118,7 @@ export class WarehousesService {
       newValue: dto as Record<string, unknown>,
     });
 
-    return serialize(warehouse);
+    return this.auditService.withAudit(serialize(warehouse) as Record<string, unknown>);
   }
 
   async remove(id: string, companyId: string, actorId: string) {

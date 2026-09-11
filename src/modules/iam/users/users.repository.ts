@@ -348,6 +348,33 @@ export class UsersRepository {
     });
   }
 
+  updateSelfProfile(
+    userId: string,
+    data: { displayName?: string; mobile?: string | null },
+    actorId: string,
+  ) {
+    return this.prisma.user.update({
+      where: { userId: parseBigIntId(userId) },
+      data: {
+        ...(data.displayName !== undefined ? { displayName: data.displayName } : {}),
+        ...(data.mobile !== undefined ? { mobile: data.mobile } : {}),
+        updatedBy: parseBigIntId(actorId),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  updateProfilePhoto(userId: string, avatarUrl: string | null, actorId: string) {
+    return this.prisma.user.update({
+      where: { userId: parseBigIntId(userId) },
+      data: {
+        profilePhoto: avatarUrl,
+        updatedBy: parseBigIntId(actorId),
+        updatedAt: new Date(),
+      },
+    });
+  }
+
   softDelete(id: string, deletedBy?: string) {
     return this.prisma.user.update({
       where: { userId: parseBigIntId(id) },

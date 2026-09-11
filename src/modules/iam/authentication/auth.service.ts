@@ -296,18 +296,38 @@ export class AuthService {
     return this.roleLoginResponseBuilder.toMePayload(snapshot);
   }
 
-  async changePassword(userId: string, companyId: string, dto: ChangePasswordDto) {
+  async getMyProfile(userId: string, companyId: string) {
+    const me = await this.getMe(userId, companyId);
+    return {
+      user: me.user,
+      membership: me.activeCompany.membership ?? null,
+      role: me.activeCompany.role,
+    };
+  }
+
+  async changePassword(
+    userId: string,
+    companyId: string,
+    dto: ChangePasswordDto,
+    currentSessionId?: string,
+  ) {
     const auth = await this.authRepository.findAuthenticationByUserId(userId);
     if (!auth?.passwordHash) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const currentOk = await bcrypt.compare(dto.currentPassword, auth.passwordHash);
-    if (!currentOk) {
-      throw new UnauthorizedException('Current password is incorrect');
+    const mustChangePassword = Boolean(auth.mustChangePassword);
+    if (!mustChangePassword) {
+      if (!dto.currentPassword) {
+        throw new BadRequestException('Current password is required');
+      }
+      const currentOk = await bcrypt.compare(dto.currentPassword, auth.passwordHash);
+      if (!currentOk) {
+        throw new UnauthorizedException('Current password is incorrect');
+      }
     }
 
-    if (dto.newPassword === dto.currentPassword) {
+    if (dto.currentPassword && dto.newPassword === dto.currentPassword) {
       throw new BadRequestException('New password must be different from current password');
     }
 
@@ -320,6 +340,13 @@ export class AuthService {
     });
 
     await this.userContextCache.invalidate(userId, companyId);
+    if (currentSessionId) {
+      await this.authSessionService.revokeOtherCompanySessions(
+        userId,
+        companyId,
+        currentSessionId,
+      );
+    }
 
     await this.auditService.log({
       companyId,

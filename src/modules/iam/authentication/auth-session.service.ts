@@ -157,6 +157,16 @@ export class AuthSessionService {
     await this.revokeCompanySession(sessionId, session ?? undefined);
   }
 
+  async revokeOtherCompanySessions(userId: string, companyId: string, keepSessionId: string) {
+    const key = AUTH_REDIS_KEYS.userSessions(userId, companyId);
+    const sids = (await this.redisService.getJson<string[]>(key)) ?? [];
+    for (const sid of sids) {
+      if (sid !== keepSessionId) {
+        await this.revokeCompanySessionById(sid);
+      }
+    }
+  }
+
   async enforceConcurrentSessionPolicy(
     userId: string,
     companyId: string,

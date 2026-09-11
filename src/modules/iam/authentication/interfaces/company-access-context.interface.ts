@@ -5,6 +5,19 @@ export interface CompanyAccessUserSummary {
   username: string;
   displayName: string;
   email: string;
+  phone: string | null;
+  avatarUrl: string | null;
+  employeeCode: string | null;
+}
+
+export interface CompanyAccessMembershipSummary {
+  departmentId: string | null;
+  departmentName: string | null;
+  designationId: string | null;
+  designationName: string | null;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
 }
 
 export interface CompanyAccessCompanySummary {
@@ -58,6 +71,7 @@ export interface CompanyAccessContext {
     name: string;
     status: string;
     role: CompanyAccessRoleSummary | null;
+    membership: CompanyAccessMembershipSummary | null;
     subscription: CompanyAccessSubscriptionSummary;
     modules: CompanyAccessModuleSummary[];
   };

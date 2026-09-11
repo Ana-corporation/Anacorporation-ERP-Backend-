@@ -1,0 +1,125 @@
+================================================================================
+FE HANDOFF — VENDOR ATTACHMENTS (COPY ITEM ATTACHMENTS)
+Date:       2026-09-11
+Audience:   ERP-Frontend, QA
+Backend:    ERP-Backend
+Base:       /api/v1
+Status:     LIVE on BE — same shapes as Item attachments
+Related:    FE-MATCH-ITEM-ATTACHMENTS.txt
+================================================================================
+
+
+VERDICT
+--------------------------------------------------------------------------------
+
+  Vendor CRUD is unchanged.
+  Multipart upload / delete / signed URL now exist (copy of items).
+  metadata.attachments is persisted and echoed. FE can drop the 404 fallback.
+
+
+================================================================================
+1) FILE APIs
+================================================================================
+
+  Auth: JWT + company scope
+  Perms:
+    POST / DELETE  →  vendors:edit
+    GET url        →  vendors:view
+
+  Max 10 MB each.
+  Allow: pdf, doc, docx, xls, xlsx, csv, jpg, jpeg, png, webp
+  Fields: `files` (repeatable) and/or `file` (same as items)
+
+
+  POST   /companies/{companyId}/vendors/{vendorId}/attachments
+         multipart/form-data
+
+    200 envelope.data:
+    {
+      "attachments": [
+        {
+          "fileAssetId": "uuid",
+          "fileName": "quote.pdf",
+          "mimeType": "application/pdf",
+          "fileSize": 1200,
+          "storageKey": "...",
+          "publicUrl": "..." | null,
+          "attachmentDate": "YYYY-MM-DD",
+          "status": "uploaded"
+        }
+      ]
+    }
+
+
+  DELETE /companies/{companyId}/vendors/{vendorId}/attachments/{fileAssetId}
+         200  { success: true, message: "Attachment deleted", data: null }
+
+
+  GET    /companies/{companyId}/vendors/{vendorId}/attachments/{fileAssetId}/url
+         200 envelope.data: { "url": "<signed>" }
+
+
+================================================================================
+2) VENDOR CREATE / PATCH (UNCHANGED FIELDS)
+================================================================================
+
+  POST  /companies/{companyId}/vendors
+  PATCH /companies/{companyId}/vendors/{vendorId}
+  GET   /companies/{companyId}/vendors/{vendorId}
+
+  Continue sending attachment *metadata* in:
+
+    metadata.attachments: [
+      {
+        fileName, fileSize, mimeType, attachmentDate,
+        fileAssetId, publicUrl, storageKey, targetPath,
+        status: "uploaded" | "ready" | "failed"
+      }
+    ]
+
+  BE:
+    [x] Persists metadata.attachments (JSONB)
+    [x] Does not strip unknown metadata keys
+    [x] Echoes on GET vendor and GET list as:
+          attachments
+          attachmentsJson
+          metadata.attachments
+        (same array)
+
+  Optional alias also accepted on POST/PATCH:
+
+    { "attachments": [ ...same objects... ] }
+
+  Top-level attachments is merged into metadata.attachments.
+
+
+================================================================================
+3) FE FLOW (ALREADY USED)
+================================================================================
+
+  Create:
+    1. POST /vendors
+    2. POST /vendors/{id}/attachments     (queued File blobs)
+    3. PATCH /vendors/{id}                metadata.attachments with fileAssetId
+
+  Edit:
+    1. POST attachments as soon as files are picked
+    2. Save PATCH includes metadata.attachments
+
+  Download: GET …/attachments/{fileAssetId}/url when fileAssetId is present.
+
+
+================================================================================
+4) FE CHECKLIST
+================================================================================
+
+  [ ] Remove “Upload failed” fallback for 404 on vendor attachment POST
+  [ ] Create: POST vendor → POST attachments → PATCH metadata.attachments
+  [ ] Edit: upload on pick → Save PATCH metadata.attachments
+  [ ] Read GET vendor.attachments OR metadata.attachments (both present)
+  [ ] Same file types / 10 MB as Item Attachments tab
+
+
+================================================================================
+END
+================================================================================

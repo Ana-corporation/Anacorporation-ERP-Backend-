@@ -27,6 +27,9 @@ function cloneContext(input: RoleLoginHandlerInput): AuthRoleSnapshot {
       role: accessContext.activeCompany.role
         ? { ...accessContext.activeCompany.role }
         : null,
+      membership: accessContext.activeCompany.membership
+        ? { ...accessContext.activeCompany.membership }
+        : null,
       subscription: { ...accessContext.activeCompany.subscription },
       modules: accessContext.activeCompany.modules.map((m) => ({
         ...m,
