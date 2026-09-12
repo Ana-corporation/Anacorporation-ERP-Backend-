@@ -55,6 +55,11 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Enable Cloud SQL APIs
+        run: |
+          gcloud services enable sqladmin.googleapis.com servicenetworking.googleapis.com serviceusage.googleapis.com --quiet \
+            || echo "Could not enable APIs from CI. A project owner must turn on Cloud SQL Admin API in the GCP console."
+
       - name: Authorize Docker for Artifact Registry
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 

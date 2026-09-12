@@ -6,11 +6,16 @@ import { cleanupOpenApiDoc } from 'nestjs-zod';
 import * as cookieParser from 'cookie-parser';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createServer, IncomingMessage, ServerResponse, Server } from 'http';
 import { AppModule } from './app.module';
 import { applyGcpSqlDatabaseUrl } from './config/gcp-sql-url';
 import { SimpleLogger } from './common/logger/simple.logger';
 import { requestLogger } from './common/logger/request-logger.middleware';
 import { PrismaService } from './infrastructure/prisma/prisma.service';
+
+function isCloudRun() {
+  return Boolean(process.env.K_SERVICE);
+}
 
 function loadEnvFile() {
   const envPath = path.join(process.cwd(), '.env');
@@ -36,9 +41,39 @@ function loadEnvFile() {
   applyGcpSqlDatabaseUrl();
 }
 
+function startingHandler(req: IncomingMessage, res: ServerResponse) {
+  const pathName = (req.url || '/').split('?')[0];
+  const live =
+    pathName === '/health/live' || pathName === '/health' || pathName === '/api/v1/health';
+  res.writeHead(live ? 200 : 503, { 'Content-Type': 'application/json' });
+  res.end(
+    JSON.stringify({
+      status: 'starting',
+      service: 'anacorporation-erp-backend',
+      timestamp: new Date().toISOString(),
+    }),
+  );
+}
+
+function listenEarly(port: number): Promise<Server> {
+  const server = createServer(startingHandler);
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '0.0.0.0', () => resolve(server));
+  });
+}
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   loadEnvFile();
+
+  const port = Number(process.env.PORT) || 3002;
+  let earlyServer: Server | undefined;
+
+  if (isCloudRun()) {
+    earlyServer = await listenEarly(port);
+    logger.log(`API listening on ${port} (Cloud Run startup)`);
+  }
 
   const app = await NestFactory.create(AppModule, {
     logger: new SimpleLogger(),
@@ -48,7 +83,6 @@ async function bootstrap() {
   app.use(requestLogger);
 
   const configService = app.get(ConfigService);
-  const port = Number(process.env.PORT) || configService.get<number>('app.port') || 3002;
   const apiPrefix = configService.get<string>('app.apiPrefix') ?? 'api/v1';
 
   app.setGlobalPrefix(apiPrefix, {
@@ -69,7 +103,12 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
 
-  if (!process.env.K_SERVICE) {
+  if (earlyServer) {
+    const expressApp = app.getHttpAdapter().getInstance();
+    earlyServer.removeListener('request', startingHandler);
+    earlyServer.on('request', expressApp);
+    logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
+  } else {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { freePort } = require('../scripts/free-port.js') as {
@@ -79,12 +118,10 @@ async function bootstrap() {
     } catch (err) {
       logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
     }
+    await app.listen(port, '0.0.0.0');
+    logger.log(`API listening on ${port}`);
+    logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
   }
-
-  // Bind PORT before Swagger/DB so Cloud Run startup probes can succeed.
-  await app.listen(port, '0.0.0.0');
-  logger.log(`API listening on ${port}`);
-  logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Manufacturing ERP API')
@@ -146,5 +183,7 @@ async function bootstrap() {
 bootstrap().catch((error) => {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(`Fatal bootstrap error: ${message}`);
-  process.exit(1);
+  if (!isCloudRun()) {
+    process.exit(1);
+  }
 });

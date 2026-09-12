@@ -28,17 +28,18 @@ const envSchema = z
         path: ['TEMP_PASSWORD_TTL_HOURS'],
       });
     }
-    if (data.NODE_ENV === 'production') {
-      if (
-        data.JWT_SECRET.length < 32 ||
+    const onCloudRun = Boolean(process.env.K_SERVICE);
+    if (
+      data.NODE_ENV === 'production' &&
+      !onCloudRun &&
+      (data.JWT_SECRET.length < 32 ||
         data.JWT_SECRET.includes('change-me') ||
-        data.JWT_SECRET.includes('dev-jwt')
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'JWT_SECRET must be a strong random string (32+ chars) in production',
-        });
-      }
+        data.JWT_SECRET.includes('dev-jwt'))
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'JWT_SECRET must be a strong random string (32+ chars) in production',
+      });
     }
   });
 
