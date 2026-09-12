@@ -31,7 +31,7 @@ export class ExcelParserService {
 
     const headerRow = sheet.getRow(1);
     const headers: string[] = [];
-    headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    headerRow.eachCell({ includeEmpty: false }, (cell: ExcelJS.Cell, colNumber: number) => {
       headers[colNumber - 1] = String(cell.text ?? cell.value ?? '').trim();
     });
 
@@ -45,7 +45,7 @@ export class ExcelParserService {
     }
 
     const rows: Record<string, string>[] = [];
-    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    sheet.eachRow({ includeEmpty: false }, (row: ExcelJS.Row, rowNumber: number) => {
       if (rowNumber === 1) return;
       const data: Record<string, string> = {};
       let hasValue = false;
