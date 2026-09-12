@@ -139,21 +139,32 @@ jobs:
           PY
 
           CLOUD_SQL_INSTANCE="$(cat cloud-sql-instance.txt)"
-          gcloud run deploy "${SERVICE}" \
-            --image "${IMAGE}" \
-            --region "${REGION}" \
-            --platform managed \
-            --allow-unauthenticated \
-            --port 8080 \
-            --memory 2Gi \
-            --cpu 2 \
-            --timeout 300 \
-            --min-instances 0 \
-            --max-instances 5 \
-            --cpu-boost \
-            --add-cloudsql-instances "${CLOUD_SQL_INSTANCE}" \
-            --startup-probe=tcpSocket.port=8080,periodSeconds=5,timeoutSeconds=2,failureThreshold=36 \
+          echo "Deploying image ${IMAGE}"
+          echo "Cloud SQL instance ${CLOUD_SQL_INSTANCE}"
+
+          deploy_common=(
+            --image "${IMAGE}"
+            --region "${REGION}"
+            --platform managed
+            --allow-unauthenticated
+            --port 8080
+            --memory 2Gi
+            --cpu 2
+            --timeout 300
+            --min-instances 0
+            --max-instances 5
+            --cpu-boost
+            --startup-probe=tcpSocket.port=8080,periodSeconds=5,timeoutSeconds=2,failureThreshold=36
             --env-vars-file cloud-run-env.yaml
+          )
+
+          if gcloud run deploy "${SERVICE}" "${deploy_common[@]}" --add-cloudsql-instances "${CLOUD_SQL_INSTANCE}"; then
+            echo "Deployed with Cloud SQL attachment."
+          else
+            echo "Cloud SQL attach failed (enable Cloud SQL Admin API + Service Usage API as project owner)."
+            echo "Retrying deploy without Cloud SQL so the container can bind PORT=8080."
+            gcloud run deploy "${SERVICE}" "${deploy_common[@]}" --clear-cloudsql-instances
+          fi
 
           rm -f cloud-run-env.yaml cloud-sql-instance.txt
 
