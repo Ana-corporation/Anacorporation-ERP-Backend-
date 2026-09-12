@@ -1,12 +1,15 @@
-const LIVE_FRONTEND_ORIGIN =
-  'https://anacorporation-erp-frontend-983704016599.europe-west1.run.app';
+const LIVE_FRONTEND_ORIGINS = [
+  'https://anacorporation-erp-frontend-983704016599.europe-west1.run.app',
+  'https://swenter.com',
+  'https://www.swenter.com',
+];
 
 function parseCorsOrigin(): string[] {
   const raw = process.env.FRONTEND_ORIGIN || process.env.CORS_ORIGIN || '';
   const origins = [
     ...raw.split(',').map((origin) => origin.trim().replace(/\/$/, '')),
     'http://localhost:3001',
-    LIVE_FRONTEND_ORIGIN,
+    ...LIVE_FRONTEND_ORIGINS,
   ].filter(Boolean);
   return [...new Set(origins)];
 }

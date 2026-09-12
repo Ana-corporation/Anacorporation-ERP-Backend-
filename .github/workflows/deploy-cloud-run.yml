@@ -114,8 +114,12 @@ jobs:
               )
 
           frontend = os.environ["FRONTEND_ORIGIN"].rstrip("/")
-          live = "https://anacorporation-erp-frontend-983704016599.europe-west1.run.app"
-          origins = ",".join(dict.fromkeys([frontend, live]))
+          extras = [
+              "https://anacorporation-erp-frontend-983704016599.europe-west1.run.app",
+              "https://swenter.com",
+              "https://www.swenter.com",
+          ]
+          origins = ",".join(dict.fromkeys([frontend, *extras]))
           database_url = to_cloudsql_socket(os.environ.get("DATABASE_URL", ""))
           direct_url = to_cloudsql_socket(os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL", ""))
           lines = [
