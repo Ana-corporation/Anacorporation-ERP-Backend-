@@ -72,18 +72,47 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CLOUD_SQL_CONNECTION_NAME: ${{ secrets.CLOUD_SQL_CONNECTION_NAME }}
+          GCP_SQL_USER: ${{ secrets.GCP_SQL_USER }}
+          GCP_SQL_PASSWORD: ${{ secrets.GCP_SQL_PASSWORD }}
+          GCP_SQL_DATABASE: ${{ secrets.GCP_SQL_DATABASE }}
+          GCP_SQL_SCHEMA: ${{ secrets.GCP_SQL_SCHEMA }}
         run: |
           python3 - <<'PY'
           import json
           import os
           from pathlib import Path
+          from urllib.parse import parse_qs, quote, unquote, urlparse
 
           def pair(key: str, value: str) -> str:
               return f"{key}: {json.dumps(value)}"
 
+          instance = (
+              os.environ.get("CLOUD_SQL_CONNECTION_NAME")
+              or "project-b6b7f679-b5c2-42d8-bb4:asia-southeast1:swenter-db-dev"
+          )
+
+          def to_cloudsql_socket(raw: str) -> str:
+              if not raw:
+                  return raw
+              if "/cloudsql/" in raw:
+                  return raw
+              parsed = urlparse(raw)
+              user = unquote(parsed.username or "")
+              password = unquote(parsed.password or "")
+              database = (parsed.path or "/").lstrip("/") or "swenter-dev"
+              schema = (parse_qs(parsed.query).get("schema") or ["Erp_test_db"])[0]
+              return (
+                  f"postgresql://{quote(user, safe='')}:{quote(password, safe='')}"
+                  f"@localhost/{quote(database, safe='')}"
+                  f"?host=/cloudsql/{instance}&schema={quote(schema, safe='')}"
+              )
+
           frontend = os.environ["FRONTEND_ORIGIN"].rstrip("/")
           live = "https://anacorporation-erp-frontend-983704016599.europe-west1.run.app"
           origins = ",".join(dict.fromkeys([frontend, live]))
+          database_url = to_cloudsql_socket(os.environ.get("DATABASE_URL", ""))
+          direct_url = to_cloudsql_socket(os.environ.get("DIRECT_DATABASE_URL") or os.environ.get("DATABASE_URL", ""))
           lines = [
               pair("NODE_ENV", "production"),
               pair("API_PREFIX", "api/v1"),
@@ -91,13 +120,20 @@ jobs:
               pair("CORS_ORIGIN", origins),
               pair("JWT_ACCESS_EXPIRATION", "8h"),
               pair("JWT_REFRESH_EXPIRATION", "7d"),
-              pair("DATABASE_URL", os.environ["DATABASE_URL"]),
-              pair("DIRECT_DATABASE_URL", os.environ["DIRECT_DATABASE_URL"]),
+              pair("DATABASE_URL", database_url),
+              pair("DIRECT_DATABASE_URL", direct_url),
               pair("JWT_SECRET", os.environ["JWT_SECRET"]),
+              pair("GCP_SQL_INSTANCE_CONNECTION_NAME", instance),
           ]
+          for key in ("GCP_SQL_USER", "GCP_SQL_PASSWORD", "GCP_SQL_DATABASE", "GCP_SQL_SCHEMA"):
+              value = os.environ.get(key, "")
+              if value:
+                  lines.append(pair(key, value))
           Path("cloud-run-env.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          Path("cloud-sql-instance.txt").write_text(instance, encoding="utf-8")
           PY
 
+          CLOUD_SQL_INSTANCE="$(cat cloud-sql-instance.txt)"
           gcloud run deploy "${SERVICE}" \
             --image "${IMAGE}" \
             --region "${REGION}" \
@@ -110,9 +146,11 @@ jobs:
             --min-instances 0 \
             --max-instances 5 \
             --cpu-boost \
+            --add-cloudsql-instances "${CLOUD_SQL_INSTANCE}" \
+            --startup-probe=httpGet.path=/health,httpGet.port=8080,periodSeconds=10,timeoutSeconds=5,failureThreshold=18 \
             --env-vars-file cloud-run-env.yaml
 
-          rm -f cloud-run-env.yaml
+          rm -f cloud-run-env.yaml cloud-sql-instance.txt
 
       - name: Print service URL
         run: |

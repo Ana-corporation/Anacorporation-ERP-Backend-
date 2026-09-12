@@ -74,7 +74,20 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   async onModuleInit() {
-    await this.connectWithRetry();
+    if (process.env.K_SERVICE) {
+      // Cloud Run must bind PORT before any database wait.
+      this.logger.log('Cloud Run boot: skipping blocking database connect');
+      return;
+    }
+
+    try {
+      await this.connectWithRetry();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(
+        `Database unavailable at startup (API will still listen): ${message}`,
+      );
+    }
   }
 
   async onModuleDestroy() {

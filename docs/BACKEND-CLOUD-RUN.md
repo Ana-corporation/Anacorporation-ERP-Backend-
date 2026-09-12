@@ -100,9 +100,29 @@ Settings → Secrets and variables → Actions.
 
 | Secret | Value |
 |---|---|
-| `DATABASE_URL` | Cloud SQL URI via Auth Proxy or Unix socket (`/cloudsql/PROJECT:REGION:INSTANCE`) |
+| `DATABASE_URL` | Cloud SQL URI. On deploy this is rewritten to the Cloud SQL Unix socket. Encode `@` in the password as `%40`. Example: `postgresql://USER:ENCODED_PASSWORD@localhost/swenter-dev?schema=Erp_test_db` |
 | `DIRECT_DATABASE_URL` | Same Cloud SQL URI |
 | `JWT_SECRET` | 32+ random characters (same as local `.env` if you want existing sessions) |
+
+**Optional Cloud SQL secrets** (recommended so Cloud Run does not use a local `127.0.0.1` URL):
+
+| Secret | Value |
+|---|---|
+| `CLOUD_SQL_CONNECTION_NAME` | `project-b6b7f679-b5c2-42d8-bb4:asia-southeast1:swenter-db-dev` |
+| `GCP_SQL_USER` | `swenter-dev` |
+| `GCP_SQL_PASSWORD` | Database password (plain text is fine here; the app URL-encodes it) |
+| `GCP_SQL_DATABASE` | `swenter-dev` |
+| `GCP_SQL_SCHEMA` | Schema that holds the tables (`Erp_test_db` unless you moved them) |
+
+The Cloud Run **runtime** service account also needs `roles/cloudsql.client`:
+
+```bash
+PROJECT_ID=project-b6b7f679-b5c2-42d8-bb4
+PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/cloudsql.client"
+```
 
 ---
 
@@ -156,3 +176,5 @@ Then open `http://localhost:8080/api/v1/health`.
 - First request can be slow (Cloud Run cold start). That is expected with `--min-instances 0`.
 - Sessions are in-memory until you set `REDIS_HOST`.
 - Change `REGION` in `.github/workflows/deploy-cloud-run.yml` if the frontend is not in `asia-southeast1`.
+- Do not put a Neon URL or `127.0.0.1` Auth Proxy URL in Cloud Run. The container has no local proxy; it must use `/cloudsql/PROJECT:REGION:INSTANCE`.
+- Run `npx prisma migrate deploy` locally through the Auth Proxy (`npm run db:proxy`). The Cloud Run start script no longer blocks on migrate, because that prevented the process from listening on `8080`.

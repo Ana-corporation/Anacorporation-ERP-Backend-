@@ -1,9 +1,8 @@
 #!/bin/sh
 set -eu
 
-echo "Applying Prisma migrations..."
-npx prisma migrate deploy
-
+# Cloud Run kills the revision if nothing listens on $PORT quickly.
+# Do not run prisma migrate (or any DB wait) before the HTTP server binds.
 if [ -f dist/main.js ]; then
   exec node dist/main.js
 fi
