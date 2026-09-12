@@ -169,21 +169,6 @@ export class CompaniesRepository {
     });
   }
 
-  async updateStatus(
-    id: string,
-    status: 'trial' | 'active' | 'suspended' | 'cancelled',
-    updatedBy?: string,
-  ) {
-    return this.prisma.company.update({
-      where: { companyId: parseBigIntId(id) },
-      data: {
-        status,
-        updatedBy: updatedBy ? parseBigIntId(updatedBy, 'updatedBy') : undefined,
-        updatedAt: new Date(),
-      },
-    });
-  }
-
   /**
    * FE contract (Phase A):
    * PATCH /companies/:id/status must return:

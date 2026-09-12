@@ -76,12 +76,6 @@ const PERMISSION_CODE_ALIASES: Record<string, string[]> = {
   ),
 };
 
-function userHasPermissionCode(user: AuthenticatedUser, permissionCode: string): boolean {
-  if (user.permissions.includes(permissionCode)) return true;
-  const aliases = PERMISSION_CODE_ALIASES[permissionCode];
-  return Boolean(aliases?.some((alias) => user.permissions.includes(alias)));
-}
-
 /** Legacy ERP API codes → resource-level catalogue codes (Supply Chain split). */
 const LEGACY_TO_RESOURCE_CODE: Record<string, string> = {
   'vendors:read': 'vendors:view',
@@ -261,8 +255,11 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
 
 function userHasPermissionCode(user: AuthenticatedUser, permissionCode: string): boolean {
   if (user.permissions.includes(permissionCode)) return true;
-  const aliases = PERMISSION_ALIASES[permissionCode] ?? [];
-  return aliases.some((code) => user.permissions.includes(code));
+  const aliases = [
+    ...(PERMISSION_CODE_ALIASES[permissionCode] ?? []),
+    ...(PERMISSION_ALIASES[permissionCode] ?? []),
+  ];
+  return aliases.some((alias) => user.permissions.includes(alias));
 }
 
 /**

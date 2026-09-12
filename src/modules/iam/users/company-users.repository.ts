@@ -3,6 +3,7 @@ import { ModuleAccessType, Prisma } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { PaginationQueryDto, getPaginationParams } from '@/common/dto/pagination.dto';
 import { parseBigIntId } from '@/common/utils/bigint.util';
+import { createActiveUserRole } from '@/modules/iam/roles/role-assignment.helpers';
 
 @Injectable()
 export class CompanyUsersRepository {
@@ -224,22 +225,11 @@ export class CompanyUsersRepository {
       }
 
       if (params.roleId) {
-        await tx.userRole.upsert({
-          where: {
-            userId_companyId_roleId: {
-              userId: parseBigIntId(params.userId),
-              companyId: parseBigIntId(params.companyId),
-              roleId: parseBigIntId(params.roleId),
-            },
-          },
-          update: { isActive: true },
-          create: {
-            userId: parseBigIntId(params.userId),
-            companyId: parseBigIntId(params.companyId),
-            roleId: parseBigIntId(params.roleId),
-            isActive: true,
-            assignedBy: actor,
-          },
+        await createActiveUserRole(tx, {
+          userId: parseBigIntId(params.userId),
+          companyId: parseBigIntId(params.companyId),
+          roleId: parseBigIntId(params.roleId),
+          assignedBy: actor,
         });
       }
 
@@ -272,35 +262,14 @@ export class CompanyUsersRepository {
 
   async replaceRole(userId: string, companyId: string, roleId: string, actorId?: string) {
     const actor = actorId ? parseBigIntId(actorId) : undefined;
-    return this.prisma.$transaction(async (tx) => {
-      await tx.userRole.updateMany({
-        where: {
-          userId: parseBigIntId(userId),
-          companyId: parseBigIntId(companyId),
-          isActive: true,
-        },
-        data: { isActive: false },
-      });
-
-      return tx.userRole.upsert({
-        where: {
-          userId_companyId_roleId: {
-            userId: parseBigIntId(userId),
-            companyId: parseBigIntId(companyId),
-            roleId: parseBigIntId(roleId),
-          },
-        },
-        update: { isActive: true, assignedBy: actor },
-        create: {
-          userId: parseBigIntId(userId),
-          companyId: parseBigIntId(companyId),
-          roleId: parseBigIntId(roleId),
-          isActive: true,
-          assignedBy: actor,
-        },
-        include: { role: true },
-      });
-    });
+    return this.prisma.$transaction((tx) =>
+      createActiveUserRole(tx, {
+        userId: parseBigIntId(userId),
+        companyId: parseBigIntId(companyId),
+        roleId: parseBigIntId(roleId),
+        assignedBy: actor,
+      }),
+    );
   }
 
   updateMembership(
