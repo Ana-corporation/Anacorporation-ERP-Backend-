@@ -13,7 +13,7 @@ COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 COPY nest-cli.json tsconfig.json tsconfig.build.json ./
 
-RUN npm install
+RUN npm install --ignore-scripts
 
 COPY src ./src
 COPY scripts ./scripts
@@ -35,8 +35,9 @@ RUN apt-get update \
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 
-RUN npm install --omit=dev \
-  && npm install prisma --omit=dev \
+RUN npm install --omit=dev --ignore-scripts \
+  && npm install prisma --omit=dev --ignore-scripts \
+  && npx prisma generate \
   && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist

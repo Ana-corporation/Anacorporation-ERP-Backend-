@@ -15,7 +15,7 @@
     "start:dev:build": "node scripts/free-port.js && npm run build && node dist/main.js",
     "start:dev:nest": "node scripts/free-port.js && nest start --watch",
     "after-pull": "npx prisma generate && npx prisma migrate deploy",
-    "prepare": "node scripts/install-git-hooks.js",
+    "prepare": "node -e \"const fs=require('fs'); const p='scripts/install-git-hooks.js'; if (fs.existsSync(p)) require('child_process').execFileSync(process.execPath,[p],{stdio:'inherit'})\"",
     "start:debug": "nest start --debug --watch",
     "prestart:prod": "npm run build",
     "start:prod": "node dist/main.js",
