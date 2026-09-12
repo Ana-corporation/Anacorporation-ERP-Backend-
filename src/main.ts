@@ -68,9 +68,12 @@ async function bootstrap() {
   loadEnvFile();
 
   const port = Number(process.env.PORT) || 3002;
-  let earlyServer: Server | undefined;
+  const prebound = (global as typeof globalThis & { __ancEarlyServer?: Server }).__ancEarlyServer;
+  const preboundHandler = (global as typeof globalThis & { __ancStartingHandler?: typeof startingHandler })
+    .__ancStartingHandler;
+  let earlyServer: Server | undefined = prebound;
 
-  if (isCloudRun()) {
+  if (!earlyServer && isCloudRun()) {
     earlyServer = await listenEarly(port);
     logger.log(`API listening on ${port} (Cloud Run startup)`);
   }
@@ -105,7 +108,7 @@ async function bootstrap() {
 
   if (earlyServer) {
     const expressApp = app.getHttpAdapter().getInstance();
-    earlyServer.removeListener('request', startingHandler);
+    earlyServer.removeListener('request', preboundHandler ?? startingHandler);
     earlyServer.on('request', expressApp);
     logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
   } else {
