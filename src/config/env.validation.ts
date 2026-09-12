@@ -44,9 +44,19 @@ const envSchema = z
 
 export function validate(config: Record<string, unknown>) {
   applyGcpSqlDatabaseUrl(config);
+
+  const onCloudRun = Boolean(config.K_SERVICE || process.env.K_SERVICE);
+  if (onCloudRun && !String(config.DATABASE_URL || '').trim()) {
+    // Bind HTTP first. /health reports database=disconnected until secrets are fixed.
+    config.DATABASE_URL = 'postgresql://pending:pending@127.0.0.1:5432/pending';
+  }
+
   const result = envSchema.safeParse(config);
   if (!result.success) {
-    throw new Error(result.error.toString());
+    const details = result.error.issues
+      .map((issue) => `${issue.path.join('.') || 'env'}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`Invalid environment: ${details}`);
   }
   return result.data;
 }

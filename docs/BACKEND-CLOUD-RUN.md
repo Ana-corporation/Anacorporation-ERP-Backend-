@@ -171,6 +171,36 @@ Then open `http://localhost:8080/api/v1/health`.
 
 ---
 
+## Cloud Run console — do not change these
+
+The workflow already sets the service. Do **not** edit these in the Cloud Run UI:
+
+- Container port (must stay `8080`)
+- “Continuously deploy from a repository”
+- A custom HTTP health check on `/health` (that path can wait on the database)
+
+You **do** need these GCP / GitHub items:
+
+1. GitHub secret `JWT_SECRET` — **32+ random characters**. A short secret crashes the process before it binds `8080`.
+2. GitHub secret `DATABASE_URL` — Cloud SQL user/password/db, not Neon and not `127.0.0.1`. Encode `@` in the password as `%40`.
+3. Cloud Run runtime service account must have **Cloud SQL Client**:
+
+```bash
+PROJECT_ID=project-b6b7f679-b5c2-42d8-bb4
+PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/cloudsql.client"
+```
+
+4. Enable the Cloud SQL Admin API if it is off:
+
+```bash
+gcloud services enable sqladmin.googleapis.com --project=project-b6b7f679-b5c2-42d8-bb4
+```
+
+After a failed revision, open **Cloud Run → anacorporation-erp-backend → Logs** and look for `Fatal bootstrap error` or `Invalid environment`. That line tells you which secret is wrong.
+
 ## Notes
 
 - First request can be slow (Cloud Run cold start). That is expected with `--min-instances 0`.

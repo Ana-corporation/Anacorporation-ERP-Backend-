@@ -43,13 +43,11 @@ RUN npm install --omit=dev --ignore-scripts \
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
-COPY scripts/cloud-run-start.sh ./scripts/cloud-run-start.sh
 
-RUN chmod +x ./scripts/cloud-run-start.sh \
-  && chown -R node:node /app
+RUN chown -R node:node /app
 
 USER node
 
 EXPOSE 8080
 
-CMD ["./scripts/cloud-run-start.sh"]
+CMD ["node", "dist/main.js"]
