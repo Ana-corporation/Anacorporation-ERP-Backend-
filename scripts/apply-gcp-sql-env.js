@@ -14,30 +14,19 @@ function applyGcpSqlDatabaseUrl() {
     delete process.env.DIRECT_DATABASE_URL;
   }
 
-  const onCloudRun = Boolean(process.env.K_SERVICE);
-  const instance = process.env.GCP_SQL_INSTANCE_CONNECTION_NAME || '';
+  const publicIp = String(process.env.GCP_SQL_IP || '').trim();
   const usesProxy = Boolean(
-    process.env.GOOGLE_APPLICATION_CREDENTIALS || instance,
+    !publicIp &&
+      (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GCP_SQL_INSTANCE_CONNECTION_NAME),
   );
   const user = process.env.GCP_SQL_USER || process.env.GCP_SQL_DATABASE || '';
   const password = process.env.GCP_SQL_PASSWORD || '';
-  const host = process.env.GCP_SQL_IP || (!onCloudRun && usesProxy ? '127.0.0.1' : '');
+  const host = publicIp || (usesProxy ? '127.0.0.1' : '');
   const port = process.env.GCP_SQL_PORT || '5432';
   const database = process.env.GCP_SQL_DATABASE || '';
-  const sslmode = process.env.GCP_SQL_SSL_MODE || (onCloudRun || usesProxy ? 'disable' : 'require');
+  const sslmode = process.env.GCP_SQL_SSL_MODE || (usesProxy ? 'disable' : 'require');
   const timeout = process.env.GCP_SQL_CONNECT_TIMEOUT || '30';
   const schema = process.env.GCP_SQL_SCHEMA || 'Erp_test_db';
-
-  if (onCloudRun && instance && user && password && database) {
-    const url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@localhost/${encodeURIComponent(database)}?host=/cloudsql/${instance}&schema=${encodeURIComponent(schema)}`;
-    process.env.DATABASE_URL = url;
-    process.env.DIRECT_DATABASE_URL = url;
-    return;
-  }
-
-  if (String(process.env.DATABASE_URL || '').includes('/cloudsql/')) {
-    return;
-  }
 
   if (user && password && host && database) {
     const url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?schema=${encodeURIComponent(schema)}&sslmode=${sslmode}&connect_timeout=${timeout}`;
