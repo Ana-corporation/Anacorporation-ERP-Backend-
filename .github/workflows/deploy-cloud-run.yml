@@ -147,7 +147,7 @@ jobs:
             --max-instances 5 \
             --cpu-boost \
             --add-cloudsql-instances "${CLOUD_SQL_INSTANCE}" \
-            --startup-probe=httpGet.path=/health,httpGet.port=8080,periodSeconds=10,timeoutSeconds=5,failureThreshold=18 \
+            --startup-probe=tcpSocket.port=8080,periodSeconds=5,timeoutSeconds=2,failureThreshold=36 \
             --env-vars-file cloud-run-env.yaml
 
           rm -f cloud-run-env.yaml cloud-sql-instance.txt

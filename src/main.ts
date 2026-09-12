@@ -54,6 +54,7 @@ async function bootstrap() {
   app.setGlobalPrefix(apiPrefix, {
     exclude: [
       { path: 'health', method: RequestMethod.GET },
+      { path: 'health/live', method: RequestMethod.GET },
       { path: 'api/v1/health', method: RequestMethod.GET },
     ],
   });
@@ -65,6 +66,25 @@ async function bootstrap() {
     credentials: true,
   });
   logger.log(`CORS origins → ${corsOrigin.join(', ')}`);
+
+  app.enableShutdownHooks();
+
+  if (!process.env.K_SERVICE) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { freePort } = require('../scripts/free-port.js') as {
+        freePort: (port?: number | string) => { port: string; killed: number };
+      };
+      freePort(port);
+    } catch (err) {
+      logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
+    }
+  }
+
+  // Bind PORT before Swagger/DB so Cloud Run startup probes can succeed.
+  await app.listen(port, '0.0.0.0');
+  logger.log(`API listening on ${port}`);
+  logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Manufacturing ERP API')
@@ -103,28 +123,14 @@ async function bootstrap() {
     .addTag('Inventory')
     .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, cleanupOpenApiDoc(document));
-
-  app.enableShutdownHooks();
-
-  if (!process.env.K_SERVICE) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { freePort } = require('../scripts/free-port.js') as {
-        freePort: (port?: number | string) => { port: string; killed: number };
-      };
-      freePort(port);
-    } catch (err) {
-      logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
-    }
+  try {
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, cleanupOpenApiDoc(document));
+    logger.log(`Swagger docs    → http://0.0.0.0:${port}/docs`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Swagger setup failed: ${message}`);
   }
-
-  // Cloud Run sets PORT=8080 and rejects a localhost-only bind.
-  await app.listen(port, '0.0.0.0');
-  logger.log(`API listening on ${port}`);
-  logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
-  logger.log(`Swagger docs    → http://0.0.0.0:${port}/docs`);
 
   try {
     const prisma = app.get(PrismaService);
@@ -137,4 +143,8 @@ async function bootstrap() {
   }
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  console.error(`Fatal bootstrap error: ${message}`);
+  process.exit(1);
+});

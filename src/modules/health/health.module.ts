@@ -4,6 +4,25 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { RedisService } from '@/infrastructure/redis/redis.service';
 import { Public } from '@/common/decorators/auth.decorators';
 
+const DB_PING_TIMEOUT_MS = 1500;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+@Public()
 @Controller()
 class HealthController {
   constructor(
@@ -11,15 +30,22 @@ class HealthController {
     private readonly redis: RedisService,
   ) {}
 
-  @Public()
+  /** Cloud Run / load-balancer liveness — no I/O. */
+  @Get('health/live')
+  live() {
+    return {
+      status: 'ok',
+      service: 'anacorporation-erp-backend',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
   @Get('health')
   async check() {
     const dbStart = Date.now();
     let dbOk = false;
     try {
-      // PrismaService is an extended PrismaClient (constructor returns the client),
-      // so class methods like isHealthy() are not on the instance.
-      await this.prisma.$queryRaw`SELECT 1`;
+      await withTimeout(this.prisma.$queryRaw`SELECT 1`, DB_PING_TIMEOUT_MS);
       dbOk = true;
     } catch {
       dbOk = false;
@@ -43,7 +69,6 @@ class HealthController {
     };
   }
 
-  @Public()
   @Get('api/v1/health')
   checkAlias() {
     return this.check();
