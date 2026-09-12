@@ -31,7 +31,9 @@ const port = Number(process.env.PORT) || 8080;
 
 function startingHandler(req, res) {
   const url = (req.url || '/').split('?')[0];
-  const live = url === '/health' || url === '/health/live' || url === '/api/v1/health';
+  // Only /health/live is "process is up". /health stays 503 until Nest attaches
+  // so Cloud Run HTTP startup probes keep CPU allocated during boot.
+  const live = url === '/health/live';
   res.writeHead(live ? 200 : 503, { 'Content-Type': 'application/json' });
   res.end(
     JSON.stringify({
@@ -62,13 +64,14 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`cloud-run-entry: loading ${main}`);
   try {
     require(main);
+    console.log('cloud-run-entry: Nest module loaded, bootstrap running');
   } catch (err) {
     console.error('cloud-run-entry: failed to load Nest app', err);
   }
 
   setTimeout(() => {
     if (!global.__ancNestReady) {
-      console.error('cloud-run-entry: Nest did not attach within 30s — login will stay 503 starting');
+      console.error('cloud-run-entry: Nest did not attach within 90s — login will stay 503 starting');
     }
-  }, 30000);
+  }, 90000);
 });

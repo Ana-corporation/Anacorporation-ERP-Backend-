@@ -26,7 +26,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
-    if (this.useMemory) {
+    const host = this.configService.get<string>('redis.host');
+    const onCloudRun = Boolean(process.env.K_SERVICE);
+    const localRedis =
+      !host || host === '127.0.0.1' || host === 'localhost';
+    if (this.useMemory || (onCloudRun && localRedis)) {
+      this.useMemory = true;
       this.loadMemoryStoreFromDisk();
       this.logger.log('Session store: in-memory + disk persist (Redis off until REDIS_HOST is set)');
       return;

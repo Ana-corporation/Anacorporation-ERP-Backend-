@@ -158,7 +158,8 @@ jobs:
             --min-instances 0
             --max-instances 5
             --cpu-boost
-            --startup-probe=tcpSocket.port=8080,periodSeconds=5,timeoutSeconds=2,failureThreshold=36
+            --no-cpu-throttling
+            --startup-probe=httpGet.path=/health,httpGet.port=8080,periodSeconds=5,timeoutSeconds=3,failureThreshold=36
             --env-vars-file cloud-run-env.yaml
           )
 

@@ -42,8 +42,7 @@ function loadEnvFile() {
 
 function startingHandler(req: IncomingMessage, res: ServerResponse) {
   const pathName = (req.url || '/').split('?')[0];
-  const live =
-    pathName === '/health/live' || pathName === '/health' || pathName === '/api/v1/health';
+  const live = pathName === '/health/live';
   res.writeHead(live ? 200 : 503, { 'Content-Type': 'application/json' });
   res.end(
     JSON.stringify({
@@ -78,9 +77,11 @@ async function bootstrap() {
   }
 
   logger.log('Creating Nest application');
+  const createStarted = Date.now();
   const app = await NestFactory.create(AppModule, {
     logger: new SimpleLogger(),
   });
+  logger.log(`Nest application created (${Date.now() - createStarted}ms)`);
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const cookieParserMod = require('cookie-parser') as { default?: () => unknown } & (() => unknown);
