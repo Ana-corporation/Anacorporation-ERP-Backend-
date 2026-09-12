@@ -14,12 +14,14 @@ function applyGcpSqlDatabaseUrl() {
     delete process.env.DIRECT_DATABASE_URL;
   }
 
+  const publicIp = String(process.env.GCP_SQL_IP || '').trim();
   const usesProxy = Boolean(
-    process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GCP_SQL_INSTANCE_CONNECTION_NAME,
+    !publicIp &&
+      (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GCP_SQL_INSTANCE_CONNECTION_NAME),
   );
   const user = process.env.GCP_SQL_USER || process.env.GCP_SQL_DATABASE || '';
   const password = process.env.GCP_SQL_PASSWORD || '';
-  const host = process.env.GCP_SQL_IP || (usesProxy ? '127.0.0.1' : '');
+  const host = publicIp || (usesProxy ? '127.0.0.1' : '');
   const port = process.env.GCP_SQL_PORT || '5432';
   const database = process.env.GCP_SQL_DATABASE || '';
   const sslmode = process.env.GCP_SQL_SSL_MODE || (usesProxy ? 'disable' : 'require');

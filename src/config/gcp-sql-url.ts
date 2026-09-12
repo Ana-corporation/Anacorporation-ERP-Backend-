@@ -15,12 +15,14 @@ export function applyGcpSqlDatabaseUrl(
     delete process.env.DIRECT_DATABASE_URL;
   }
 
+  const publicIp = String(config.GCP_SQL_IP || '').trim();
   const usesProxy = Boolean(
-    config.GOOGLE_APPLICATION_CREDENTIALS || config.GCP_SQL_INSTANCE_CONNECTION_NAME,
+    !publicIp &&
+      (config.GOOGLE_APPLICATION_CREDENTIALS || config.GCP_SQL_INSTANCE_CONNECTION_NAME),
   );
   const user = String(config.GCP_SQL_USER || config.GCP_SQL_DATABASE || '');
   const password = String(config.GCP_SQL_PASSWORD || '');
-  const host = String(config.GCP_SQL_IP || (usesProxy ? '127.0.0.1' : ''));
+  const host = publicIp || (usesProxy ? '127.0.0.1' : '');
   const port = String(config.GCP_SQL_PORT || '5432');
   const database = String(config.GCP_SQL_DATABASE || '');
   const sslmode = String(config.GCP_SQL_SSL_MODE || (usesProxy ? 'disable' : 'require'));
