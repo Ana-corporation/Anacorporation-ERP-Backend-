@@ -17,6 +17,25 @@ const COMPANIES_LIST_FILTER: ListFilterOptions = {
   defaultSortField: 'createdAt',
 };
 
+const companySummaryInclude = {
+  defaultCurrency: true,
+  subscriptions: {
+    where: { deletedAt: null },
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    include: { plan: true },
+  },
+  companyModules: {
+    where: { deletedAt: null },
+    select: { isActive: true, moduleId: true },
+  },
+  _count: {
+    select: {
+      userCompanies: { where: { deletedAt: null, status: 'active' as const } },
+    },
+  },
+};
+
 @Injectable()
 export class CompaniesRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -36,7 +55,7 @@ export class CompaniesRepository {
         skip,
         take: limit,
         orderBy: resolveOrderBy(query, COMPANIES_LIST_FILTER),
-        include: { defaultCurrency: true },
+        include: companySummaryInclude,
       }),
       this.prisma.company.count({ where }),
     ]).then(([items, total]) => ({ items, total, page, limit }));
@@ -45,7 +64,7 @@ export class CompaniesRepository {
   findById(id: string) {
     return this.prisma.company.findFirst({
       where: { companyId: parseBigIntId(id), deletedAt: null },
-      include: { defaultCurrency: true },
+      include: companySummaryInclude,
     });
   }
 
@@ -83,13 +102,15 @@ export class CompaniesRepository {
         domain: dto.domain,
         email: dto.email,
         phone: dto.phone,
+        city: dto.city,
+        logoUrl: dto.logoUrl ?? undefined,
         timezone: dto.timezone ?? 'UTC',
         defaultCurrencyId: dto.defaultCurrencyId
           ? parseBigIntId(dto.defaultCurrencyId, 'defaultCurrencyId')
           : undefined,
         createdBy: createdBy ? parseBigIntId(createdBy, 'createdBy') : undefined,
       },
-      include: { defaultCurrency: true },
+      include: companySummaryInclude,
     });
   }
 
@@ -103,15 +124,38 @@ export class CompaniesRepository {
         ...(dto.domain !== undefined ? { domain: dto.domain } : {}),
         ...(dto.email !== undefined ? { email: dto.email } : {}),
         ...(dto.phone !== undefined ? { phone: dto.phone } : {}),
+        ...(dto.city !== undefined ? { city: dto.city } : {}),
+        ...(dto.country !== undefined ? { country: dto.country } : {}),
+        ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl } : {}),
         ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
         ...(dto.defaultCurrencyId !== undefined
-          ? { defaultCurrencyId: parseBigIntId(dto.defaultCurrencyId, 'defaultCurrencyId') }
+          ? {
+              defaultCurrencyId: dto.defaultCurrencyId
+                ? parseBigIntId(dto.defaultCurrencyId, 'defaultCurrencyId')
+                : null,
+            }
           : {}),
         updatedBy: updatedBy ? parseBigIntId(updatedBy, 'updatedBy') : undefined,
         updatedAt: new Date(),
       },
-      include: { defaultCurrency: true },
+      include: companySummaryInclude,
+    });
+  }
+
+  updateStatus(
+    id: string,
+    status: 'trial' | 'active' | 'suspended' | 'cancelled',
+    updatedBy?: string,
+  ) {
+    return this.prisma.company.update({
+      where: { companyId: parseBigIntId(id) },
+      data: {
+        status,
+        updatedBy: updatedBy ? parseBigIntId(updatedBy, 'updatedBy') : undefined,
+        updatedAt: new Date(),
+      },
+      include: companySummaryInclude,
     });
   }
 

@@ -28,7 +28,11 @@ export class PlansService {
 
   async findAll(query: PaginationQueryDto) {
     const { items, total, page, limit } = await this.repository.findMany(query);
-    const result = serialize(toPaginatedResult(items, total, page, limit)) as {
+    const mapped = items.map((plan) => ({
+      ...plan,
+      moduleIds: plan.planModules?.map((pm) => pm.moduleId.toString()) ?? [],
+    }));
+    const result = serialize(toPaginatedResult(mapped, total, page, limit)) as {
       items: Record<string, unknown>[];
       total: number;
       page: number;
@@ -44,7 +48,12 @@ export class PlansService {
   async findOne(id: string) {
     const plan = await this.repository.findById(id);
     if (!plan) throw new NotFoundException('Subscription plan');
-    return this.decoratePlan(serialize(plan) as Record<string, unknown>);
+    return this.decoratePlan(
+      serialize({
+        ...plan,
+        moduleIds: plan.planModules?.map((pm) => pm.moduleId.toString()) ?? [],
+      }) as Record<string, unknown>,
+    );
   }
 
   async create(dto: CreateSubscriptionPlanDto, actorId?: string) {
@@ -53,6 +62,7 @@ export class PlansService {
     if (existing) throw new ConflictException('Plan code already exists');
 
     const plan = await this.repository.create({ ...dto, planCode: code }, actorId);
+    if (!plan) throw new ConflictException('Failed to create plan');
 
     await this.auditService.log({
       performedBy: actorId,
@@ -62,7 +72,12 @@ export class PlansService {
       newValue: { planCode: code, name: plan.name },
     });
 
-    return this.decoratePlan(serialize(plan) as Record<string, unknown>);
+    return this.decoratePlan(
+      serialize({
+        ...plan,
+        moduleIds: plan.planModules?.map((pm) => pm.moduleId.toString()) ?? [],
+      }) as Record<string, unknown>,
+    );
   }
 
   async update(id: string, dto: UpdateSubscriptionPlanDto, actorId?: string) {
@@ -70,6 +85,7 @@ export class PlansService {
     if (!existing) throw new NotFoundException('Subscription plan');
 
     const plan = await this.repository.update(id, dto, actorId);
+    if (!plan) throw new NotFoundException('Subscription plan');
 
     await this.auditService.log({
       performedBy: actorId,
@@ -78,7 +94,12 @@ export class PlansService {
       entityId: id,
       newValue: dto as Record<string, unknown>,
     });
-    return this.decoratePlan(serialize(plan) as Record<string, unknown>);
+    return this.decoratePlan(
+      serialize({
+        ...plan,
+        moduleIds: plan.planModules?.map((pm) => pm.moduleId.toString()) ?? [],
+      }) as Record<string, unknown>,
+    );
   }
 
   async remove(id: string, actorId?: string) {

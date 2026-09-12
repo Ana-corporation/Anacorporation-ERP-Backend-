@@ -218,6 +218,53 @@ function resolveLegacyPermission(permissionCode: string) {
   return LEGACY_PRODUCT_PERMISSION_MAP[permissionCode] ?? null;
 }
 
+/** FE admin nav aliases ↔ backend permission codes. */
+const PERMISSION_ALIASES: Record<string, string[]> = {
+  'subscription:view': ['subscription_plans:view', 'plans:view', 'company_subscriptions:view'],
+  'subscription:create': ['subscription_plans:create', 'plans:create', 'company_subscriptions:create'],
+  'subscription:edit': ['subscription_plans:edit', 'plans:edit', 'company_subscriptions:edit'],
+  'subscription:delete': ['subscription_plans:delete', 'plans:delete', 'company_subscriptions:delete'],
+  // Catalogue read: accept FE aliases + tenant subscription view codes
+  'plans:view': [
+    'subscription_plans:view',
+    'subscription:view',
+    'company_subscriptions:view',
+  ],
+  'plans:create': ['subscription_plans:create', 'subscription:create'],
+  'plans:edit': ['subscription_plans:edit', 'subscription:edit'],
+  'plans:delete': ['subscription_plans:delete', 'subscription:delete'],
+  'modules:view': [
+    'subscription_modules:view',
+    'company_modules:view',
+    'subscription:view',
+  ],
+  'modules:create': ['subscription_modules:create'],
+  'modules:edit': ['subscription_modules:edit'],
+  'modules:delete': ['subscription_modules:delete'],
+  'subscription_plans:view': ['subscription:view', 'plans:view'],
+  'subscription_plans:create': ['subscription:create', 'plans:create'],
+  'subscription_plans:edit': ['subscription:edit', 'plans:edit'],
+  'subscription_plans:delete': ['subscription:delete', 'plans:delete'],
+  'subscription_modules:view': ['modules:view', 'subscription:view', 'company_modules:view'],
+  'subscription_modules:create': ['modules:create'],
+  'subscription_modules:edit': ['modules:edit'],
+  'subscription_modules:delete': ['modules:delete'],
+  'company_subscriptions:view': ['subscription:view', 'plans:view'],
+  'company_subscriptions:create': ['subscription:edit', 'subscription:create'],
+  'company_subscriptions:edit': ['subscription:edit'],
+  'company_subscriptions:delete': ['subscription:edit', 'subscription:delete'],
+  'company_modules:view': ['modules:view', 'subscription:view'],
+  'company_modules:create': ['modules:edit', 'subscription:edit'],
+  'company_modules:edit': ['modules:edit', 'subscription:edit'],
+  'company_modules:delete': ['modules:edit', 'subscription:edit'],
+};
+
+function userHasPermissionCode(user: AuthenticatedUser, permissionCode: string): boolean {
+  if (user.permissions.includes(permissionCode)) return true;
+  const aliases = PERMISSION_ALIASES[permissionCode] ?? [];
+  return aliases.some((code) => user.permissions.includes(code));
+}
+
 /**
  * Unified server permission check for @RequirePermissions() codes.
  * Admin modules: flat role permission only.

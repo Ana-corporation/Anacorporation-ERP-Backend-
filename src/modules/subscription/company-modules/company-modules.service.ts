@@ -66,6 +66,107 @@ export class CompanyModulesService {
     }
   }
 
+  private flatten(row: {
+    companyModuleId: bigint;
+    companyId: bigint;
+    moduleId: bigint;
+    isActive: boolean;
+    expiryDate: Date | null;
+    module?: { moduleCode: string; moduleName: string } | null;
+  }) {
+    return {
+      companyModuleId: row.companyModuleId.toString(),
+      companyId: row.companyId.toString(),
+      moduleId: row.moduleId.toString(),
+      moduleCode: row.module?.moduleCode ?? null,
+      moduleName: row.module?.moduleName ?? null,
+      isActive: row.isActive,
+      expiryDate: row.expiryDate,
+    };
+  }
+
+  async findAllFlat(companyId: string, query: PaginationQueryDto) {
+    const { items } = await this.repository.findManyByCompany(companyId, {
+      ...query,
+      page: query.page ?? 1,
+      limit: query.limit ?? 200,
+    });
+    return serialize(items.map((row) => this.flatten(row)));
+  }
+
+  async findOneFlexible(id: string, companyId: string) {
+    const byRow = await this.repository.findById(id, companyId);
+    if (byRow) return serialize(this.flatten(byRow));
+
+    const byModule = await this.repository.findByCompanyAndModule(companyId, id);
+    if (!byModule || byModule.deletedAt) throw new NotFoundException('Company module');
+    const full = await this.repository.findById(byModule.companyModuleId.toString(), companyId);
+    if (!full) throw new NotFoundException('Company module');
+    return serialize(this.flatten(full));
+  }
+
+  private async resolveRow(id: string, companyId: string) {
+    const byRow = await this.repository.findById(id, companyId);
+    if (byRow) return byRow;
+
+    const byModule = await this.repository.findByCompanyAndModule(companyId, id);
+    if (!byModule || byModule.deletedAt) return null;
+    return this.repository.findById(byModule.companyModuleId.toString(), companyId);
+  }
+
+  async updateFlexible(
+    id: string,
+    companyId: string,
+    dto: UpdateCompanyModuleDto,
+    actorId: string,
+  ) {
+    const existing = await this.resolveRow(id, companyId);
+    if (!existing) throw new NotFoundException('Company module');
+
+    const activatedDate = dto.activatedDate ? new Date(dto.activatedDate) : existing.activatedDate;
+    const expiryDate =
+      dto.expiryDate !== undefined
+        ? dto.expiryDate === null
+          ? null
+          : new Date(dto.expiryDate)
+        : existing.expiryDate;
+    this.validateDateRange(activatedDate, expiryDate);
+
+    const companyModule = await this.repository.update(
+      existing.companyModuleId.toString(),
+      dto,
+      actorId,
+    );
+
+    await this.auditService.log({
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.update,
+      entityName: 'CompanyModule',
+      entityId: existing.companyModuleId.toString(),
+      newValue: dto as Record<string, unknown>,
+    });
+
+    return serialize(this.flatten(companyModule));
+  }
+
+  async removeFlexible(id: string, companyId: string, actorId: string) {
+    const existing = await this.resolveRow(id, companyId);
+    if (!existing) throw new NotFoundException('Company module');
+
+    await this.repository.softDelete(existing.companyModuleId.toString(), actorId);
+
+    await this.auditService.log({
+      companyId,
+      performedBy: actorId,
+      action: UserAuditAction.delete,
+      entityName: 'CompanyModule',
+      entityId: existing.companyModuleId.toString(),
+    });
+
+    return { message: 'Company module deleted' };
+  }
+
   async findAll(companyId: string, query: PaginationQueryDto) {
     const { items, total, page, limit } = await this.repository.findManyByCompany(
       companyId,
@@ -98,7 +199,27 @@ export class CompanyModulesService {
     const expiryDate = dto.expiryDate ? new Date(dto.expiryDate) : undefined;
     this.validateDateRange(activatedDate, expiryDate);
 
-    const companyModule = await this.repository.create(companyId, dto, actorId);
+    let companyModule;
+    if (existing?.deletedAt) {
+      companyModule = await this.repository.update(
+        existing.companyModuleId.toString(),
+        {
+          isActive: dto.isActive ?? true,
+          activatedDate: dto.activatedDate,
+          expiryDate: dto.expiryDate,
+        },
+        actorId,
+      );
+      await this.repository['prisma'].companyModule.update({
+        where: { companyModuleId: existing.companyModuleId },
+        data: { deletedAt: null, deletedBy: null },
+      });
+      companyModule = await this.repository.findById(existing.companyModuleId.toString(), companyId);
+    } else {
+      companyModule = await this.repository.create(companyId, dto, actorId);
+    }
+
+    if (!companyModule) throw new NotFoundException('Company module');
 
     await this.auditService.log({
       companyId,
@@ -119,7 +240,7 @@ export class CompanyModulesService {
       await this.systemRoleProvisioning.provisionFromCompanyEntitlements(companyId, actorId);
     }
 
-    return serialize(companyModule);
+    return serialize(this.flatten(companyModule));
   }
 
   async setModuleEnabled(

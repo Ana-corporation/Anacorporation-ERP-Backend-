@@ -1,0 +1,1051 @@
+================================================================================
+ADMIN DASHBOARD — BACKEND API REQUIREMENTS (FRONTEND HANDOFF)
+================================================================================
+*** SUPERSEDED FOR FRONTEND INTEGRATION ***
+  Feed FE this file instead (LIVE status + auth + payloads combined):
+    docs/FRONTEND-ADMIN-DASHBOARD-HANDOFF.txt
+  Many [MISSING] labels below are stale — do not use this file as status.
+
+Last updated: 2026-07-15
+Audience: Backend history / original requirements (kept for reference)
+Frontend repo: Anacorporation-ERP-Frontend (development-anc)
+Base URL: {NEXT_PUBLIC_API_URL}   e.g. http://localhost:3002/api/v1
+
+PURPOSE OF THIS FILE (ORIGINAL)
+-------------------------------
+Was the requirements dump for backend. Includes screens, payloads, shapes.
+Status labels [MISSING] are outdated after P0–P2 gap fill.
+
+
+================================================================================
+0. GLOBAL CONTRACT (ALL ADMIN APIs)
+================================================================================
+
+RESPONSE ENVELOPE (required for every endpoint)
+-----------------------------------------------
+  {
+    "success": true,
+    "message": "Success",
+    "data": { ... } | [ ... ] | null,
+    "timestamp": "ISO-8601"
+  }
+
+  On error:
+  {
+    "success": false,
+    "message": "Human readable error",
+    "data": null,
+    "errors": [ { "path": ["fieldName"], "message": "..." } ],
+    "timestamp": "..."
+  }
+
+  Frontend uses unwrap() -> reads envelope.data only.
+
+AUTH HEADERS (every authenticated call)
+---------------------------------------
+  Authorization: Bearer <accessToken>
+  Content-Type: application/json
+  x-company-id: <activeCompanyId>     (optional but sent when available)
+  Cookie: withCredentials=true        (refresh_token httpOnly)
+
+CASING
+------
+  Preferred API JSON: camelCase  (matches current GET /companies)
+  Frontend UI state:  snake_case after mapping
+  Backend may return camelCase; FE maps fields (see companies-api.ts).
+
+ID TYPES
+--------
+  Prefer stringified IDs in JSON (BigInt-safe): "15"
+  Frontend currently coerces companyId with Number() for Redux — keep IDs
+  stable and unique. Prefer consistent string IDs everywhere if possible.
+
+
+================================================================================
+1. ADMIN UI SCREENS (WHAT EXISTS TODAY)
+================================================================================
+
+  /dashboard/admin                    -> redirects to companies
+  /dashboard/admin/companies          -> platform tenant list
+  /dashboard/admin/companies/[id]     -> company detail + tabs
+       tabs: overview | subscription | organization | modules | roles | users
+  /dashboard/admin/plans              -> subscription plan catalogue
+  /dashboard/admin/modules            -> ERP module catalogue
+
+NAV GATING (from GET /auth/me permissions[])
+--------------------------------------------
+  Companies menu          -> companies:view
+  Subscription Plans menu -> subscription:view
+  Modules menu            -> modules:view
+  Company Setup (My Co.)  -> role ADMIN / ADMINISTRATOR (own tenant)
+
+PLATFORM OWNER HEURISTIC (frontend)
+  roleCode == PLATFORM_OWNER  OR  (companies:view AND modules:view)
+
+
+================================================================================
+2. CURRENT STATUS SNAPSHOT
+================================================================================
+
+  LIVE (wired):
+    GET  /auth/me                 -> permissions for nav
+    GET  /auth/companies          -> user's memberships (NOT platform list)
+    GET  /companies               -> platform tenant list (companies-api.ts)
+
+  MOCK / LOCAL REDUX ONLY (need backend APIs):
+    Company create / update / delete / get-by-id
+    Company status change
+    Plans CRUD
+    Modules catalogue CRUD
+    Assign / cancel subscription
+    Company module enable/disable
+    Branches / Departments / Designations / Warehouses CRUD
+    Roles CRUD + permission matrix
+    Invite user + user membership management
+
+  CLARIFY WITH BACKEND:
+    Is platform tenant list GET /companies   OR   GET /super-admin/companies ?
+    Frontend currently calls GET /companies with tenant JWT + companies:view.
+
+
+################################################################################
+# SECTION A — PLATFORM TENANT COMPANIES
+################################################################################
+
+Screen: /dashboard/admin/companies
+Who:    Platform owner / users with companies:view
+
+--------------------------------------------------------------------------------
+A1. LIST COMPANIES                                          [LIVE]
+--------------------------------------------------------------------------------
+  Method:  GET
+  Path:    /companies
+  Query:
+    page=1
+    limit=200
+    search=acme          (optional)
+    status=active        (optional: trial|active|suspended|cancelled)
+
+  Headers: Bearer + optional x-company-id
+
+  Response data:
+  {
+    "items": [
+      {
+        "companyId": "15",
+        "companyCode": "DEMO_ACME",
+        "name": "Demo Acme Corp",
+        "legalName": "Demo Acme Corporation Ltd",
+        "domain": "demo-acme.com",
+        "email": "admin@demo-acme.com",
+        "phone": "+91-9876543210",
+        "city": "Chennai",
+        "country": "IN",
+        "logoUrl": null,
+        "status": "trial"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 200,
+    "totalPages": 1
+  }
+
+  Logic:
+    - Hide/exclude PLATFORM company from tenant UI list (FE filters companyCode PLATFORM)
+    - List should support pagination for large fleets
+    - Enrichment (plan name, user count, module progress) can be:
+        Option A: included as summary fields in list OR
+        Option B: FE loads separately (prefer Option A for list cards)
+
+  REQUESTED EXTRA SUMMARY FIELDS (nice-to-have on list items):
+    "subscriptionStatus": "trial",
+    "planCode": "DEMO_STARTER",
+    "planName": "Demo Starter",
+    "subscriptionEndDate": "2027-07-10",
+    "activeModuleCount": 6,
+    "entitledModuleCount": 6,
+    "userCount": 5
+
+
+--------------------------------------------------------------------------------
+A2. GET COMPANY BY ID                                       [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  GET
+  Path:    /companies/:companyId
+
+  Response data: same company object as list item (+ optional nested summary)
+
+  Logic:
+    - Used on /dashboard/admin/companies/[id]
+    - Without this, after login hydrate, detail page may show "Company not found"
+      if company was not in list cache
+    - Company Admin "Company Setup" deep-links to active company — must work
+
+
+--------------------------------------------------------------------------------
+A3. CREATE COMPANY                                          [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  POST
+  Path:    /companies
+  Permission: companies:create
+
+  Exact request body:
+  {
+    "name": "New Tenant Ltd",
+    "companyCode": "NEW_TENANT",
+    "legalName": "New Tenant Private Limited",
+    "domain": "newtenant.com",
+    "email": "admin@newtenant.com",
+    "phone": "+91-9000000000",
+    "city": "Bengaluru",
+    "country": "IN",
+    "logoUrl": null,
+    "status": "trial"
+  }
+
+  Rules:
+    - companyCode required, unique, uppercase style suggested
+    - name required
+    - status default "trial" if omitted
+    - On create, backend SHOULD optionally bootstrap:
+        ADMIN role, trial subscription, default modules, company security policy
+        (same spirit as signup, without creating a login user — or with invite owner)
+
+  Response data: created company object (camelCase)
+
+
+--------------------------------------------------------------------------------
+A4. UPDATE COMPANY                                          [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  PATCH  (or PUT)
+  Path:    /companies/:companyId
+  Permission: companies:edit
+
+  Exact request body (partial update OK):
+  {
+    "name": "Demo Acme Corp Updated",
+    "legalName": "Demo Acme Corporation Ltd",
+    "domain": "demo-acme.com",
+    "email": "admin@demo-acme.com",
+    "phone": "+91-9876543210",
+    "city": "Chennai",
+    "country": "IN",
+    "logoUrl": "https://cdn.example.com/logo.png"
+  }
+
+  Response data: updated company object
+
+
+--------------------------------------------------------------------------------
+A5. CHANGE COMPANY STATUS                                   [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  PATCH
+  Path:    /companies/:companyId/status
+  Permission: companies:edit  (or platform-only)
+
+  Exact request body:
+  {
+    "status": "suspended"
+  }
+
+  Allowed status values:
+    trial | active | suspended | cancelled
+
+  Logic:
+    - suspended companies: login should return 403
+    - cancelled: treat as inactive
+    - Document if this is tenant JWT (/companies) or super-admin JWT
+      (/super-admin/companies/:id/status)
+
+
+--------------------------------------------------------------------------------
+A6. DELETE COMPANY                                          [MISSING — OPTIONAL]
+--------------------------------------------------------------------------------
+  Method:  DELETE
+  Path:    /companies/:companyId
+  Permission: companies:delete
+
+  Logic:
+    - Prefer soft-delete (deletedAt) over hard delete
+    - FE currently has delete action in mock; confirm if backend allows
+
+
+################################################################################
+# SECTION B — SUBSCRIPTION PLANS CATALOGUE
+################################################################################
+
+Screen: /dashboard/admin/plans
+Who:    subscription:view (and create/edit/delete for mutations)
+
+--------------------------------------------------------------------------------
+B1. LIST PLANS                                              [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  GET
+  Path:    /plans
+  Query:   page, limit, search, isActive (optional)
+
+  Response data:
+  {
+    "items": [
+      {
+        "planId": "1",
+        "planCode": "BASIC",
+        "name": "Basic",
+        "description": "Starter plan",
+        "price": 999,
+        "billingCycle": "monthly",
+        "maxUsers": 10,
+        "maxStorageGb": 20,
+        "isActive": true,
+        "moduleIds": [6, 13]
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 1
+  }
+
+  billingCycle enum: monthly | quarterly | yearly
+
+
+--------------------------------------------------------------------------------
+B2. CREATE PLAN                                             [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  POST
+  Path:    /plans
+  Permission: subscription:create  (confirm code)
+
+  Exact request body:
+  {
+    "planCode": "PRO",
+    "name": "Professional",
+    "description": "Most popular",
+    "price": 2999,
+    "billingCycle": "monthly",
+    "maxUsers": 50,
+    "maxStorageGb": 100,
+    "isActive": true,
+    "moduleIds": [6, 13, 14, 15, 16, 17]
+  }
+
+
+--------------------------------------------------------------------------------
+B3. UPDATE PLAN                                             [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  PATCH
+  Path:    /plans/:planId
+  Body: same fields as create (partial OK)
+
+
+--------------------------------------------------------------------------------
+B4. DELETE / DEACTIVATE PLAN                                [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  DELETE  /plans/:planId
+    OR     PATCH   /plans/:planId  { "isActive": false }
+
+  Logic: Prefer deactivate if plan is assigned to any company.
+
+
+################################################################################
+# SECTION C — MODULES CATALOGUE (PLATFORM)
+################################################################################
+
+Screen: /dashboard/admin/modules
+Who:    modules:view / modules:edit
+
+Product module codes used by sidebar:
+  financials, supply-chain, hcm, manufacturing, crm, projects
+
+Admin areas (NOT product modules — gated by permissions[]):
+  iam, organization, subscription, shared, platform
+
+--------------------------------------------------------------------------------
+C1. LIST MODULES                                            [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  GET
+  Path:    /modules
+  Query:   moduleType=product|admin (optional), isActive=
+
+  Response item:
+  {
+    "moduleId": "6",
+    "moduleCode": "financials",
+    "moduleName": "Financials",
+    "description": "Finance & accounting",
+    "icon": "finance",
+    "color": "#2065D1",
+    "price": 0,
+    "sortOrder": 10,
+    "moduleType": "product",
+    "isActive": true
+  }
+
+
+--------------------------------------------------------------------------------
+C2. CREATE / UPDATE MODULE                                  [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  POST /modules
+  PATCH /modules/:moduleId
+
+  Exact body:
+  {
+    "moduleCode": "financials",
+    "moduleName": "Financials",
+    "description": "...",
+    "icon": "finance",
+    "color": "#2065D1",
+    "price": 0,
+    "sortOrder": 10,
+    "moduleType": "product",
+    "isActive": true
+  }
+
+
+--------------------------------------------------------------------------------
+C3. TOGGLE MODULE ACTIVE                                    [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  PATCH /modules/:moduleId
+  { "isActive": false }
+
+
+################################################################################
+# SECTION D — COMPANY SUBSCRIPTION
+################################################################################
+
+Screen: company detail tab = subscription
+Logic:
+  - Company needs active OR trial subscription to unlock modules tab
+  - Can assign stock plan OR custom module set
+  - Can cancel subscription
+  - Shows days remaining
+
+Statuses: active | trial | expired | cancelled
+
+--------------------------------------------------------------------------------
+D1. GET COMPANY SUBSCRIPTION                                [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  GET
+  Path:    /companies/:companyId/subscription
+
+  Response data:
+  {
+    "companySubscriptionId": "9",
+    "companyId": "15",
+    "planId": "1",
+    "planCode": "DEMO_STARTER",
+    "planName": "Demo Starter",
+    "isCustom": false,
+    "moduleIds": [6, 13, 14, 15, 16, 17],
+    "startDate": "2026-07-10",
+    "endDate": "2027-07-10",
+    "billingCycle": "monthly",
+    "amount": 0,
+    "autoRenew": true,
+    "status": "trial"
+  }
+
+  If none: success=true, data=null  OR  404 with message "No subscription"
+
+
+--------------------------------------------------------------------------------
+D2. ASSIGN / REPLACE SUBSCRIPTION                           [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  POST   (create)  or  PUT (replace)
+  Path:    /companies/:companyId/subscription
+  Permission: subscription:edit  (confirm)
+
+  Exact request body — stock plan:
+  {
+    "planId": "1",
+    "isCustom": false,
+    "startDate": "2026-07-15",
+    "endDate": "2027-07-15",
+    "billingCycle": "monthly",
+    "amount": 999,
+    "autoRenew": true,
+    "status": "trial"
+  }
+
+  Exact request body — custom modules:
+  {
+    "planId": null,
+    "isCustom": true,
+    "moduleIds": [6, 13, 14],
+    "startDate": "2026-07-15",
+    "endDate": "2027-07-15",
+    "billingCycle": "yearly",
+    "amount": 5000,
+    "autoRenew": false,
+    "status": "active"
+  }
+
+  Logic:
+    - Assigning should recreate/refresh company_modules entitlement
+    - Previous subscription may be ended (status cancelled/expired)
+
+
+--------------------------------------------------------------------------------
+D3. CANCEL SUBSCRIPTION                                     [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  POST
+  Path:    /companies/:companyId/subscription/cancel
+
+  Exact body (optional reason):
+  {
+    "reason": "Customer request"
+  }
+
+  Logic: set status=cancelled; modules become unavailable for product nav
+
+
+################################################################################
+# SECTION E — COMPANY MODULES (ENABLE / DISABLE)
+################################################################################
+
+Screen: company detail tab = modules
+Rule: Locked if no active/trial subscription
+
+--------------------------------------------------------------------------------
+E1. LIST COMPANY MODULES                                    [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  GET /companies/:companyId/modules
+
+  Response data: array
+  [
+    {
+      "companyModuleId": "1",
+      "companyId": "15",
+      "moduleId": "6",
+      "moduleCode": "financials",
+      "moduleName": "Financials",
+      "isActive": true,
+      "expiryDate": null
+    }
+  ]
+
+
+--------------------------------------------------------------------------------
+E2. TOGGLE COMPANY MODULE                                   [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  PATCH /companies/:companyId/modules/:moduleId
+
+  Exact body:
+  {
+    "isActive": false
+  }
+
+  Logic:
+    - Only modules entitled by subscription can be toggled
+    - Inactive => hide from tenant product sidebar even if role allows
+
+
+################################################################################
+# SECTION F — ORGANIZATION STRUCTURE
+################################################################################
+
+Screen: company detail tab = organization
+Sub-tabs: branches | departments | designations | warehouses
+
+All scoped by companyId. Soft-delete preferred.
+
+--------------------------------------------------------------------------------
+F1. BRANCHES
+--------------------------------------------------------------------------------
+  GET    /companies/:companyId/branches
+  POST   /companies/:companyId/branches
+  PATCH  /companies/:companyId/branches/:branchId
+  DELETE /companies/:companyId/branches/:branchId
+
+  Create/Update body:
+  {
+    "branchCode": "HQ",
+    "name": "Head Office",
+    "address": "12 Anna Salai",
+    "city": "Chennai",
+    "country": "IN",
+    "phone": "+91-44-00000000",
+    "isActive": true
+  }
+
+
+--------------------------------------------------------------------------------
+F2. DEPARTMENTS
+--------------------------------------------------------------------------------
+  GET    /companies/:companyId/departments
+  POST   /companies/:companyId/departments
+  PATCH  /companies/:companyId/departments/:departmentId
+  DELETE /companies/:companyId/departments/:departmentId
+
+  Create/Update body:
+  {
+    "departmentCode": "ENG",
+    "name": "Engineering",
+    "parentDepartmentId": null,
+    "isActive": true
+  }
+
+
+--------------------------------------------------------------------------------
+F3. DESIGNATIONS
+--------------------------------------------------------------------------------
+  GET    /companies/:companyId/designations
+  POST   /companies/:companyId/designations
+  PATCH  /companies/:companyId/designations/:designationId
+  DELETE /companies/:companyId/designations/:designationId
+
+  Create/Update body:
+  {
+    "designationCode": "SE",
+    "name": "Software Engineer",
+    "gradeLevel": 3,
+    "isActive": true
+  }
+
+
+--------------------------------------------------------------------------------
+F4. WAREHOUSES
+--------------------------------------------------------------------------------
+  GET    /companies/:companyId/warehouses
+  POST   /companies/:companyId/warehouses
+  PATCH  /companies/:companyId/warehouses/:warehouseId
+  DELETE /companies/:companyId/warehouses/:warehouseId
+
+  Create/Update body:
+  {
+    "warehouseCode": "WH-01",
+    "name": "Main Warehouse",
+    "branchId": "1",
+    "address": "Industrial Estate",
+    "isActive": true
+  }
+
+Permission hints already used in auth docs:
+  departments:view|create|edit|delete
+  (extend similarly for branches / designations / warehouses)
+
+
+################################################################################
+# SECTION G — ROLES + PERMISSION MATRIX
+################################################################################
+
+Screen: company detail tab = roles
+Logic:
+  - System roles (isSystem=true) are read-only / not deletable
+  - Permission matrix only for ACTIVE company modules
+  - Actions per module: view | create | edit | delete | approve
+  - Clone role = copy permissions to new role
+
+--------------------------------------------------------------------------------
+G1. LIST ROLES                                              [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  GET /companies/:companyId/roles
+
+  Response item:
+  {
+    "roleId": "15",
+    "companyId": "15",
+    "roleCode": "ADMIN",
+    "roleName": "Administrator",
+    "description": "Full access",
+    "isSystem": true
+  }
+
+
+--------------------------------------------------------------------------------
+G2. CREATE ROLE                                             [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  POST /companies/:companyId/roles
+
+  Exact body:
+  {
+    "roleCode": "MANAGER",
+    "roleName": "Manager",
+    "description": "Department manager"
+  }
+
+
+--------------------------------------------------------------------------------
+G3. UPDATE ROLE                                             [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  PATCH /companies/:companyId/roles/:roleId
+  {
+    "roleName": "Manager Updated",
+    "description": "..."
+  }
+
+
+--------------------------------------------------------------------------------
+G4. DELETE ROLE                                             [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  DELETE /companies/:companyId/roles/:roleId
+  Logic: reject if isSystem OR if users still assigned
+
+
+--------------------------------------------------------------------------------
+G5. CLONE ROLE                                              [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  POST /companies/:companyId/roles/:roleId/clone
+
+  Exact body:
+  {
+    "roleCode": "MANAGER_COPY",
+    "roleName": "Manager Copy"
+  }
+
+  Logic: create new role + copy all rolePermissions
+
+
+--------------------------------------------------------------------------------
+G6. GET / SET ROLE PERMISSIONS                              [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  GET  /companies/:companyId/roles/:roleId/permissions
+  PUT  /companies/:companyId/roles/:roleId/permissions
+
+  PUT exact body (REPLACE full set):
+  {
+    "permissions": [
+      { "moduleId": "6",  "action": "view" },
+      { "moduleId": "6",  "action": "create" },
+      { "moduleId": "6",  "action": "edit" },
+      { "moduleId": "13", "action": "view" }
+    ]
+  }
+
+  Response: same array shape
+
+  OR backend may use permissionCode style:
+  {
+    "permissionCodes": [
+      "financials:view",
+      "financials:create",
+      "companies:view"
+    ]
+  }
+  (Document which variant is canonical — FE can adapt.)
+
+Permission codes for admin nav (must continue from /auth/me):
+  companies:view|create|edit|delete
+  users:view|create|edit|delete
+  roles:view|create|edit|delete
+  subscription:view|create|edit|delete
+  modules:view|create|edit|delete
+  departments:view|create|edit|delete
+  (+ branches / designations / warehouses if separate)
+
+
+################################################################################
+# SECTION H — USERS / MEMBERSHIPS
+################################################################################
+
+Screen: company detail tab = users
+Actions FE supports today (mock): invite, edit profile, set role,
+  set employment fields, suspend/activate, module override, remove, CSV export
+
+--------------------------------------------------------------------------------
+H1. LIST COMPANY USERS                                      [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  GET /companies/:companyId/users
+  Query: search, status, roleId, page, limit
+
+  Response item:
+  {
+    "userId": "15",
+    "username": "demo.admin",
+    "displayName": "Demo Admin",
+    "firstName": "Demo",
+    "lastName": "Admin",
+    "email": "admin@demo-acme.com",
+    "mobile": "+91-9000000001",
+    "isActive": true,
+    "membership": {
+      "userCompanyId": "1",
+      "employeeId": "ADMIN001",
+      "departmentId": null,
+      "designationId": null,
+      "branchId": null,
+      "warehouseId": null,
+      "status": "active",
+      "isDefault": true
+    },
+    "role": {
+      "roleId": "15",
+      "roleCode": "ADMIN",
+      "roleName": "Administrator"
+    }
+  }
+
+  membership.status: active | suspended
+
+
+--------------------------------------------------------------------------------
+H2. INVITE / CREATE USER                                    [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  Method:  POST
+  Path:    /companies/:companyId/users/invite
+  Permission: users:create
+
+  Exact request body:
+  {
+    "firstName": "Priya",
+    "lastName": "Sharma",
+    "email": "priya@demo-acme.com",
+    "mobile": "+91-9888800000",
+    "employeeId": "EMP-00050",
+    "roleId": "16",
+    "sendInviteEmail": true
+  }
+
+  Logic:
+    - If email already exists globally: attach membership to company
+    - Else create user + authentication stub / invite token
+    - Auto generate employeeId if omitted (e.g. EMP-xxxxx)
+    - Assign role if roleId provided
+    - Return created user + membership + temporary password OR invite link
+
+
+--------------------------------------------------------------------------------
+H3. UPDATE USER PROFILE                                     [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  PATCH /companies/:companyId/users/:userId
+
+  Exact body:
+  {
+    "firstName": "Priya",
+    "lastName": "Sharma",
+    "displayName": "Priya Sharma",
+    "mobile": "+91-9888800000"
+  }
+
+
+--------------------------------------------------------------------------------
+H4. SET USER ROLE                                           [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  PUT /companies/:companyId/users/:userId/role
+
+  Exact body:
+  {
+    "roleId": "16"
+  }
+
+
+--------------------------------------------------------------------------------
+H5. UPDATE EMPLOYMENT / MEMBERSHIP FIELDS                   [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  PATCH /companies/:companyId/users/:userId/membership
+
+  Exact body:
+  {
+    "employeeId": "EMP-00050",
+    "departmentId": "2",
+    "designationId": "3",
+    "branchId": "1",
+    "warehouseId": "1"
+  }
+
+
+--------------------------------------------------------------------------------
+H6. SET MEMBERSHIP STATUS (suspend / activate)              [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  PATCH /companies/:companyId/users/:userId/status
+
+  Exact body:
+  {
+    "status": "suspended"
+  }
+
+  Values: active | suspended
+  Logic: suspended users cannot login to that company
+
+
+--------------------------------------------------------------------------------
+H7. USER MODULE ACCESS OVERRIDE                             [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  PUT /companies/:companyId/users/:userId/module-access
+
+  Exact body (replace set OR one entry):
+  {
+    "items": [
+      { "moduleId": "6",  "accessType": "grant" },
+      { "moduleId": "13", "accessType": "deny" }
+    ]
+  }
+
+  accessType: grant | deny
+  Remove override: accessType null or DELETE endpoint
+
+
+--------------------------------------------------------------------------------
+H8. REMOVE USER FROM COMPANY                                [MISSING — NEEDED]
+--------------------------------------------------------------------------------
+  DELETE /companies/:companyId/users/:userId
+
+  Logic:
+    - Soft remove membership
+    - Remove user_roles for that company
+    - Remove module overrides
+    - Do NOT necessarily delete global user account
+
+
+################################################################################
+# SECTION I — AUTH DEPENDENCIES FOR ADMIN (ALREADY REQUIRED)
+################################################################################
+
+These already exist for Phase 1 auth; admin dashboard DEPENDS on them:
+
+  GET  /auth/me
+    -> must include permissions[] for admin nav
+    -> must include activeCompany.modules[] for product sidebar
+
+  GET  /auth/companies
+    -> user's own memberships (company switcher) — NOT platform catalogue
+
+  POST /auth/login | /auth/refresh | /auth/logout
+    -> session lifecycle
+
+Demo accounts used to test admin entry (tenant JWT):
+  DEMO_ACME / ADMIN001 / Admin@123
+  PLATFORM  / OWNER001 / Owner@123   (platform owner for Companies list)
+
+
+################################################################################
+# SECTION J — ONBOARDING PIPELINE LOGIC (FRONTEND EXPECTS)
+################################################################################
+
+Company detail shows checklist stages. Backend should enable these states:
+
+  1. Profile complete
+       company has name + companyCode (+ preferably email)
+  2. Subscription assigned
+       active OR trial subscription exists
+  3. Organization started
+       at least 1 branch AND 1 department
+  4. Modules enabled
+       at least 1 company module isActive=true
+  5. Roles & users ready
+       at least 1 non-system-or-any role AND >=1 membership user
+  6. Go live
+       company.status == active  (and subscription healthy)
+
+Backend does NOT need a special "onboarding" API if FE can derive from
+GET company detail aggregates. Prefer one detail endpoint that returns:
+
+  GET /companies/:id/setup-summary
+  {
+    "company": { ... },
+    "subscription": { ... } | null,
+    "counts": {
+      "branches": 1,
+      "departments": 2,
+      "designations": 3,
+      "warehouses": 1,
+      "roles": 4,
+      "users": 5,
+      "activeModules": 6,
+      "entitledModules": 6
+    }
+  }
+
+Optional but very useful for Overview tab.
+
+
+################################################################################
+# SECTION K — PRIORITY BUILD ORDER (FOR BACKEND)
+################################################################################
+
+P0 — Admin dashboard unblocks with real data
+  1. Confirm platform list path: GET /companies  vs  /super-admin/companies
+  2. GET /companies/:id
+  3. POST /companies , PATCH /companies/:id , PATCH .../status
+  4. Ensure GET /auth/me permissions include companies:view for platform owner
+
+P1 — Company setup tabs usable
+  5. GET/POST/PUT /companies/:id/subscription (+ cancel)
+  6. GET/PATCH /companies/:id/modules
+  7. Org CRUD: branches, departments, designations, warehouses
+  8. Roles CRUD + PUT permissions
+  9. Users list + invite + role + status + remove
+
+P2 — Platform catalogues
+ 10. Plans CRUD (/plans)
+ 11. Modules CRUD (/modules)
+
+P3 — Polish
+ 12. setup-summary endpoint
+ 13. list enrichment (planName, userCount, ...)
+ 14. Permission codes for every button action
+
+
+################################################################################
+# SECTION L — QUESTIONS FOR BACKEND (PLEASE ANSWER)
+################################################################################
+
+  Q1  Canonical path for platform tenant list?
+      A) GET /companies
+      B) GET /super-admin/companies
+      C) Both (different tokens)
+
+  Q2  Permission code list for admin mutations (exact strings)?
+
+  Q3  Role permissions stored as moduleId+action OR permissionCode strings?
+
+  Q4  Invite flow returns temp password OR email magic link?
+
+  Q5  Creating a company via admin also creates owner user? If yes, payload?
+
+  Q6  camelCase confirmed for all admin APIs?
+
+  Q7  Soft-delete vs hard-delete policy?
+
+  Q8  Will GET /companies/:id include nested subscription/modules/counts?
+
+
+################################################################################
+# SECTION M — QUICK MATRIX (SCREEN -> APIs NEEDED)
+################################################################################
+
+  Companies list
+    NEED: GET /companies
+    NEED: POST /companies
+    NEED: PATCH /companies/:id
+    NEED: PATCH /companies/:id/status
+    OPT:  DELETE /companies/:id
+
+  Company detail / Overview
+    NEED: GET /companies/:id
+    OPT:  GET /companies/:id/setup-summary
+
+  Subscription tab
+    NEED: GET  /companies/:id/subscription
+    NEED: POST /companies/:id/subscription
+    NEED: POST /companies/:id/subscription/cancel
+    NEED: GET  /plans  (catalogue picker)
+
+  Modules tab (per company)
+    NEED: GET   /companies/:id/modules
+    NEED: PATCH /companies/:id/modules/:moduleId
+
+  Organization tab
+    NEED: full CRUD for branches, departments, designations, warehouses
+
+  Roles tab
+    NEED: CRUD roles + GET/PUT permissions (+ clone)
+
+  Users tab
+    NEED: list, invite, profile update, set role, membership fields,
+          status, module-access, remove
+
+  Plans page
+    NEED: CRUD /plans
+
+  Modules page (catalogue)
+    NEED: CRUD /modules
+
+  Auth (already)
+    NEED: GET /auth/me (permissions[]) for menus
+
+
+================================================================================
+END — ADMIN DASHBOARD BACKEND API HANDOFF
+================================================================================

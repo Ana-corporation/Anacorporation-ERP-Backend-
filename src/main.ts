@@ -108,6 +108,18 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
 
+  if (!process.env.K_SERVICE) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { freePort } = require('../scripts/free-port.js') as {
+        freePort: (port?: number | string) => { port: string; killed: number };
+      };
+      freePort(port);
+    } catch (err) {
+      logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
+    }
+  }
+
   // Cloud Run sets PORT=8080 and rejects a localhost-only bind.
   await app.listen(port, '0.0.0.0');
   logger.log(`API listening on ${port}`);

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -47,6 +47,18 @@ export class RolesController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.rolesService.create(companyId, dto, user.sub);
+  }
+
+  @Get(':id/permissions')
+  @RequirePermissions('roles:view')
+  @ApiOperation({ summary: 'Get role permissions matrix' })
+  getPermissions(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.rolesService.getPermissions(id, companyId);
   }
 
   @Post(':id/clone')

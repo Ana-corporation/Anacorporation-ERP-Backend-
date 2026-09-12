@@ -456,4 +456,31 @@ export class RolesRepository {
       });
     });
   }
+
+  findPermissionsByCodes(codes: string[]) {
+    return this.prisma.permission.findMany({
+      where: { permissionCode: { in: codes } },
+    });
+  }
+
+  findPermissionsByModuleActions(items: { moduleId: string; action: string }[]) {
+    return this.prisma.permission.findMany({
+      where: {
+        OR: items.map((item) => ({
+          moduleId: parseBigIntId(item.moduleId),
+          action: item.action as never,
+        })),
+      },
+    });
+  }
+
+  countUsersWithRole(roleId: string, companyId: string) {
+    return this.prisma.userRole.count({
+      where: {
+        roleId: parseBigIntId(roleId),
+        companyId: parseBigIntId(companyId),
+        isActive: true,
+      },
+    });
+  }
 }

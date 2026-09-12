@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { HttpStatus } from '@nestjs/common';
 import { UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
@@ -93,6 +93,26 @@ export class RolesService {
     });
 
     return this.presentRole(role);
+  }
+
+  async getPermissions(id: string, companyId: string) {
+    const role = await this.repository.findById(id, companyId);
+    if (!role) throw new NotFoundException('Role');
+    const permissions = (role.rolePermissions ?? [])
+      .filter((rp: { isAllowed: boolean }) => rp.isAllowed)
+      .map((rp: {
+        permissionId: bigint;
+        moduleId: bigint;
+        isAllowed: boolean;
+        permission?: { permissionCode?: string; action?: string };
+      }) => ({
+        permissionId: rp.permissionId.toString(),
+        permissionCode: rp.permission?.permissionCode ?? null,
+        moduleId: rp.moduleId.toString(),
+        action: rp.permission?.action ?? null,
+        isAllowed: rp.isAllowed,
+      }));
+    return serialize({ roleId: id, permissions });
   }
 
   async update(id: string, companyId: string, dto: UpdateRoleDto, actorId: string) {
@@ -207,9 +227,15 @@ export class RolesService {
       );
     }
 
+    let permissionCodes = [...(dto.permissionCodes ?? [])];
+    if (permissionCodes.length === 0 && dto.permissions?.length) {
+      const rows = await this.repository.findPermissionsByModuleActions(dto.permissions);
+      permissionCodes = rows.map((p) => p.permissionCode);
+    }
+
     const { role, missingCodes } = await this.repository.setPermissionsByCodes(
       id,
-      dto.permissionCodes ?? [],
+      permissionCodes,
       actorId,
     );
 
@@ -271,8 +297,8 @@ export class RolesService {
   }
 
   /**
-   * Explicit roleCode → normalize + reserved/duplicate checks.
-   * Omitted/blank → auto from roleName (or source code on clone) + uniqueness suffix.
+   * Explicit roleCode ΓåÆ normalize + reserved/duplicate checks.
+   * Omitted/blank ΓåÆ auto from roleName (or source code on clone) + uniqueness suffix.
    */
   private async resolveRoleCodeForCreate(
     companyId: string,
@@ -314,7 +340,7 @@ export class RolesService {
   }
 
   /**
-   * Deactivate (retire) role for this company — SYSTEM and CUSTOM allowed.
+   * Deactivate (retire) role for this company ΓÇö SYSTEM and CUSTOM allowed.
    * Rule A: zero ACTIVE assignees required. Does not auto-unassign.
    */
   async deactivate(

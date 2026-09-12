@@ -21,7 +21,16 @@ export const UpdateRoleSchema = z.object({
 });
 
 export const SetRolePermissionsSchema = z.object({
-  permissionCodes: z.array(z.string().trim().min(1)).default([]),
+  permissionIds: z.array(bigintIdSchema).optional(),
+  permissionCodes: z.array(z.string().trim().min(1)).optional().default([]),
+  permissions: z
+    .array(
+      z.object({
+        moduleId: bigintIdSchema,
+        action: z.string().min(1),
+      }),
+    )
+    .optional(),
 });
 
 export const CloneRoleSchema = z.object({
@@ -55,8 +64,8 @@ export const DeactivateRoleSchema = z.object({
 
 export class CreateRoleDto extends createZodDto(CreateRoleSchema) {}
 export class UpdateRoleDto extends createZodDto(UpdateRoleSchema) {}
-export class SetRolePermissionsDto extends createZodDto(SetRolePermissionsSchema) {}
 export class CloneRoleDto extends createZodDto(CloneRoleSchema) {}
+export class SetRolePermissionsDto extends createZodDto(SetRolePermissionsSchema) {}
 export class DeleteRoleDto extends createZodDto(DeleteRoleSchema) {}
 export class AssignRolePersonDto extends createZodDto(AssignRolePersonSchema) {}
 export class ReassignRolePersonDto extends createZodDto(ReassignRolePersonSchema) {}

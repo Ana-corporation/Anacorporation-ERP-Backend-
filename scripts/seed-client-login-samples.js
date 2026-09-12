@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Client-side login test accounts (matches frontend auth expectations).
  *
  * Prerequisites:
@@ -9,13 +9,13 @@
  *   npm run seed:client-logins
  *
  * Accounts:
- *   PLATFORM  / OWNER001  / Owner@123   → platform owner (admin nav)
- *   DEMO_ACME / ADMIN001  / Admin@123   → company ADMIN (supply-chain full)
- *   DEMO_ACME / MGR001    / Manager@123 → MANAGER (role may list future modules; workspace = entitled only)
- *   DEMO_ACME / STAFF001  / Staff@123   → STAFF (supply-chain view; crm role reserved until AVAILABLE)
- *   DEMO_ACME / SALES001  / Sales@123   → SALES (crm role reserved until AVAILABLE)
- *   DEMO_ACME / VENDOR001 / Vendor@123  → VENDOR (supply-chain vendors CRUD)
- *   DEMO_ACME / INV001    / InvAdmin@123 → INVENTORY_ADMIN (Item Master / supply-chain)
+ *   PLATFORM  / OWNER001  / Owner@123   ΓåÆ platform owner (admin nav)
+ *   DEMO_ACME / ADMIN001  / Admin@123   ΓåÆ company ADMIN (supply-chain full)
+ *   DEMO_ACME / MGR001    / Manager@123 ΓåÆ MANAGER (role may list future modules; workspace = entitled only)
+ *   DEMO_ACME / STAFF001  / Staff@123   ΓåÆ STAFF (supply-chain view; crm role reserved until AVAILABLE)
+ *   DEMO_ACME / SALES001  / Sales@123   ΓåÆ SALES (crm role reserved until AVAILABLE)
+ *   DEMO_ACME / VENDOR001 / Vendor@123  ΓåÆ VENDOR (supply-chain vendors CRUD)
+ *   DEMO_ACME / INV001    / InvAdmin@123 ΓåÆ INVENTORY_ADMIN (Item Master / supply-chain)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 require('./apply-gcp-sql-env');
@@ -39,7 +39,7 @@ const PRODUCT_MODULE_CODES = [
   'projects',
 ];
 
-/** Customer-ready workspace modules (Vendors + Items → FE moduleCode supply-chain). */
+/** Customer-ready workspace modules (Vendors + Items ΓåÆ FE moduleCode supply-chain). */
 const AVAILABLE_PRODUCT_MODULE_CODES = ['supply-chain'];
 
 const PHASE1_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'];
@@ -56,7 +56,7 @@ const FORM_CONFIGURATION_PERMISSION_CODES = [
   { module: 'shared', code: 'form_configurations:edit', name: 'Edit Form Configurations', action: 'edit' },
 ];
 
-/** Company Organization tab — branches / departments / designations / warehouses */
+/** Company Organization tab ΓÇö branches / departments / designations / warehouses */
 const ORG_STRUCTURE_PERMISSION_CODES = [
   { module: 'organization', code: 'branches:view', name: 'View Branches', action: 'view' },
   { module: 'organization', code: 'branches:create', name: 'Create Branches', action: 'create' },
@@ -76,7 +76,7 @@ const ORG_STRUCTURE_PERMISSION_CODES = [
   { module: 'organization', code: 'warehouses:delete', name: 'Delete Warehouses', action: 'delete' },
 ];
 
-/** Company IAM — Users / Roles (tenant admin shell) */
+/** Company IAM ΓÇö Users / Roles (tenant admin shell) */
 const TENANT_IAM_PERMISSION_CODES = [
   { module: 'iam', code: 'users:view', name: 'View Users', action: 'view' },
   { module: 'iam', code: 'users:create', name: 'Create Users', action: 'create' },
@@ -86,7 +86,7 @@ const TENANT_IAM_PERMISSION_CODES = [
   { module: 'iam', code: 'roles:create', name: 'Create Roles', action: 'create' },
   { module: 'iam', code: 'roles:edit', name: 'Edit Roles', action: 'edit' },
   { module: 'iam', code: 'roles:delete', name: 'Delete Roles', action: 'delete' },
-  // Security & Organization V1 — required for Permission Sets / Access Policies tabs
+  // Security & Organization V1 ΓÇö required for Permission Sets / Access Policies tabs
   { module: 'iam', code: 'permission_sets:view', name: 'View Permission Sets', action: 'view' },
   { module: 'iam', code: 'permission_sets:create', name: 'Create Permission Sets', action: 'create' },
   { module: 'iam', code: 'permission_sets:edit', name: 'Edit Permission Sets', action: 'edit' },
@@ -366,11 +366,11 @@ async function ensureModules() {
         where: {
           moduleId_permissionCode: { moduleId: row.moduleId, permissionCode },
         },
-        update: { action, permissionName: `${row.moduleName} — ${action}` },
+        update: { action, permissionName: `${row.moduleName} ΓÇö ${action}` },
         create: {
           moduleId: row.moduleId,
           permissionCode,
-          permissionName: `${row.moduleName} — ${action}`,
+          permissionName: `${row.moduleName} ΓÇö ${action}`,
           action,
         },
       });
@@ -396,12 +396,12 @@ async function ensureModules() {
           },
           update: {
             action,
-            permissionName: `${label} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+            permissionName: `${label} ΓÇö ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
           },
           create: {
             moduleId: supplyChain.moduleId,
             permissionCode,
-            permissionName: `${label} — ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
+            permissionName: `${label} ΓÇö ${action.charAt(0).toUpperCase()}${action.slice(1)}`,
             action,
           },
         });
@@ -687,7 +687,7 @@ async function replaceRolePermissions(tx, roleId, account, modulesByCode, create
     for (const action of actions) {
       const moduleLevel = `${moduleCode}:${action}`;
       permissionCodes.add(moduleLevel);
-      // Expand legacy supply-chain:* → vendors:* + items:* (migration-safe)
+      // Expand legacy supply-chain:* ΓåÆ vendors:* + items:* (migration-safe)
       if (moduleCode === 'supply-chain') {
         permissionCodes.add(`vendors:${action}`);
         permissionCodes.add(`items:${action}`);
@@ -856,7 +856,7 @@ async function ensureModuleAccessOverrides(tx, userId, companyId, account, modul
       companyId,
       moduleId: mod.moduleId,
       accessType: 'deny',
-      reason: 'Client login sample — role module restriction',
+      reason: 'Client login sample ΓÇö role module restriction',
       createdBy,
     });
   }
@@ -1024,7 +1024,7 @@ async function ensureVendorCustomFieldSamples() {
 async function ensureDemoOrgStructure() {
   const company = await prisma.company.findUnique({ where: { companyCode: 'DEMO_ACME' } });
   if (!company) {
-    console.warn('DEMO_ACME not found — skip org structure seed');
+    console.warn('DEMO_ACME not found ΓÇö skip org structure seed');
     return;
   }
   const companyId = company.companyId;
@@ -1180,7 +1180,7 @@ async function main() {
     const row = await seedAccount(account, modulesByCode);
     results.push(row);
     console.log(
-      `✓ ${row.companyCode.padEnd(10)} / ${row.employeeCode.padEnd(10)} / ${row.password.padEnd(12)}  (${row.roleCode})`,
+      `Γ£ô ${row.companyCode.padEnd(10)} / ${row.employeeCode.padEnd(10)} / ${row.password.padEnd(12)}  (${row.roleCode})`,
     );
   }
 

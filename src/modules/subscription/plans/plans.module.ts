@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '@/modules/iam/authentication/auth.module';
 import { EntitlementsModule } from '@/modules/subscription/entitlements/entitlements.module';
 import { PlansController } from './plans.controller';
+import { PlansAliasController } from './plans-alias.controller';
 import { PlanModulesController } from './plan-modules.controller';
 import { PlansRepository } from './plans.repository';
 import { PlanModulesRepository } from './plan-modules.repository';
@@ -10,7 +11,7 @@ import { PlanModulesService } from './plan-modules.service';
 
 @Module({
   imports: [EntitlementsModule, AuthModule],
-  controllers: [PlansController, PlanModulesController],
+  controllers: [PlansController, PlansAliasController, PlanModulesController],
   providers: [PlansRepository, PlanModulesRepository, PlansService, PlanModulesService],
   exports: [PlansService, PlanModulesService],
 })

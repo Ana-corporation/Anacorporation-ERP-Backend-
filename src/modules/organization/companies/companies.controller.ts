@@ -6,16 +6,7 @@ import { ForbiddenException } from '@/common/exceptions/business.exception';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { CompaniesService } from './companies.service';
-import { CreateCompanyDto, UpdateCompanyDto } from './dto/company.dto';
-import { companyStatusSchema } from '@/common/zod/common.schemas';
-import { z } from 'zod';
-import { createZodDto } from 'nestjs-zod';
-
-const SetCompanyStatusSchema = z.object({
-  status: companyStatusSchema,
-});
-
-class SetCompanyStatusDto extends createZodDto(SetCompanyStatusSchema) {}
+import { CreateCompanyDto, UpdateCompanyDto, UpdateCompanyStatusDto } from './dto/company.dto';
 
 @ApiTags('Companies')
 @ApiBearerAuth()
@@ -25,7 +16,7 @@ export class CompaniesController {
 
   @Get()
   @RequirePermissions('companies:view')
-  @ApiOperation({ summary: 'List companies' })
+  @ApiOperation({ summary: 'List companies (platform tenant catalogue)' })
   findAll(@Query() query: PaginationQueryDto) {
     return this.companiesService.findAll(query);
   }
@@ -51,7 +42,7 @@ export class CompaniesController {
   @ApiOperation({ summary: 'Set company status' })
   async setStatus(
     @Param('id') id: string,
-    @Body() dto: SetCompanyStatusDto,
+    @Body() dto: UpdateCompanyStatusDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     const canEditAnyCompany = Boolean(user?.permissions?.includes('platform_companies:edit'));

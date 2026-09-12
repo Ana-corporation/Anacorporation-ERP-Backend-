@@ -24,9 +24,13 @@ const ERP_MODULES_LIST_FILTER: ListFilterOptions = {
 export class ErpModulesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findMany(query: PaginationQueryDto) {
+  findMany(query: PaginationQueryDto & { moduleType?: string }) {
     const { skip, limit, page } = getPaginationParams(query);
-    const where = buildListWhere({ deletedAt: null }, query, ERP_MODULES_LIST_FILTER) as Prisma.ModuleWhereInput;
+    const base: Prisma.ModuleWhereInput = { deletedAt: null };
+    if (query.moduleType === 'product' || query.moduleType === 'admin') {
+      base.moduleType = query.moduleType;
+    }
+    const where = buildListWhere(base, query, ERP_MODULES_LIST_FILTER) as Prisma.ModuleWhereInput;
 
     return this.prisma.$transaction([
       this.prisma.module.findMany({

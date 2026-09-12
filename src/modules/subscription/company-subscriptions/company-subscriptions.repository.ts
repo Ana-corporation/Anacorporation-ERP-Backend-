@@ -48,6 +48,130 @@ export class CompanySubscriptionsRepository {
     });
   }
 
+  findCurrent(companyId: string) {
+    return this.prisma.companySubscription.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        status: { in: ['active', 'trial'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        plan: {
+          include: {
+            planModules: { include: { module: true } },
+          },
+        },
+      },
+    });
+  }
+
+  findLatest(companyId: string) {
+    return this.prisma.companySubscription.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        plan: {
+          include: {
+            planModules: { include: { module: true } },
+          },
+        },
+      },
+    });
+  }
+
+  cancelActiveForCompany(companyId: string, updatedBy?: string) {
+    return this.prisma.companySubscription.updateMany({
+      where: {
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        status: { in: ['active', 'trial', 'pending'] },
+      },
+      data: {
+        status: 'cancelled',
+        updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async findOrCreateCustomPlan() {
+    const existing = await this.prisma.subscriptionPlan.findFirst({
+      where: { planCode: 'CUSTOM', deletedAt: null },
+    });
+    if (existing) return existing;
+
+    return this.prisma.subscriptionPlan.create({
+      data: {
+        planCode: 'CUSTOM',
+        name: 'Custom Modules',
+        description: 'Custom module set for a single company',
+        price: 0,
+        billingCycle: 'monthly',
+        isActive: true,
+      },
+    });
+  }
+
+  async syncCompanyModules(
+    companyId: string,
+    moduleIds: string[],
+    actorId?: string,
+  ) {
+    const companyBigInt = parseBigIntId(companyId);
+    const actor = actorId ? parseBigIntId(actorId) : undefined;
+    const uniqueIds = [...new Set(moduleIds)];
+
+    const existing = await this.prisma.companyModule.findMany({
+      where: { companyId: companyBigInt, deletedAt: null },
+    });
+
+    const keep = new Set(uniqueIds);
+    for (const row of existing) {
+      const id = row.moduleId.toString();
+      if (!keep.has(id)) {
+        await this.prisma.companyModule.update({
+          where: { companyModuleId: row.companyModuleId },
+          data: {
+            isActive: false,
+            deletedAt: new Date(),
+            deletedBy: actor,
+            updatedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    for (const moduleId of uniqueIds) {
+      const found = existing.find((e) => e.moduleId.toString() === moduleId);
+      if (found) {
+        await this.prisma.companyModule.update({
+          where: { companyModuleId: found.companyModuleId },
+          data: {
+            isActive: true,
+            deletedAt: null,
+            deletedBy: null,
+            updatedBy: actor,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        await this.prisma.companyModule.create({
+          data: {
+            companyId: companyBigInt,
+            moduleId: parseBigIntId(moduleId),
+            isActive: true,
+            activatedDate: new Date(),
+            createdBy: actor,
+          },
+        });
+      }
+    }
+  }
+
   planExists(planId: string) {
     return this.prisma.subscriptionPlan.findFirst({
       where: { planId: parseBigIntId(planId), deletedAt: null },

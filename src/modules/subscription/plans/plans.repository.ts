@@ -54,35 +54,74 @@ export class PlansRepository {
   }
 
   create(dto: CreateSubscriptionPlanDto, createdBy?: string) {
-    return this.prisma.subscriptionPlan.create({
-      data: {
-        planCode: dto.planCode.trim().toUpperCase(),
-        name: dto.name.trim(),
-        description: dto.description,
-        price: dto.price ?? 0,
-        billingCycle: dto.billingCycle ?? 'monthly',
-        maxUsers: dto.maxUsers,
-        maxStorageGb: dto.maxStorageGb,
-        isActive: dto.isActive ?? true,
-        createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
-      },
+    const { moduleIds, ...planData } = dto;
+    return this.prisma.$transaction(async (tx) => {
+      const plan = await tx.subscriptionPlan.create({
+        data: {
+          planCode: planData.planCode.trim().toUpperCase(),
+          name: planData.name.trim(),
+          description: planData.description,
+          price: planData.price ?? 0,
+          billingCycle: planData.billingCycle ?? 'monthly',
+          maxUsers: planData.maxUsers,
+          maxStorageGb: planData.maxStorageGb,
+          isActive: planData.isActive ?? true,
+          createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
+        },
+      });
+
+      if (moduleIds?.length) {
+        await tx.planModule.createMany({
+          data: moduleIds.map((moduleId) => ({
+            planId: plan.planId,
+            moduleId: parseBigIntId(moduleId),
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return tx.subscriptionPlan.findFirst({
+        where: { planId: plan.planId },
+        include: { planModules: { include: { module: true } } },
+      });
     });
   }
 
   update(id: string, dto: UpdateSubscriptionPlanDto, updatedBy?: string) {
-    return this.prisma.subscriptionPlan.update({
-      where: { planId: parseBigIntId(id) },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.price !== undefined ? { price: dto.price } : {}),
-        ...(dto.billingCycle !== undefined ? { billingCycle: dto.billingCycle } : {}),
-        ...(dto.maxUsers !== undefined ? { maxUsers: dto.maxUsers } : {}),
-        ...(dto.maxStorageGb !== undefined ? { maxStorageGb: dto.maxStorageGb } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-        updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
-        updatedAt: new Date(),
-      },
+    const { moduleIds, ...planData } = dto;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.subscriptionPlan.update({
+        where: { planId: parseBigIntId(id) },
+        data: {
+          ...(planData.name !== undefined ? { name: planData.name.trim() } : {}),
+          ...(planData.description !== undefined ? { description: planData.description } : {}),
+          ...(planData.price !== undefined ? { price: planData.price } : {}),
+          ...(planData.billingCycle !== undefined ? { billingCycle: planData.billingCycle } : {}),
+          ...(planData.maxUsers !== undefined ? { maxUsers: planData.maxUsers } : {}),
+          ...(planData.maxStorageGb !== undefined ? { maxStorageGb: planData.maxStorageGb } : {}),
+          ...(planData.isActive !== undefined ? { isActive: planData.isActive } : {}),
+          updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (moduleIds) {
+        await tx.planModule.deleteMany({ where: { planId: parseBigIntId(id) } });
+        if (moduleIds.length > 0) {
+          await tx.planModule.createMany({
+            data: moduleIds.map((moduleId) => ({
+              planId: parseBigIntId(id),
+              moduleId: parseBigIntId(moduleId),
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      return tx.subscriptionPlan.findFirst({
+        where: { planId: parseBigIntId(id) },
+        include: { planModules: { include: { module: true } } },
+      });
     });
   }
 

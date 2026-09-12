@@ -1,0 +1,444 @@
+================================================================================
+MANUAL TEST CHECKLIST — LOGIN + COMPANY SETUP ONBOARDING
+================================================================================
+Updated: 2026-07-13
+Backend:  http://localhost:3002/api/v1
+Frontend: http://localhost:3001
+Swagger:  http://localhost:3002/docs
+
+Use this file after seed:
+  npm run seed:erp-modules
+  npm run seed:client-logins
+
+All API responses use envelope: { success, message, data, timestamp }
+Read payload from: response.data.data
+
+
+================================================================================
+TEST ACCOUNTS (from your payload)
+================================================================================
+
+  LEVEL            COMPANY     EMPLOYEE    PASSWORD       ROLE
+  ---------------  ----------  ----------  -------------  --------------
+  platform-owner   PLATFORM    OWNER001    Owner@123      PLATFORM_OWNER
+  company-admin    DEMO_ACME   ADMIN001    Admin@123      ADMIN
+  manager          DEMO_ACME   MGR001      Manager@123    MANAGER
+  staff            DEMO_ACME   STAFF001    Staff@123      STAFF
+  sales            DEMO_ACME   SALES001    Sales@123      SALES
+
+
+================================================================================
+FLOW 1 — AUTH LOGIN (DO THIS FIRST) ✓
+================================================================================
+You already did this if you see Company Setup dashboard as Demo Admin.
+
+STEP 1.1  Optional — verify company exists
+------------------------------------------
+  GET /auth/company?companyCode=DEMO_ACME
+
+  Expect 200:
+    companyId, companyCode=DEMO_ACME, name=Demo Acme Corp, status=trial
+
+STEP 1.2  Login (company admin — matches your screenshot)
+---------------------------------------------------------
+  POST /auth/login
+  Body:
+  {
+    "companyCode": "DEMO_ACME",
+    "employeeCode": "ADMIN001",
+    "password": "Admin@123"
+  }
+
+  Expect 200:
+    - data.accessToken (save this)
+    - data.user.displayName = "Demo Admin"
+    - data.activeCompany.companyCode = "DEMO_ACME"
+    - data.activeCompany.role.roleCode = "ADMIN"
+    - data.activeCompany.modules[] has product modules (financials, crm, etc.)
+
+  SAVE for next steps:
+    ACCESS_TOKEN = <from response>
+    COMPANY_ID   = <from data.activeCompany.companyId>
+
+STEP 1.3  Get full session + permissions (required for sidebar)
+-------------------------------------------------------------
+  GET /auth/me
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+
+  Expect 200:
+    - data.permissions[] is NOT empty for ADMIN
+    - includes: companies:view, branches:view, departments:view,
+                 roles:view, users:view, etc.
+
+STEP 1.4  Frontend check (what you see now)
+-------------------------------------------
+  URL: http://localhost:3001  (Company Setup page)
+
+  [ ] Logged in as "Demo Admin" / "Demo Acme Corp"
+  [ ] Left sidebar shows MY COMPANY → Company Setup
+  [ ] Onboarding pipeline shows "Stage 3 of 6 — Organization"
+  [ ] Blue banner: "Next step: add at least one branch and one department"
+
+  If all checked → FLOW 1 PASSED. Go to FLOW 2.
+
+
+================================================================================
+FLOW 2 — ORGANIZATION SETUP (NEXT TEST — Stage 3) ← YOU ARE HERE
+================================================================================
+Matches UI: Company Setup → Organization tab / onboarding step 3.
+
+Use ADMIN001 login. Replace {COMPANY_ID} with your companyId from login.
+
+STEP 2.1  List branches (should be empty or existing)
+-----------------------------------------------------
+  GET /companies/{COMPANY_ID}/branches
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+
+  Expect 200: data.items[] (array) — note if empty
+
+STEP 2.2  Create branch (manual payload)
+------------------------------------------
+  POST /companies/{COMPANY_ID}/branches
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+    Content-Type: application/json
+  Body:
+  {
+    "branchCode": "HQ-001",
+    "name": "Head Office",
+    "address": "100 Main Street",
+    "city": "Chennai",
+    "country": "India",
+    "phone": "+91-44-0000000",
+    "isActive": true
+  }
+
+  Expect 201/200:
+    - data.branchCode = "HQ-001"
+    - data.name = "Head Office"
+    - save BRANCH_ID = data.id (or branchId field in response)
+
+STEP 2.3  List departments
+--------------------------
+  GET /companies/{COMPANY_ID}/departments
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+
+  Expect 200: data.items[]
+
+STEP 2.4  Create department (manual payload)
+--------------------------------------------
+  POST /companies/{COMPANY_ID}/departments
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+    Content-Type: application/json
+  Body:
+  {
+    "departmentCode": "DEPT-ADMIN",
+    "name": "Administration",
+    "isActive": true
+  }
+
+  Expect 201/200:
+    - data.departmentCode = "DEPT-ADMIN"
+    - data.name = "Administration"
+
+STEP 2.5  Optional — second department (hierarchy test)
+-------------------------------------------------------
+  POST /companies/{COMPANY_ID}/departments
+  Body:
+  {
+    "departmentCode": "DEPT-SALES",
+    "name": "Sales",
+    "parentDepartmentId": "<DEPT-ADMIN id from step 2.4>",
+    "isActive": true
+  }
+
+STEP 2.6  Frontend check after organization setup
+-------------------------------------------------
+  Refresh Company Setup page
+
+  [ ] Organization step shows progress / checkmark
+  [ ] Branch "Head Office" visible in Organization tab
+  [ ] Department "Administration" visible
+  [ ] Pipeline may advance toward Stage 4 (Modules) or stay on 3 until UI refreshes
+
+  If branch + department created → FLOW 2 PASSED. Go to FLOW 3.
+
+
+================================================================================
+FLOW 3 — ROLES & PERMISSIONS (Stage 5 / tab in your screenshot)
+================================================================================
+You were on "Roles & Permissions" tab — test backend APIs here.
+
+STEP 3.1  List roles
+--------------------
+  GET /companies/{COMPANY_ID}/roles
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+
+  Expect 200:
+    - ADMIN, MANAGER, STAFF, SALES roles from seed (if client-logins seeded)
+
+STEP 3.2  Create custom role (manual payload)
+---------------------------------------------
+  POST /companies/{COMPANY_ID}/roles
+  Body:
+  {
+    "roleCode": "WAREHOUSE_LEAD",
+    "roleName": "Warehouse Lead",
+    "description": "Manages warehouse operations"
+  }
+
+  Expect 200: new role returned
+  SAVE ROLE_ID for step 3.3
+
+STEP 3.3  List all permissions (to get permission IDs)
+----------------------------------------------------
+  GET /permissions
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+
+  Expect 200: list of permissions with id + permissionCode
+
+STEP 3.4  Assign permissions to role
+------------------------------------
+  PUT /companies/{COMPANY_ID}/roles/{ROLE_ID}/permissions
+  Body:
+  {
+    "permissionIds": ["<permission id 1>", "<permission id 2>"]
+  }
+
+  Example: pick inventory or supply-chain view/create ids from step 3.3
+
+STEP 3.5  Frontend check
+------------------------
+  [ ] Roles & Permissions tab lists roles
+  [ ] "+ Create Role" works in UI
+  [ ] New role appears after create
+
+
+================================================================================
+FLOW 4 — USERS (Stage 5 continued)
+================================================================================
+
+STEP 4.1  List users in company
+-------------------------------
+  GET /users
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+    x-company-id: {COMPANY_ID}
+
+  Expect 200: ADMIN001, MGR001, STAFF001, SALES001 from seed
+
+STEP 4.2  Create user (manual payload)
+--------------------------------------
+  POST /users
+  Body:
+  {
+    "username": "warehouse.user1",
+    "email": "warehouse1@demo-acme.com",
+    "password": "Warehouse@123",
+    "firstName": "Warehouse",
+    "lastName": "User"
+  }
+
+STEP 4.3  Assign role to user
+-----------------------------
+  POST /users/{USER_ID}/roles
+  Body:
+  {
+    "roleId": "{ROLE_ID from flow 3}"
+  }
+
+
+================================================================================
+FLOW 5 — TEST OTHER LOGIN ROLES (same payload file)
+================================================================================
+Repeat FLOW 1 steps with each account. Check differences.
+
+  A) PLATFORM OWNER
+  -----------------
+  POST /auth/login
+  {
+    "companyCode": "PLATFORM",
+    "employeeCode": "OWNER001",
+    "password": "Owner@123"
+  }
+
+  Expect:
+    - activeCompany.modules[] = EMPTY (no product modules)
+    - GET /auth/me → permissions[] has platform/admin codes
+    - Frontend: super-admin / platform nav (not company workspace)
+
+  B) MANAGER
+  ----------
+  {
+    "companyCode": "DEMO_ACME",
+    "employeeCode": "MGR001",
+    "password": "Manager@123"
+  }
+
+  Expect:
+    - roleCode = MANAGER
+    - modules: financials + crm with partial permissions
+    - Cannot see full admin menus
+
+  C) STAFF
+  --------
+  {
+    "companyCode": "DEMO_ACME",
+    "employeeCode": "STAFF001",
+    "password": "Staff@123"
+  }
+
+  Expect:
+    - roleCode = STAFF
+    - modules: crm + supply-chain mostly view only
+
+  D) SALES
+  --------
+  {
+    "companyCode": "DEMO_ACME",
+    "employeeCode": "SALES001",
+    "password": "Sales@123"
+  }
+
+  Expect:
+    - roleCode = SALES
+    - crm: view, create, edit (no delete/approve)
+
+
+================================================================================
+FLOW 6 — SESSION & LOGOUT
+================================================================================
+
+STEP 6.1  Refresh token
+-----------------------
+  POST /auth/refresh
+  (cookie refresh_token sent automatically if using browser/axios withCredentials)
+
+STEP 6.2  Logout
+----------------
+  POST /auth/logout
+  Headers:
+    Authorization: Bearer <ACCESS_TOKEN>
+
+  Expect: message "Logged out successfully"
+  Frontend: redirect to /auth/login
+
+
+================================================================================
+POWERSHELL QUICK TEST (copy-paste — FLOW 1 + 2)
+================================================================================
+
+$base = "http://localhost:3002/api/v1"
+
+# Login
+$login = Invoke-RestMethod -Uri "$base/auth/login" -Method POST `
+  -Body '{"companyCode":"DEMO_ACME","employeeCode":"ADMIN001","password":"Admin@123"}' `
+  -ContentType "application/json" -SessionVariable sess
+
+$token = $login.data.accessToken
+$companyId = $login.data.activeCompany.companyId
+$h = @{ Authorization = "Bearer $token" }
+
+Write-Host "CompanyId: $companyId"
+
+# Me
+$me = Invoke-RestMethod -Uri "$base/auth/me" -Headers $h
+Write-Host "Permissions count: $($me.data.permissions.Count)"
+
+# Create branch
+$branch = Invoke-RestMethod -Uri "$base/companies/$companyId/branches" -Method POST `
+  -Headers $h -ContentType "application/json" `
+  -Body '{"branchCode":"HQ-001","name":"Head Office","city":"Chennai","country":"India","isActive":true}'
+Write-Host "Branch created: $($branch.data.name)"
+
+# Create department
+$dept = Invoke-RestMethod -Uri "$base/companies/$companyId/departments" -Method POST `
+  -Headers $h -ContentType "application/json" `
+  -Body '{"departmentCode":"DEPT-ADMIN","name":"Administration","isActive":true}'
+Write-Host "Department created: $($dept.data.name)"
+
+
+================================================================================
+ONBOARDING PIPELINE MAP (UI ↔ BACKEND)
+================================================================================
+
+  STAGE  UI LABEL              BACKEND APIs TO TEST
+  -----  --------------------  ------------------------------------------
+  1      Company Profile       GET/PATCH /companies/{id}
+  2      Subscription        GET /companies/{id}/subscriptions
+  3      Organization        POST /companies/{id}/branches
+                            POST /companies/{id}/departments
+  4      Modules             GET /companies/{id}/modules
+  5      Roles & Users         /companies/{id}/roles, /users
+  6      Go Live               (frontend milestone — no single API)
+
+
+================================================================================
+PASS / FAIL CHECKLIST (print and tick)
+================================================================================
+
+FLOW 1 — LOGIN
+  [ ] POST /auth/login ADMIN001 → 200 + accessToken
+  [ ] GET /auth/me → permissions[] present
+  [ ] Frontend shows Company Setup dashboard
+
+FLOW 2 — ORGANIZATION (NEXT AFTER LOGIN)
+  [ ] POST branch HQ-001 → 200
+  [ ] POST department DEPT-ADMIN → 200
+  [ ] GET branches list shows Head Office
+  [ ] GET departments list shows Administration
+  [ ] UI onboarding step 3 progresses
+
+FLOW 3 — ROLES
+  [ ] GET roles list
+  [ ] POST create WAREHOUSE_LEAD role
+  [ ] PUT role permissions
+
+FLOW 4 — USERS
+  [ ] GET users list
+  [ ] POST create user
+  [ ] POST assign role
+
+FLOW 5 — ROLE LOGINS
+  [ ] OWNER001 platform owner
+  [ ] MGR001 manager modules differ
+  [ ] STAFF001 limited access
+  [ ] SALES001 crm access
+
+FLOW 6 — SESSION
+  [ ] POST /auth/refresh
+  [ ] POST /auth/logout
+
+
+================================================================================
+ADMIN DASHBOARD API GAP FILL — STATUS
+================================================================================
+P0–P2 companies / subscription / modules / roles / company-users /plans|modules
+aliases are implemented. See:
+
+  docs/ADMIN-DASHBOARD-API-STATUS.txt
+
+Smoke (server running):
+  powershell -File scripts/smoke-admin-dashboard.ps1
+
+
+================================================================================
+COMMON ERRORS
+================================================================================
+
+  401 Unauthorized     → wrong password or expired token
+  403 Forbidden        → role lacks permission (try ADMIN001)
+  404 Not Found        → wrong companyId in URL
+  EADDRINUSE port      → run npm run start:dev once only (auto frees port)
+  Network error        → check NEXT_PUBLIC_API_URL=http://localhost:3002/api/v1
+
+
+================================================================================
+END
+================================================================================
