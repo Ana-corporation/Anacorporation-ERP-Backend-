@@ -3,7 +3,6 @@ import { Logger, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
-import * as cookieParser from 'cookie-parser';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createServer, IncomingMessage, ServerResponse, Server } from 'http';
@@ -78,10 +77,14 @@ async function bootstrap() {
     logger.log(`API listening on ${port} (Cloud Run startup)`);
   }
 
+  logger.log('Creating Nest application');
   const app = await NestFactory.create(AppModule, {
     logger: new SimpleLogger(),
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const cookieParserMod = require('cookie-parser') as { default?: () => unknown } & (() => unknown);
+  const cookieParser = cookieParserMod.default ?? cookieParserMod;
   app.use(cookieParser());
   app.use(requestLogger);
 
@@ -108,9 +111,14 @@ async function bootstrap() {
 
   if (earlyServer) {
     const expressApp = app.getHttpAdapter().getInstance();
-    earlyServer.removeListener('request', preboundHandler ?? startingHandler);
+    earlyServer.removeAllListeners('request');
+    if (preboundHandler) {
+      earlyServer.removeListener('request', preboundHandler);
+    }
+    earlyServer.removeListener('request', startingHandler);
     earlyServer.on('request', expressApp);
-    logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
+    (global as typeof globalThis & { __ancNestReady?: boolean }).__ancNestReady = true;
+    logger.log(`Nest attached — login and API routes are live on ${port}`);
   } else {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -172,14 +180,16 @@ async function bootstrap() {
     logger.error(`Swagger setup failed: ${message}`);
   }
 
-  try {
-    const prisma = app.get(PrismaService);
-    const dbStart = Date.now();
-    await prisma.$queryRaw`SELECT 1`;
-    logger.log(`Database connected (${Date.now() - dbStart}ms)`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    logger.error(`Database disconnected: ${message}`);
+  if (!isCloudRun()) {
+    try {
+      const prisma = app.get(PrismaService);
+      const dbStart = Date.now();
+      await prisma.$queryRaw`SELECT 1`;
+      logger.log(`Database connected (${Date.now() - dbStart}ms)`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error(`Database disconnected: ${message}`);
+    }
   }
 }
 

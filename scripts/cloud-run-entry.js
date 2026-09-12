@@ -65,4 +65,10 @@ server.listen(port, '0.0.0.0', () => {
   } catch (err) {
     console.error('cloud-run-entry: failed to load Nest app', err);
   }
+
+  setTimeout(() => {
+    if (!global.__ancNestReady) {
+      console.error('cloud-run-entry: Nest did not attach within 30s — login will stay 503 starting');
+    }
+  }, 30000);
 });
