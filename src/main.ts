@@ -61,14 +61,19 @@ function listenEarly(port: number): Promise<Server> {
   });
 }
 
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve) => {
+    server.close(() => resolve());
+    server.closeAllConnections?.();
+  });
+}
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   loadEnvFile();
 
   const port = Number(process.env.PORT) || 3002;
   const prebound = (global as typeof globalThis & { __ancEarlyServer?: Server }).__ancEarlyServer;
-  const preboundHandler = (global as typeof globalThis & { __ancStartingHandler?: typeof startingHandler })
-    .__ancStartingHandler;
   let earlyServer: Server | undefined = prebound;
 
   if (!earlyServer && isCloudRun()) {
@@ -111,15 +116,10 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   if (earlyServer) {
-    const expressApp = app.getHttpAdapter().getInstance();
-    earlyServer.removeAllListeners('request');
-    if (preboundHandler) {
-      earlyServer.removeListener('request', preboundHandler);
-    }
-    earlyServer.removeListener('request', startingHandler);
-    earlyServer.on('request', expressApp);
-    (global as typeof globalThis & { __ancNestReady?: boolean }).__ancNestReady = true;
-    logger.log(`Nest attached — login and API routes are live on ${port}`);
+    // Attaching Express to the stub HTTP server leaves Nest metadata (Swagger)
+    // without mounting controller routes. Close the stub and listen normally.
+    await closeServer(earlyServer);
+    delete (global as typeof globalThis & { __ancEarlyServer?: Server }).__ancEarlyServer;
   } else {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -130,10 +130,12 @@ async function bootstrap() {
     } catch (err) {
       logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
     }
-    await app.listen(port, '0.0.0.0');
-    logger.log(`API listening on ${port}`);
-    logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
   }
+
+  await app.listen(port, '0.0.0.0');
+  (global as typeof globalThis & { __ancNestReady?: boolean }).__ancNestReady = true;
+  logger.log(`API listening on ${port}`);
+  logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Manufacturing ERP API')
