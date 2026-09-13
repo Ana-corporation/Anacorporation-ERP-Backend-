@@ -36,13 +36,12 @@ COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 
 # --ignore-scripts skips husky; bcrypt still needs its native addon compiled.
+# Do not purge/autoremove g++ here — that can remove libstdc++ and crash Node at boot.
 RUN npm install --omit=dev --ignore-scripts \
   && npm install prisma --omit=dev --ignore-scripts \
   && npm rebuild bcrypt \
   && npx prisma generate \
   && node -e "require('bcrypt'); console.log('bcrypt native ok')" \
-  && apt-get purge -y python3 make g++ \
-  && apt-get autoremove -y --purge \
   && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
@@ -50,7 +49,7 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 COPY scripts/cloud-run-entry.js ./scripts/cloud-run-entry.js
 
-RUN node -e "const fs=require('fs'); const p=fs.existsSync('dist/main.js')?'dist/main.js':fs.existsSync('dist/src/main.js')?'dist/src/main.js':''; if(!p){console.error('Nest entry missing'); process.exit(1)} console.log('Nest entry',p); console.log(fs.readFileSync(p,'utf8').slice(0,300))" \
+RUN node -e "require('bcrypt'); const fs=require('fs'); const p=fs.existsSync('dist/main.js')?'dist/main.js':fs.existsSync('dist/src/main.js')?'dist/src/main.js':''; if(!p){console.error('Nest entry missing'); process.exit(1)} console.log('Nest entry',p)" \
   && chown -R node:node /app
 
 USER node

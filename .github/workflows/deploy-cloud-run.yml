@@ -159,7 +159,7 @@ jobs:
             --max-instances 5
             --cpu-boost
             --no-cpu-throttling
-            --startup-probe=httpGet.path=/health/live,httpGet.port=8080,periodSeconds=5,timeoutSeconds=3,failureThreshold=24
+            --startup-probe=tcpSocket.port=8080,periodSeconds=5,timeoutSeconds=2,failureThreshold=24
             --env-vars-file cloud-run-env.yaml
           )
 
@@ -170,13 +170,17 @@ jobs:
 
           if [[ "${deploy_status}" -eq 0 ]]; then
             echo "Deployed with Cloud SQL attachment."
-          elif grep -qiE 'sqladmin|Cloud SQL Admin API|Service Usage API|Permission denied on.*cloudsql' deploy-cloud-run.log; then
+          elif grep -q 'failed the configured startup probe' deploy-cloud-run.log; then
+            echo "Startup probe failed. The container did not bind PORT=8080 in time."
+            echo "This is not a Cloud SQL attach error. Not retrying without Cloud SQL."
+            exit "${deploy_status}"
+          elif grep -q '^ERROR: (gcloud.run.deploy)' deploy-cloud-run.log \
+            && grep -qiE 'add.cloudsql|Cloud SQL instance|PERMISSION_DENIED.*cloudsql|sqladmin.googleapis.com' deploy-cloud-run.log; then
             echo "Cloud SQL attach failed (enable Cloud SQL Admin API + Service Usage API as project owner)."
             echo "Retrying deploy without Cloud SQL so the revision can start."
             gcloud run deploy "${SERVICE}" "${deploy_common[@]}" --clear-cloudsql-instances
           else
-            echo "Deploy failed for a reason other than Cloud SQL attach (usually the startup probe)."
-            echo "Not retrying without Cloud SQL — that would leave login unable to reach the database."
+            echo "Deploy failed. Not retrying without Cloud SQL."
             exit "${deploy_status}"
           fi
 
