@@ -160,7 +160,6 @@ jobs:
             --cpu-boost
             --no-cpu-throttling
             --startup-probe=httpGet.path=/health/live,httpGet.port=8080,periodSeconds=5,timeoutSeconds=3,failureThreshold=24
-            --clear-env-vars
             --env-vars-file cloud-run-env.yaml
           )
 
