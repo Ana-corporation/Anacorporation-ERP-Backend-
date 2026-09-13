@@ -101,7 +101,12 @@ async function bootstrap() {
     exclude: [
       { path: 'health', method: RequestMethod.GET },
       { path: 'health/live', method: RequestMethod.GET },
+      { path: 'health/database', method: RequestMethod.GET },
       { path: 'api/v1/health', method: RequestMethod.GET },
+      { path: 'api/v1/health/database', method: RequestMethod.GET },
+      { path: 'docs', method: RequestMethod.GET },
+      { path: 'docs-json', method: RequestMethod.GET },
+      { path: 'docs-yaml', method: RequestMethod.GET },
     ],
   });
   const corsOrigin = configService.get<string[]>('app.corsOrigin') ?? [
@@ -115,33 +120,12 @@ async function bootstrap() {
 
   app.enableShutdownHooks();
 
-  if (earlyServer) {
-    // Attaching Express to the stub HTTP server leaves Nest metadata (Swagger)
-    // without mounting controller routes. Close the stub and listen normally.
-    await closeServer(earlyServer);
-    delete (global as typeof globalThis & { __ancEarlyServer?: Server }).__ancEarlyServer;
-  } else {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { freePort } = require('../scripts/free-port.js') as {
-        freePort: (port?: number | string) => { port: string; killed: number };
-      };
-      freePort(port);
-    } catch (err) {
-      logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
-    }
-  }
-
-  await app.listen(port, '0.0.0.0');
-  (global as typeof globalThis & { __ancNestReady?: boolean }).__ancNestReady = true;
-  logger.log(`API listening on ${port}`);
-  logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
-
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Manufacturing ERP API')
     .setDescription('Multi-tenant SaaS Manufacturing ERP Backend')
     .setVersion('1.0')
     .addBearerAuth()
+    .addTag('Health')
     .addTag('Auth')
     .addTag('Organizations')
     .addTag('Departments')
@@ -176,12 +160,37 @@ async function bootstrap() {
 
   try {
     const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('docs', app, cleanupOpenApiDoc(document));
+    SwaggerModule.setup('docs', app, cleanupOpenApiDoc(document), {
+      useGlobalPrefix: false,
+      swaggerOptions: { persistAuthorization: true },
+    });
     logger.log(`Swagger docs    → http://0.0.0.0:${port}/docs`);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Swagger setup failed: ${message}`);
   }
+
+  if (earlyServer) {
+    // Attaching Express to the stub HTTP server leaves Nest metadata (Swagger)
+    // without mounting controller routes. Close the stub and listen normally.
+    await closeServer(earlyServer);
+    delete (global as typeof globalThis & { __ancEarlyServer?: Server }).__ancEarlyServer;
+  } else {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { freePort } = require('../scripts/free-port.js') as {
+        freePort: (port?: number | string) => { port: string; killed: number };
+      };
+      freePort(port);
+    } catch (err) {
+      logger.warn(`Could not free port ${port} before listen: ${(err as Error).message}`);
+    }
+  }
+
+  await app.listen(port, '0.0.0.0');
+  (global as typeof globalThis & { __ancNestReady?: boolean }).__ancNestReady = true;
+  logger.log(`API listening on ${port}`);
+  logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
 
   if (!isCloudRun()) {
     try {
