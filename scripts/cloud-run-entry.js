@@ -31,8 +31,8 @@ const port = Number(process.env.PORT) || 8080;
 
 function startingHandler(req, res) {
   const url = (req.url || '/').split('?')[0];
-  // Only /health/live is "process is up". /health stays 503 until Nest attaches
-  // so Cloud Run HTTP startup probes keep CPU allocated during boot.
+  // Cloud Run startup probe uses /health/live. Keep it 200 as soon as PORT is bound.
+  // /health stays 503 until Nest attaches so clients can tell the API is not ready.
   const live = url === '/health/live';
   res.writeHead(live ? 200 : 503, { 'Content-Type': 'application/json' });
   res.end(
