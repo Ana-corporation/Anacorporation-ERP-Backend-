@@ -29,15 +29,20 @@ ENV NODE_ENV=production
 ENV PORT=8080
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma/
 
+# --ignore-scripts skips husky; bcrypt still needs its native addon compiled.
 RUN npm install --omit=dev --ignore-scripts \
   && npm install prisma --omit=dev --ignore-scripts \
+  && npm rebuild bcrypt \
   && npx prisma generate \
+  && node -e "require('bcrypt'); console.log('bcrypt native ok')" \
+  && apt-get purge -y python3 make g++ \
+  && apt-get autoremove -y --purge \
   && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
