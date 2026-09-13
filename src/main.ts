@@ -5,7 +5,6 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createServer, IncomingMessage, ServerResponse, Server } from 'http';
 import { AppModule } from './app.module';
 import { applyGcpSqlDatabaseUrl } from './config/gcp-sql-url';
 import { SimpleLogger } from './common/logger/simple.logger';
@@ -40,46 +39,11 @@ function loadEnvFile() {
   applyGcpSqlDatabaseUrl();
 }
 
-function startingHandler(req: IncomingMessage, res: ServerResponse) {
-  const pathName = (req.url || '/').split('?')[0];
-  const live = pathName === '/health/live';
-  res.writeHead(live ? 200 : 503, { 'Content-Type': 'application/json' });
-  res.end(
-    JSON.stringify({
-      status: 'starting',
-      service: 'anacorporation-erp-backend',
-      timestamp: new Date().toISOString(),
-    }),
-  );
-}
-
-function listenEarly(port: number): Promise<Server> {
-  const server = createServer(startingHandler);
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, '0.0.0.0', () => resolve(server));
-  });
-}
-
-function closeServer(server: Server): Promise<void> {
-  return new Promise((resolve) => {
-    server.close(() => resolve());
-    server.closeAllConnections?.();
-  });
-}
-
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   loadEnvFile();
 
   const port = Number(process.env.PORT) || 3002;
-  const prebound = (global as typeof globalThis & { __ancEarlyServer?: Server }).__ancEarlyServer;
-  let earlyServer: Server | undefined = prebound;
-
-  if (!earlyServer && isCloudRun()) {
-    earlyServer = await listenEarly(port);
-    logger.log(`API listening on ${port} (Cloud Run startup)`);
-  }
 
   logger.log('Creating Nest application');
   const createStarted = Date.now();
@@ -107,6 +71,7 @@ async function bootstrap() {
       { path: 'docs', method: RequestMethod.GET },
       { path: 'docs-json', method: RequestMethod.GET },
       { path: 'docs-yaml', method: RequestMethod.GET },
+      { path: 'favicon.ico', method: RequestMethod.GET },
     ],
   });
   const corsOrigin = configService.get<string[]>('app.corsOrigin') ?? [
@@ -170,12 +135,7 @@ async function bootstrap() {
     logger.error(`Swagger setup failed: ${message}`);
   }
 
-  if (earlyServer) {
-    // Attaching Express to the stub HTTP server leaves Nest metadata (Swagger)
-    // without mounting controller routes. Close the stub and listen normally.
-    await closeServer(earlyServer);
-    delete (global as typeof globalThis & { __ancEarlyServer?: Server }).__ancEarlyServer;
-  } else {
+  if (!isCloudRun()) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { freePort } = require('../scripts/free-port.js') as {
@@ -188,7 +148,6 @@ async function bootstrap() {
   }
 
   await app.listen(port, '0.0.0.0');
-  (global as typeof globalThis & { __ancNestReady?: boolean }).__ancNestReady = true;
   logger.log(`API listening on ${port}`);
   logger.log(`Server running  → http://0.0.0.0:${port}/${apiPrefix}`);
 

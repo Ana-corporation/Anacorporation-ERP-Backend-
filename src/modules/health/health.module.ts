@@ -1,4 +1,4 @@
-import { Module, Controller, Get } from '@nestjs/common';
+import { Module, Controller, Get, HttpCode } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { TerminusModule } from '@nestjs/terminus';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
@@ -68,6 +68,12 @@ class HealthController {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
   ) {}
+
+  @Get('favicon.ico')
+  @HttpCode(204)
+  favicon() {
+    return;
+  }
 
   /** Cloud Run / load-balancer liveness — no I/O. */
   @Get('health/live')
