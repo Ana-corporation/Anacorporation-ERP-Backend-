@@ -80,6 +80,7 @@ export const VENDOR_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
   meta('currency', 'Currency', 'general', 'currency', 'text', 70),
   meta('bpType', 'BP Type', 'general', 'bpType', 'select', 80),
   meta('industry', 'Industry', 'general', 'industry', 'text', 90),
+  core('taxId', 'UIN / Federal ID', 'general', 'taxId', 'text', 95),
   core('isActive', 'Active', 'general', 'isActive', 'checkbox', 100),
 
   // —— Contact ——
@@ -96,7 +97,6 @@ export const VENDOR_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
   core('address', 'Address', 'address', 'address', 'textarea', 210),
   core('city', 'City', 'address', 'city', 'text', 220),
   core('country', 'Country', 'address', 'country', 'text', 230),
-  core('taxId', 'Tax ID / GST', 'address', 'taxId', 'text', 240),
 
   // —— Payment ——
   meta('paymentTerms', 'Payment Terms', 'payment', 'paymentTerms', 'select', 310),

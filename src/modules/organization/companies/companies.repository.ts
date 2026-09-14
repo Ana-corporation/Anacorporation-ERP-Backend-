@@ -47,7 +47,11 @@ export class CompaniesRepository {
 
   findMany(query: PaginationQueryDto) {
     const { skip, limit, page } = getPaginationParams(query);
-    const where = buildListWhere({ deletedAt: null }, query, COMPANIES_LIST_FILTER) as Prisma.CompanyWhereInput;
+    const where = buildListWhere(
+      { deletedAt: null, companyCode: { not: 'PLATFORM' } },
+      query,
+      COMPANIES_LIST_FILTER,
+    ) as Prisma.CompanyWhereInput;
 
     return this.prisma.$transaction([
       this.prisma.company.findMany({
