@@ -27,10 +27,13 @@ class DatabaseHealthDto {
   @ApiProperty({ example: 'project:region:swenter-db-dev' })
   connectionName!: string;
 
-  @ApiProperty({ example: 'swenter-dev' })
+  @ApiProperty({ example: 'swenter-dev', description: 'Postgres database from the live connection' })
   database!: string;
 
-  @ApiProperty({ example: 'Erp_test_db' })
+  @ApiProperty({
+    example: 'Ana_corporation_db',
+    description: 'Prisma schema currently in use (current_schema / DATABASE_URL / GCP_SQL_SCHEMA)',
+  })
   schemaName!: string;
 
   @ApiProperty({ example: 'connected', enum: ['connected', 'disconnected'] })
@@ -46,18 +49,35 @@ class DatabaseHealthDto {
   error?: string;
 }
 
+function parseDatabaseUrl(raw = String(process.env.DATABASE_URL || '')) {
+  try {
+    const url = new URL(raw);
+    return {
+      database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+      schema: url.searchParams.get('schema') || '',
+      host: url.searchParams.get('host') || url.hostname,
+      port: url.port || '5432',
+    };
+  } catch {
+    return { database: '', schema: '', host: '', port: '' };
+  }
+}
+
 function connectionName(): string {
   const instance = String(process.env.GCP_SQL_INSTANCE_CONNECTION_NAME || '').trim();
   if (instance) return instance;
-  const raw = String(process.env.DATABASE_URL || '');
-  try {
-    const url = new URL(raw);
-    const socket = url.searchParams.get('host');
-    if (socket?.startsWith('/cloudsql/')) return socket.slice('/cloudsql/'.length);
-    return `${url.hostname}:${url.port || '5432'}`;
-  } catch {
-    return 'unknown';
-  }
+  const parsed = parseDatabaseUrl();
+  if (parsed.host.startsWith('/cloudsql/')) return parsed.host.slice('/cloudsql/'.length);
+  if (parsed.host) return `${parsed.host}:${parsed.port}`;
+  return 'unknown';
+}
+
+function configuredDatabaseTarget() {
+  const parsed = parseDatabaseUrl();
+  return {
+    database: String(process.env.GCP_SQL_DATABASE || '').trim() || parsed.database,
+    schema: String(process.env.GCP_SQL_SCHEMA || '').trim() || parsed.schema,
+  };
 }
 
 @ApiTags('Health')
@@ -134,16 +154,22 @@ class HealthController {
   }
 
   private async inspectDatabase(): Promise<DatabaseHealthDto> {
-    const schemaName = String(process.env.GCP_SQL_SCHEMA || 'Erp_test_db');
-    const database = String(process.env.GCP_SQL_DATABASE || '');
+    const configured = configuredDatabaseTarget();
     const base = {
       connectionName: connectionName(),
-      database,
-      schemaName,
+      database: configured.database,
+      schemaName: configured.schema,
     };
 
     try {
-      await withTimeout(this.prisma.$queryRaw`SELECT 1`, DB_PING_TIMEOUT_MS);
+      const live = await withTimeout(
+        this.prisma.$queryRaw<Array<{ database: string; schema: string }>>`
+          SELECT current_database() AS database, current_schema() AS schema
+        `,
+        DB_PING_TIMEOUT_MS,
+      );
+      const database = String(live[0]?.database || configured.database);
+      const schemaName = String(live[0]?.schema || configured.schema);
       const rows = await withTimeout(
         this.prisma.$queryRaw<Array<{ table_name: string }>>`
           SELECT table_name
@@ -156,7 +182,9 @@ class HealthController {
       );
       const tables = rows.map((row) => row.table_name);
       return {
-        ...base,
+        connectionName: connectionName(),
+        database,
+        schemaName,
         connectionStatus: 'connected',
         tableCount: tables.length,
         tables,
