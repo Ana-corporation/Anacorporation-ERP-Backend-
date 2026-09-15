@@ -72,6 +72,31 @@ describe('FormConfigurationService', () => {
     expect(repository.deleteAllOverrides).toHaveBeenCalledWith(companyId, 'vendor');
   });
 
+  it('returns Contact phone built-ins phone, mobile, and tel2', async () => {
+    const { service } = makeService();
+    const result = await service.getConfiguration(companyId, 'vendor');
+    const contact = result.sections.find((s: { sectionKey: string }) => s.sectionKey === 'contact');
+    const byKey = Object.fromEntries(
+      (contact?.fields ?? []).map((f: { fieldKey: string; label: string }) => [f.fieldKey, f]),
+    ) as Record<string, { fieldKey: string; label: string; sectionKey: string; source: string; configurable: boolean }>;
+    for (const fieldKey of ['phone', 'mobile', 'tel2']) {
+      expect(byKey[fieldKey]).toMatchObject({
+        fieldKey,
+        sectionKey: 'contact',
+        source: 'BUILT_IN',
+        configurable: true,
+      });
+    }
+    expect(byKey.phone.label).toBe('Tel 1');
+    expect(byKey.mobile.label).toBe('Mobile phone');
+    expect(byKey.tel2.label).toBe('Tel 2');
+    const allKeys = result.sections.flatMap((s: { fields: { fieldKey: string }[] }) =>
+      s.fields.map((f) => f.fieldKey),
+    );
+    expect(allKeys).not.toContain('countryCode');
+    expect(allKeys).not.toContain('dialCode');
+  });
+
   it('maps vendorName to core name storage', () => {
     const field = getBuiltInField('vendor', 'vendorName');
     expect(field?.storage).toEqual({ kind: 'core', apiKey: 'name' });

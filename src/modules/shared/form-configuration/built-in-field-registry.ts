@@ -84,10 +84,11 @@ export const VENDOR_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
   core('isActive', 'Active', 'general', 'isActive', 'checkbox', 100),
 
   // —— Contact ——
+  // FE PhoneInput: country code is UI-only, not a registry field.
   core('email', 'Email', 'contact', 'email', 'email', 110),
-  core('phone', 'Phone', 'contact', 'phone', 'phone', 120),
-  meta('tel2', 'Telephone 2', 'contact', 'tel2', 'phone', 130),
-  meta('mobile', 'Mobile', 'contact', 'mobile', 'phone', 140),
+  core('phone', 'Tel 1', 'contact', 'phone', 'phone', 120),
+  meta('tel2', 'Tel 2', 'contact', 'tel2', 'phone', 130),
+  meta('mobile', 'Mobile phone', 'contact', 'mobile', 'phone', 140),
   meta('fax', 'Fax', 'contact', 'fax', 'text', 150),
   meta('website', 'Website', 'contact', 'website', 'text', 160),
   meta('contactPerson', 'Contact Person', 'contact', 'contactPerson', 'text', 170),
