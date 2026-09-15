@@ -1,0 +1,140 @@
+================================================================================
+BE FEED — Vendor Contact phones on Form Configuration
+Date:       2026-09-15
+Audience:   ERP-Frontend
+From:       ERP-Backend
+Related:    GET /companies/{id}/form-configurations/vendor
+            GET /companies/{id}/entities/vendor/form-schema
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  No FE code change required if you already map:
+
+    phone  → Tel 1
+    mobile → Mobile phone
+    tel2   → Tel 2
+
+  BE vendor registry now returns all three as BUILT_IN, configurable.
+  Form Configuration → Contact should list them after BE deploy.
+
+  Country-code dropdown stays FE PhoneInput only.
+  BE did NOT add fieldKey countryCode or dialCode.
+
+
+WHAT CHANGED IN BE
+--------------------------------------------------------------------------------
+
+  1. Contact phone labels (already in registry):
+
+       fieldKey   label            section     save path
+       phone      Tel 1            contact     phone
+       mobile     Mobile phone     contact     metadata.mobile
+       tel2       Tel 2            contact     metadata.tel2
+
+  2. fieldType for those three is now "text"
+     (matches FE example row; do not wait for fieldType "phone").
+     Keep using PhoneInput from the KEYS phone | mobile | tel2,
+     not from fieldType.
+
+  3. This is in-code registry, not a DB seed.
+     After BE image deploy, GET returns the keys. No FE seed/migrate step.
+
+
+WHAT FE SHOULD CALL
+--------------------------------------------------------------------------------
+
+  Settings → Form Configuration → Vendors
+
+    GET /api/v1/companies/{companyId}/form-configurations/vendor
+
+    PASS if sections[].fields includes ALL of:
+      fieldKey: "phone"    source: "BUILT_IN"   configurable: true
+      fieldKey: "mobile"   source: "BUILT_IN"   configurable: true
+      fieldKey: "tel2"     source: "BUILT_IN"   configurable: true
+
+    Example row:
+
+    {
+      "fieldKey": "phone",
+      "label": "Tel 1",
+      "sectionKey": "contact",
+      "fieldType": "text",
+      "visible": true,
+      "required": false,
+      "configurable": true,
+      "source": "BUILT_IN",
+      "hasOverride": false
+    }
+
+    Render every BUILT_IN row, including visible:false (toggle off).
+    Do not hardcode the Contact phone list on Form Config.
+
+  Vendor create / edit
+
+    GET /api/v1/companies/{companyId}/entities/vendor/form-schema
+    Use resolvedSections[] (or builtInFields[]).
+    Render only visible === true.
+    PhoneInput for phone | mobile | tel2.
+    Country code disappears with that PhoneInput.
+
+
+HIDE / SHOW
+--------------------------------------------------------------------------------
+
+  PUT /api/v1/companies/{companyId}/form-configurations/vendor
+  {
+    "fields": [
+      { "fieldKey": "phone",  "isVisible": false },
+      { "fieldKey": "mobile", "isVisible": false },
+      { "fieldKey": "tel2",   "isVisible": false }
+    ]
+  }
+
+  DELETE /api/v1/companies/{companyId}/form-configurations/vendor
+    → restore ERP defaults.
+
+
+VENDOR SAVE
+--------------------------------------------------------------------------------
+
+  POST/PATCH vendor:
+
+    phone            → Tel 1
+    metadata.mobile  → Mobile phone
+    metadata.tel2    → Tel 2
+
+  If PhoneInput has country code + number, concatenate into that string.
+  Do not send countryCode / dialCode as form-configuration keys.
+
+
+QA / LOGIN (live Ana schema)
+--------------------------------------------------------------------------------
+
+  DEMO_ACME / ADMIN001 is not on this schema.
+
+    companyCode:    ANA_MACHINERY_P_LTD
+    employeeCode:   ANA02
+    password:       Jegan@123
+
+  ANA Machinery may already have Tel 2 hidden (visible:false).
+  Form Config still lists the row. Vendor form hides it.
+  That is a company override, not a missing BE key.
+
+
+FE CHECKLIST
+--------------------------------------------------------------------------------
+
+  [ ] Form Config Contact shows Tel 1, Mobile phone, Tel 2 from GET
+  [ ] Keys used: phone / mobile / tel2
+  [ ] fieldType may be "text" — still use PhoneInput for those keys
+  [ ] No Form Config row for country code / dial code
+  [ ] Toggle Mobile off → Save → Vendor form Mobile phone gone
+  [ ] Country code dropdown gone with that PhoneInput
+  [ ] Login ANA_MACHINERY_P_LTD / ANA02 against live backend
+
+================================================================================
+END
+================================================================================

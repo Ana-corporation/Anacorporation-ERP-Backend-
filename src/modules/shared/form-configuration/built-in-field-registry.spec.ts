@@ -41,15 +41,40 @@ describe('built-in-field-registry', () => {
         'vendorCategory',
         'email',
         'phone',
+        'mobile',
+        'tel2',
         'website',
         'paymentTerms',
         'creditLimit',
         'address',
         'bankName',
+        'bankCountry',
+        'bankIban',
+        'interestArrears',
+        'commitmentLimit',
+        'effectiveDiscount',
+        'dunningTerm',
+        'houseBank',
+        'houseBankCountry',
+        'referenceDetails',
+        'consolidatingBp',
+        'federalTaxId',
         'remarks',
       ]),
     );
-    expect(keys.length).toBeGreaterThanOrEqual(40);
+    expect(keys).not.toEqual(expect.arrayContaining(['countryCode', 'dialCode']));
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys.length).toBeGreaterThanOrEqual(60);
+  });
+
+  it('resolves legacy Form Config aliases to canonical keys', () => {
+    expect(getBuiltInField('vendor', 'taxId')?.fieldKey).toBe('federalTaxId');
+    expect(getBuiltInField('vendor', 'discountPercent')?.fieldKey).toBe('totalDiscount');
+    expect(getBuiltInField('vendor', 'iban')?.fieldKey).toBe('bankIban');
+    expect(getBuiltInField('vendor', 'swift')?.fieldKey).toBe('bankSwift');
+    expect(resolveBuiltInVisibility(getBuiltInField('vendor', 'federalTaxId')!, new Map([['taxId', false]]))).toBe(
+      false,
+    );
   });
 
   it('maps fieldKey to apiKey contract', () => {

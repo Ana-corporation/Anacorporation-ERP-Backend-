@@ -1,0 +1,62 @@
+================================================================================
+FE NOTE — Ana Vendor's Bank details (exact doc match)
+Date:       2026-09-15
+Company:    ANA_MACHINERY_P_LTD only (companyId 28)
+================================================================================
+
+
+DOC → UI (Vendor's Bank details)
+--------------------------------------------------------------------------------
+
+  Section title (Ana only):  Vendor's Bank details
+    (was "Business Partner Bank" — BE returns this label for company 28)
+
+  Expected fields IN ORDER (form-schema resolvedSections sectionKey=bank):
+
+  | # | Label            | Source  | key / fieldName        | Save path                      |
+  |---|------------------|---------|------------------------|--------------------------------|
+  | 1 | Beneficiary Name  | CUSTOM  | bankBeneficiaryName    | customFields.bankBeneficiaryName |
+  | 2 | Account number   | CUSTOM  | bankAccountNumber      | customFields.bankAccountNumber |
+  | 3 | Bank name        | BUILT_IN| bankName               | metadata.bankName              |
+  | 4 | Branch           | BUILT_IN| bankBranch             | metadata.bankBranch            |
+  | 5 | IFSC code        | CUSTOM  | bankIfsc               | customFields.bankIfsc          |
+  | 6 | BIC/SWIFT code   | BUILT_IN| bankSwift              | metadata.bankSwift             |
+  | 7 | IBAN             | BUILT_IN| bankIban               | metadata.bankIban              |
+
+  MUST NOT show for Ana:
+    Bank country (bankCountry) — hidden
+    Bank code (bankCode) — hidden
+    Account (bankAccount) — hidden (replaced by Account number custom)
+
+
+DOC → UI (Our Bank details / Payment Run)
+--------------------------------------------------------------------------------
+
+  Section title (Ana only):  Our Bank details
+
+  | # | Label            | Source  | key / fieldName             | Save path |
+  |---|------------------|---------|-----------------------------|-----------|
+  | 1 | Beneficiary Name  | CUSTOM  | houseBankBeneficiaryName    | customFields.* |
+  | 2 | Account number   | CUSTOM  | houseBankAccountNumber      | customFields.* |
+  | 3 | Bank name        | BUILT_IN| houseBank                   | metadata.houseBank |
+  | 4 | Branch           | BUILT_IN| houseBankBranch             | metadata.houseBankBranch |
+  | 5 | IFSC code        | CUSTOM  | houseBankIfsc               | customFields.* |
+  | 6 | BIC/SWIFT code   | BUILT_IN| houseBankSwift              | metadata.houseBankSwift |
+  | 7 | IBAN             | BUILT_IN| houseBankIban               | metadata.houseBankIban |
+  | 8 | Payment Details  | BUILT_IN| referenceDetails            | metadata.referenceDetails |
+  | 9 | Payment block    | BUILT_IN| paymentBlock                | metadata.paymentBlock |
+  |10 | Single payment   | BUILT_IN| singlePayment               | metadata.singlePayment |
+
+  MUST NOT show: houseBankCountry, houseBankAccount (old Account label)
+
+
+FE MUST
+--------------------------------------------------------------------------------
+
+  Render CUSTOM rows from form-schema (Beneficiary Name, Account number, IFSC).
+  Use section.label from GET (Ana returns renamed titles).
+  Restart local BE after pull so section-label code is loaded.
+
+================================================================================
+END
+================================================================================

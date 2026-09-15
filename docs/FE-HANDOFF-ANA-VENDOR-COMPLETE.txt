@@ -1,0 +1,351 @@
+================================================================================
+FE HANDOFF (COMPLETE) — Ana Machinery Vendor Module Testing Model
+Date:       2026-09-15
+Audience:   ERP-Frontend
+From:       ERP-Backend
+Scope:      ANA_MACHINERY_P_LTD only (companyId 28) / Ana_corporation_db
+Source:     Vendor Module Testing.docx
+Related:    GET form-configurations/vendor
+            GET entities/vendor/form-schema
+            Settings → Custom Fields
+================================================================================
+
+
+0) WHY FE MAY NOT SEE CHANGES YET
+--------------------------------------------------------------------------------
+
+  BE already wrote company-scoped data to Cloud SQL (Ana schema).
+
+  Two common FE mistakes:
+
+  1) Looking only at Form Configuration for NEW fields
+     → Form Config lists BUILT_IN toggles only.
+     → NEW Ana fields are CUSTOM — they appear on Vendor create/edit
+        via form-schema, and under Settings → Custom Fields.
+
+  2) Vendor form hardcoded from config-vendor.ts only
+     → Must ALSO render resolvedSections[] fields where source === "CUSTOM".
+     → Must HIDE built-ins where visible === false.
+
+  3) Wrong API host
+     → Network tab must show your intended BE.
+     → Local:  http://localhost:3002
+     → Live:   https://anacorporation-erp-backend-983704016599.asia-southeast1.run.app
+     → Ana DB data is shared; live BE can return customs even before
+       registry push. Full Payment Terms 9-row built-in list still needs
+       BE registry deploy (separate issue).
+
+
+1) LOGIN
+--------------------------------------------------------------------------------
+
+  companyCode:    ANA_MACHINERY_P_LTD
+  employeeCode:   ANA02
+  password:       Jegan@123
+  companyId:      28
+
+  DEMO_ACME / ADMIN001 is NOT on this schema.
+
+
+2) APIs FE MUST USE
+--------------------------------------------------------------------------------
+
+  Base: /api/v1
+  Auth: Authorization: Bearer <accessToken>
+  Prefer x-company-id: 28 if your client sends it.
+
+  A) Form Configuration (Settings UI — built-in toggles only)
+
+     GET  /companies/28/form-configurations/vendor
+     PUT  /companies/28/form-configurations/vendor
+     DELETE /companies/28/form-configurations/vendor   (reset)
+
+     Permission: form_configurations:view / form_configurations:edit
+
+     Response shape:
+     {
+       "entityType": "vendor",
+       "sections": [
+         {
+           "sectionKey": "general",
+           "label": "General",
+           "fields": [
+             {
+               "fieldKey": "vendorName",
+               "label": "Name",
+               "sectionKey": "general",
+               "fieldType": "text",
+               "apiKey": "name",
+               "visible": true,
+               "required": true,
+               "configurable": false,
+               "source": "BUILT_IN",
+               "hasOverride": false
+             }
+           ]
+         }
+       ]
+     }
+
+     Rules:
+     - Render EVERY sections[].fields row (including visible:false).
+     - configurable:false → toggle locked On.
+     - Do NOT invent fieldKeys. Do NOT hardcode Payment Terms list.
+     - Custom fields are NOT in this response.
+
+  B) Vendor create / edit form (merged schema — REQUIRED for Ana model)
+
+     GET /companies/28/entities/vendor/form-schema
+
+     Permission: supply-chain module view
+
+     Prefer:
+       resolvedSections[]   — BUILT_IN (visible only) + CUSTOM
+       builtInFields[]      — all built-ins with visible flag
+       fields[]             — legacy custom-only (still present)
+       sections[]           — section tab metadata
+
+     FE MUST:
+     - Prefer resolvedSections for rendering Vendor form
+     - Render field if visible === true (built-in) OR source === "CUSTOM"
+     - For CUSTOM: bind value to customFields.<fieldName>
+     - For BUILT_IN: bind via apiKey (name, email, metadata.x, taxId, …)
+     - Use fieldType for control (text, phone, email, number, select, …)
+     - PhoneInput for phone-like keys / fieldType phone
+
+
+3) TWO SYSTEMS (DO NOT MIX)
+--------------------------------------------------------------------------------
+
+  Form Configuration     = show/hide developer BUILT_IN fields per company
+  Custom Fields          = NEW company fields (Ana extras live here)
+
+  Both appear together in form-schema resolvedSections.
+
+
+4) ANA — HIDDEN BUILT-INS (expect visible:false + hasOverride:true)
+--------------------------------------------------------------------------------
+
+  Identity:   foreignName, aliasName, bpType, industry, federalTaxId
+              (alias keys taxId / tax_id also overridden)
+  Contact:    phone, mobile, tel2, fax
+  Address:    address
+  Payment:    interestArrears
+  Extra hide: taxGroup, withholdingTax, notes, internalNotes
+
+  On Vendor form these must NOT render.
+  On Form Config they still appear as toggles Off + Customized.
+
+
+5) ANA — VISIBLE BUILT-INS (expect present; visible true unless user toggled)
+--------------------------------------------------------------------------------
+
+  Identity:   vendorName, supplierCode, vendorCategory, group, currency, isActive
+  Contact:    email, website, shippingType, contactPerson
+  Address:    city, country
+  Payment:    paymentTerms, paymentMethod, priceList, totalDiscount,
+              creditLimit, commitmentLimit, effectiveDiscount, dunningTerm
+  Bank:       bankCountry, bankName, bankCode, bankAccount, bankBranch,
+              bankSwift, bankIban
+  PaymentRun: houseBankCountry, houseBank, houseBankAccount, houseBankBranch,
+              houseBankIban, houseBankSwift, referenceDetails,
+              paymentBlock, singlePayment
+  Accounting: consolidatingBp, planningGroup, accountsPayable,
+              downPaymentClearing, downPaymentInterim, affiliate,
+              glAccount, reconciliationAccount  (no doc changes)
+  Remarks:    remarks
+
+  NOTE — Live Cloud Run may still miss some built-in keys until BE
+  registry deploy (interestArrears etc.). Ana HIDE/SHOW overrides and
+  CUSTOM fields are already in DB.
+
+
+6) ANA — ACTIVE CUSTOM FIELDS (MUST render on Vendor form)
+--------------------------------------------------------------------------------
+
+  Save path for all:  customFields.<fieldName>
+
+  | sectionKey  | fieldName                 | displayName                 | fieldType |
+  |-------------|---------------------------|-----------------------------|-----------|
+  | general     | gstin                     | GSTIN                       | text      |
+  | contact     | contactPersonName1        | Contact Person's Name 1     | text      |
+  | contact     | mobile1                   | Mobile 1                    | phone     |
+  | contact     | landlineTelephone         | Landline Telephone          | phone     |
+  | contact     | contactPersonName2        | Contact Person's Name 2     | text      |
+  | contact     | mobile2                   | Mobile 2                    | phone     |
+  | address     | addressLine1              | Address Line 1              | text      |
+  | address     | addressLine2              | Address Line 2              | text      |
+  | address     | addressLine3              | Address Line 3              | text      |
+  | address     | stateName                 | State name                  | text      |
+  | address     | pinCode                   | PIN code                    | text      |
+  | bank        | bankBeneficiaryName       | Beneficiary Name            | text      |
+  | bank        | bankAccountNumber         | Account number              | text      |
+  | bank        | bankIfsc                  | IFSC code                   | text      |
+  | paymentRun  | houseBankBeneficiaryName  | Beneficiary Name            | text      |
+  | paymentRun  | houseBankAccountNumber    | Account number              | text      |
+  | paymentRun  | houseBankIfsc             | IFSC code                   | text      |
+
+  Deactivated legacy (DO NOT render): mobil1, mobil2, contactPersonSName1,
+  contactPersonSName2, pINCode, gSTINUinFederalTaxId, accounting
+  beneficiaryName / accountNumber / iFSCCode copies.
+
+
+7) SECTION KEYS (tabs)
+--------------------------------------------------------------------------------
+
+  general      General
+  contact      Contact Details
+  address      Address
+  payment      Payment Terms
+  bank         Business Partner Bank     ← Beneficiary Name / IFSC (vendor bank)
+  paymentRun   Payment Run               ← Beneficiary Name / IFSC (our bank)
+  accounting   Accounting
+  remarks      Remarks
+  custom       Custom (fallback)
+
+  FE: group by sectionKey from resolvedSections.
+  Beneficiary Name under bank + paymentRun — NOT Accounting.
+
+
+8) VENDOR SAVE / LOAD MAPPING
+--------------------------------------------------------------------------------
+
+  Built-in examples:
+    vendorName     → name
+    supplierCode   → vendorCode
+    vendorCategory → supplierType
+    email          → email
+    city           → city
+    country        → country
+    paymentTerms   → metadata.paymentTerms
+    bankName       → metadata.bankName
+    bankIban       → metadata.bankIban
+    totalDiscount  → metadata.totalDiscount
+    federalTaxId   → taxId   (HIDDEN for Ana — do not show)
+
+  Custom examples:
+    customFields.gstin
+    customFields.contactPersonName1
+    customFields.mobile1
+    customFields.landlineTelephone
+    customFields.addressLine1
+    customFields.bankIfsc
+    customFields.houseBankIfsc
+
+  Do NOT send countryCode / dialCode as form-configuration keys.
+  If PhoneInput has dial + number, store one string in the field value.
+
+
+9) SUGGESTED FE RENDER ORDER (Contact — Ana)
+--------------------------------------------------------------------------------
+
+  From resolvedSections contact (typical):
+
+    1. Contact Person's Name 1   (CUSTOM contactPersonName1)
+    2. Mobile 1                  (CUSTOM mobile1)
+    3. Landline Telephone        (CUSTOM landlineTelephone)
+    4. Contact Person's Name 2   (CUSTOM contactPersonName2)
+    5. Mobile 2                  (CUSTOM mobile2)
+    6. E-Mail                    (BUILT_IN email)
+    7. Web site                  (BUILT_IN website)
+    8. Shipping type             (BUILT_IN shippingType)
+    9. Contact person            (BUILT_IN contactPerson)
+
+  Built-in phone / mobile / tel2 / fax must be absent (hidden).
+
+
+10) SUGGESTED FE RENDER ORDER (Address — Ana)
+--------------------------------------------------------------------------------
+
+    Address Line 1 / 2 / 3   (CUSTOM)
+    City                     (BUILT_IN)
+    State name               (CUSTOM)
+    PIN code                 (CUSTOM)
+    Country                  (BUILT_IN)
+
+  Built-in address (single textarea) must be absent (hidden).
+
+
+11) NETWORK TAB PROOF (copy to QA)
+--------------------------------------------------------------------------------
+
+  After login as ANA02, open Vendor → Create:
+
+  Request:
+    GET /api/v1/companies/28/entities/vendor/form-schema
+
+  PASS if body includes:
+    [ ] customFields / resolvedSections contain fieldName or key:
+          gstin, contactPersonName1, mobile1, landlineTelephone,
+          contactPersonName2, mobile2, addressLine1, addressLine2,
+          addressLine3, stateName, pinCode, bankBeneficiaryName,
+          bankAccountNumber, bankIfsc, houseBankBeneficiaryName,
+          houseBankAccountNumber, houseBankIfsc
+    [ ] resolvedSections does NOT show visible built-in phone/mobile/tel2/address
+        (or they are only in builtInFields with visible:false)
+
+  Settings → Form Configuration → Vendor:
+
+  Request:
+    GET /api/v1/companies/28/form-configurations/vendor
+
+  PASS if:
+    [ ] phone / mobile / tel2 / fax / address / federalTaxId / interestArrears
+        have visible:false (Customized)
+    [ ] group / currency / email / website visible true (unless later toggled)
+    [ ] NO expectation that gstin appears here as BUILT_IN
+
+
+12) FE IMPLEMENTATION CHECKLIST
+--------------------------------------------------------------------------------
+
+  [ ] BACKEND_URL points to intended BE (local or live)
+  [ ] Login ANA_MACHINERY_P_LTD / ANA02
+  [ ] Vendor form uses GET form-schema → resolvedSections
+  [ ] Render CUSTOM fields dynamically (label, fieldType, sectionKey)
+  [ ] Persist CUSTOM values under customFields.<fieldName>
+  [ ] Honor built-in visible:false (do not hardcode Tel 1 if hidden)
+  [ ] Form Config page only from GET form-configurations (built-ins)
+  [ ] Custom Fields admin still works for Ana definitions
+  [ ] Hard refresh / re-login after BE data setup
+  [ ] bank + paymentRun sections show Beneficiary Name + IFSC customs
+
+
+13) OUT OF SCOPE FOR THIS HANDOFF (not Ana data-setup)
+--------------------------------------------------------------------------------
+
+  - Global section renames ("Payment Terms" → "Payment")
+  - Global bank section title renames
+  - Payment terms dropdown option "net 15 days" seed
+  - Deploy of full built-in registry (9 Payment Terms keys on live)
+    → separate BE push; see FE-HANDOFF-VENDOR-FORM-CONFIG-FULL-REGISTRY.txt
+    → and FE-HANDOFF-VENDOR-FORM-CONFIG-PAYMENT-TERMS-MISMATCH-REPLY.txt
+
+
+14) BE RE-RUN (if Ana model needs reset)
+--------------------------------------------------------------------------------
+
+  Backend repo:
+    npm run db:proxy
+    node scripts/configure-ana-vendor-model.js
+
+  Doc (short): docs/FE-HANDOFF-ANA-VENDOR-TESTING-MODEL.txt
+
+
+15) ACCEPTANCE (FE + Ana)
+--------------------------------------------------------------------------------
+
+  [ ] Vendor create shows GSTIN on General
+  [ ] Vendor create Contact shows Name1, Mobile1, Landline, Name2, Mobile2
+  [ ] Vendor create does NOT show Tel 1 / Tel 2 / Mobile phone / Fax built-ins
+  [ ] Vendor create Address shows Line 1/2/3, State, PIN, City, Country
+  [ ] Vendor create does NOT show single built-in Address textarea
+  [ ] Bank shows Beneficiary Name + IFSC customs + bank built-ins
+  [ ] Payment Run shows Our-bank Beneficiary + IFSC customs
+  [ ] Form Config shows hidden built-ins as Off/Customized (not missing)
+  [ ] Save vendor → reload → customFields values persist
+  [ ] Other companies unchanged (no Ana customs unless configured)
+
+================================================================================
+END
+================================================================================

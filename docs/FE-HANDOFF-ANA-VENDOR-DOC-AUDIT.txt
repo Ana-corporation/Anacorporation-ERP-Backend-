@@ -1,0 +1,211 @@
+================================================================================
+AUDIT — Vendor Module Testing - Copy.docx  vs  Ana setup + FE handoff
+Date:       2026-09-15
+Doc:        Vendor Module Testing - Copy.docx
+Applied to: ANA_MACHINERY_P_LTD only
+================================================================================
+
+
+LEGEND
+--------------------------------------------------------------------------------
+
+  DONE     = done for Ana (visibility and/or custom field)
+  PARTIAL  = data applied but label/section rename not company-scoped
+  NOT DONE = still open (called out in handoff "NOT DONE")
+  N/A      = no change required by doc
+
+
+================================================================================
+GENERAL TAB — Identity
+================================================================================
+
+  Doc field                         | Status   | What we did
+  ----------------------------------|----------|----------------------------------
+  Supplier's Name (first)           | PARTIAL  | Built-in vendorName KEPT visible.
+                                   |          | Label is still "Name" (global).
+                                   |          | Doc said "✅ missing" — field
+                                   |          | exists as vendorName; order is
+                                   |          | first among locked identity.
+  Supplier type                     | DONE     | vendorCategory visible (locked)
+  Foreign name                      | DONE     | HIDDEN ❌
+  Alias                             | DONE     | HIDDEN ❌
+  Group                             | DONE     | VISIBLE ✅
+  Currency                          | DONE     | VISIBLE ✅
+  Business Partner type             | DONE     | HIDDEN ❌
+  Industry                          | DONE     | HIDDEN ❌
+  GSTIN/UIN/Federal tax ID REMOVE   | DONE     | federalTaxId/taxId HIDDEN;
+                                   |          | custom gstin = GSTIN kept
+
+
+================================================================================
+GENERAL TAB — Contact
+================================================================================
+
+  Doc field                         | Status   | What we did
+  ----------------------------------|----------|----------------------------------
+  Contact Person's Name 1 (first)   | DONE     | CUSTOM contactPersonName1
+  Mobil 1 (additional)              | DONE     | CUSTOM mobile1
+  Landline Telephone (rename)       | DONE     | Built-in phone HIDDEN;
+                                   |          | CUSTOM landlineTelephone
+  Contact Person's Name 2           | DONE     | CUSTOM contactPersonName2
+  Mobil 2 (additional)              | DONE     | CUSTOM mobile2
+  Fax (may not require)             | DONE     | HIDDEN ❌
+  E-mail ID                         | DONE     | email VISIBLE ✅
+  Web site                          | DONE     | website VISIBLE ✅
+  Shipping type                     | DONE     | shippingType VISIBLE ✅
+  Contact Person                    | DONE     | contactPerson VISIBLE ✅
+
+  Also hidden (replaced): phone, mobile, tel2
+
+
+================================================================================
+GENERAL TAB — Address
+================================================================================
+
+  Doc field                         | Status   | What we did
+  ----------------------------------|----------|----------------------------------
+  Address (built-in)                | DONE     | HIDDEN ❌
+  City/Country (old combined ❌)    | DONE     | Interpreted as hide old block;
+                                   |          | keep separate City + Country ✅
+  Address Line 1                    | DONE     | CUSTOM addressLine1
+  Address Line 2                    | DONE     | CUSTOM addressLine2
+  Address Line 3                    | DONE     | CUSTOM addressLine3
+  City                              | DONE     | city VISIBLE ✅
+  State name                        | DONE     | CUSTOM stateName
+  PIN code                          | DONE     | CUSTOM pinCode
+  Country                           | DONE     | country VISIBLE ✅
+
+
+================================================================================
+PAYMENT TAB  (doc: PAYEMENT — remove "TERMS")
+================================================================================
+
+  Doc field                         | Status   | What we did
+  ----------------------------------|----------|----------------------------------
+  Section title → "Payment"         | NOT DONE | Still "Payment Terms" globally
+  Payment terms (net 15 days)       | PARTIAL  | Field VISIBLE ✅;
+                                   |          | option text "net 15 days" NOT seeded
+  Interest on arrears %             | DONE     | HIDDEN ❌
+  Price list                        | DONE     | VISIBLE ✅
+  Total discount %                  | DONE     | totalDiscount VISIBLE ✅
+  Credit limit                      | DONE     | VISIBLE ✅
+  Commitment limit                  | DONE     | VISIBLE ✅
+  Effective discount                | DONE     | VISIBLE ✅
+  Dunning term                      | DONE     | VISIBLE ✅
+
+  Extra: paymentMethod kept VISIBLE (not listed in doc Terms block;
+  was already on Ana Form Config — left on)
+
+
+================================================================================
+Vendor's Bank details (doc under Payment area)
+================================================================================
+
+  Doc field                         | Status   | What we did
+  ----------------------------------|----------|----------------------------------
+  Section rename "Vendor's Bank…"   | NOT DONE | Section key bank label is still
+                                   |          | "Business Partner Bank" globally
+  Beneficiary Name                  | DONE     | CUSTOM bankBeneficiaryName
+  Account number (rename)           | PARTIAL  | Built-in bankAccount VISIBLE;
+                                   |          | label still "Account" (not renamed)
+  Bank name                         | DONE     | bankName VISIBLE ✅
+  Branch (additional)               | DONE     | bankBranch VISIBLE ✅
+                                   |          | (built-in, not new custom)
+  IFSC code                         | DONE     | CUSTOM bankIfsc
+  BIC/SWIFT code                    | DONE     | bankSwift VISIBLE ✅
+  IBAN                              | DONE     | bankIban VISIBLE ✅
+
+  Also visible (extra vs doc): bankCountry, bankCode
+
+
+================================================================================
+PAYMENT RUN TAB — Our Bank details
+================================================================================
+
+  Doc field                         | Status   | What we did
+  ----------------------------------|----------|----------------------------------
+  Section rename "Our Bank details" | NOT DONE | Still "Payment Run" globally
+  Beneficiary Name                  | DONE     | CUSTOM houseBankBeneficiaryName
+  Account number (rename)           | PARTIAL  | houseBankAccount VISIBLE;
+                                   |          | label still "Account"
+  Bank name                         | DONE     | houseBank VISIBLE ✅
+  Branch                            | DONE     | houseBankBranch VISIBLE ✅
+  IFSC code                         | DONE     | CUSTOM houseBankIfsc
+  BIC/SWIFT                         | DONE     | houseBankSwift VISIBLE ✅
+  IBAN                              | DONE     | houseBankIban VISIBLE ✅
+  Payment Details                   | DONE     | referenceDetails VISIBLE ✅
+  Payment block                     | DONE     | paymentBlock VISIBLE ✅
+  Single payment                    | DONE     | singlePayment VISIBLE ✅
+
+  Also visible (extra): houseBankCountry
+
+
+================================================================================
+ACCOUNT TAB
+================================================================================
+
+  Doc: "(No changes require at this point of time)"
+  Status: N/A / DONE — left accounting built-ins as-is (no hide forced by doc)
+
+
+================================================================================
+TABS — coverage summary
+================================================================================
+
+  Doc tab / block              | Covered in Ana setup? | Covered in FE handoff?
+  ----------------------------|-----------------------|------------------------
+  GENERAL — Identity          | YES                   | YES
+  GENERAL — Contact           | YES                   | YES
+  GENERAL — Address           | YES                   | YES
+  PAYMENT (Terms)             | YES (fields)          | YES
+  Vendor's Bank details       | YES (fields)          | YES (sectionKey bank)
+  PAYMENT RUN                 | YES                   | YES
+  ACCOUNT                     | YES (no change)       | YES
+
+  Attachments tab             | Not in this doc       | Not claimed
+
+
+================================================================================
+HONEST GAPS (doc asked, we did NOT fully finish)
+================================================================================
+
+  1. Section renames (global only — not Ana-scoped today)
+       Payment Terms → Payment
+       Vendor's Bank details
+       Our Bank details
+
+  2. Payment terms dropdown value "net 15 days" (seed/options — not done)
+
+  3. Built-in label renames for Account number
+       Still "Account" on bankAccount / houseBankAccount
+       (Ana-only label override not supported without custom replace)
+
+  4. Supplier's Name label / "missing"
+       Field exists as vendorName ("Name"); not renamed to
+       "Supplier's Name"; not a custom field
+
+  5. Doc City❌ Country❌ line was ambiguous
+       We kept City + Country visible and hid only Address textarea.
+       If product meant hide City/Country too, say so — we can flip.
+
+  6. paymentMethod / bankCountry / bankCode / houseBankCountry
+       Extra visible fields not listed in the Copy doc
+       (harmless; can hide if product wants strict doc-only)
+
+
+================================================================================
+VERDICT
+================================================================================
+
+  Fields & tabs from the Copy doc were scanned and MOSTLY applied correctly
+  for ANA_MACHINERY_P_LTD (hide/show + custom fields).
+
+  FE handoff (FE-HANDOFF-ANA-VENDOR-COMPLETE.txt) matches that Ana setup.
+
+  NOT fully written/done only where company-scoped BE cannot rename
+  section titles / built-in labels / payment-term option text without a
+  global product change — those are listed under NOT DONE.
+
+================================================================================
+END
+================================================================================

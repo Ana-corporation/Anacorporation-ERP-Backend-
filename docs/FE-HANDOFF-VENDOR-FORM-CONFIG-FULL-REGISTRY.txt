@@ -1,0 +1,267 @@
+================================================================================
+BE FEED — Vendor Form Configuration FULL REGISTRY
+Date:       2026-09-15
+Audience:   ERP-Frontend
+From:       ERP-Backend
+Related:    GET /companies/{id}/form-configurations/vendor
+            GET /companies/{id}/entities/vendor/form-schema
+            PUT /companies/{id}/form-configurations/vendor
+            DELETE /companies/{id}/form-configurations/vendor
+================================================================================
+
+
+STATUS
+--------------------------------------------------------------------------------
+
+  BE vendor built-in registry now returns EVERY Vendor form field below
+  as source = BUILT_IN. Form Configuration should list them after BE deploy.
+
+  No FE code change required for listing — render all BUILT_IN rows from GET.
+  Use fieldKey (not labels). FE alias map still works for older keys.
+
+  NOT in this registry (by design):
+    - countryCode / dialCode          (FE PhoneInput UI only)
+    - Address Line 1/2/3, State name  (Custom Fields)
+    - Attachments tab                 (file panel, not a form field)
+
+
+SECTIONS (GET sections[].sectionKey)
+--------------------------------------------------------------------------------
+
+  general      General
+  contact      Contact Details
+  address      Address
+  payment      Payment Terms
+  bank         Business Partner Bank     (NEW grouping)
+  paymentRun   Payment Run
+  accounting   Accounting
+  remarks      Remarks
+
+  Visibility uses fieldKey, not section title.
+  If a company hid a field, GET still returns the row with visible:false.
+
+
+ALIASES (PUT accepts these; GET returns the canonical fieldKey only)
+--------------------------------------------------------------------------------
+
+  taxId, tax_id          → federalTaxId
+  discountPercent        → totalDiscount
+  iban                   → bankIban
+  swift                  → bankSwift
+  vendorCode             → supplierCode
+  supplierType           → vendorCategory
+
+
+================================================================================
+1) GENERAL — IDENTITY  (sectionKey: general)
+================================================================================
+
+  | fieldKey       | Label                   | Configurable | Save path           |
+  |----------------|-------------------------|--------------|---------------------|
+  | vendorCategory | Supplier type           | NO (locked)  | supplierType        |
+  | supplierCode   | Code                    | NO (locked)  | vendorCode          |
+  | vendorName     | Name                    | NO (locked)  | name                |
+  | foreignName    | Foreign name            | YES          | metadata.foreignName|
+  | aliasName      | Alias name              | YES          | metadata.aliasName  |
+  | group          | Group                   | YES          | metadata.group      |
+  | currency       | Currency                | YES          | metadata.currency   |
+  | bpType         | Business partner type   | YES          | metadata.bpType     |
+  | industry       | Industry                | YES          | metadata.industry   |
+  | federalTaxId   | Federal Tax ID          | YES          | taxId (column)      |
+  | isActive       | Active                  | YES          | isActive            |
+
+
+================================================================================
+2) CONTACT  (sectionKey: contact)
+================================================================================
+
+  | fieldKey      | Label           | Configurable | Save path                |
+  |---------------|-----------------|--------------|--------------------------|
+  | phone         | Tel 1           | YES          | phone                    |
+  | tel2          | Tel 2           | YES          | metadata.tel2            |
+  | mobile        | Mobile phone    | YES          | metadata.mobile          |
+  | fax           | Fax             | YES          | metadata.fax             |
+  | email         | E-Mail          | YES          | email                    |
+  | website       | Web site        | YES          | metadata.website         |
+  | shippingType  | Shipping type   | YES          | metadata.shippingType    |
+  | contactPerson | Contact person  | YES          | metadata.contactPerson   |
+
+  PhoneInput for phone | mobile | tel2. Country code is inside PhoneInput.
+
+
+================================================================================
+3) ADDRESS  (sectionKey: address)
+================================================================================
+
+  | fieldKey | Label   | Configurable | Save path |
+  |----------|---------|--------------|-----------|
+  | address  | Address | YES          | address   |
+  | city     | City    | YES          | city      |
+  | country  | Country | YES          | country   |
+
+
+================================================================================
+4) PAYMENT TERMS  (sectionKey: payment)
+================================================================================
+
+  | fieldKey          | Label                   | Configurable | Save path                      | fieldType |
+  |-------------------|-------------------------|--------------|--------------------------------|-----------|
+  | paymentTerms      | Payment terms           | YES          | metadata.paymentTerms          | select    |
+  | paymentMethod     | Payment Method          | YES          | metadata.paymentMethod         | select    |
+  | interestArrears   | Interest on arrears %   | YES          | metadata.interestArrears       | number    |
+  | priceList         | Price list              | YES          | metadata.priceList             | text      |
+  | totalDiscount     | Total discount %        | YES          | metadata.totalDiscount         | number    |
+  | creditLimit       | Credit limit            | YES          | metadata.creditLimit           | number    |
+  | commitmentLimit   | Commitment limit        | YES          | metadata.commitmentLimit       | number    |
+  | effectiveDiscount | Effective discount      | YES          | metadata.effectiveDiscount     | number    |
+  | dunningTerm       | Dunning term            | YES          | metadata.dunningTerm           | select    |
+
+  paymentMethod is on Form Config even if not yet in config-vendor.ts.
+  FE can alias later if product wants it on the Vendor form.
+
+
+================================================================================
+5) BUSINESS PARTNER BANK  (sectionKey: bank)
+================================================================================
+
+  | fieldKey    | Label          | Configurable | Save path               |
+  |-------------|----------------|--------------|-------------------------|
+  | bankCountry | Bank country   | YES          | metadata.bankCountry    |
+  | bankName    | Bank name      | YES          | metadata.bankName       |
+  | bankCode    | Bank code      | YES          | metadata.bankCode       |
+  | bankAccount | Account        | YES          | metadata.bankAccount    |
+  | bankBranch  | Branch         | YES          | metadata.bankBranch     |
+  | bankSwift   | BIC/SWIFT code | YES          | metadata.bankSwift      |
+  | bankIban    | IBAN           | YES          | metadata.bankIban       |
+
+
+================================================================================
+6) PAYMENT RUN  (sectionKey: paymentRun)
+================================================================================
+
+  | fieldKey         | Label             | Configurable | Save path                    |
+  |------------------|-------------------|--------------|------------------------------|
+  | houseBankCountry | Country           | YES          | metadata.houseBankCountry    |
+  | houseBank        | Bank              | YES          | metadata.houseBank           |
+  | houseBankAccount | Account           | YES          | metadata.houseBankAccount    |
+  | houseBankBranch  | Branch            | YES          | metadata.houseBankBranch     |
+  | houseBankIban    | IBAN              | YES          | metadata.houseBankIban       |
+  | houseBankSwift   | BIC/SWIFT code    | YES          | metadata.houseBankSwift      |
+  | referenceDetails | Reference details | YES          | metadata.referenceDetails    |
+  | paymentBlock     | Payment block     | YES          | metadata.paymentBlock        |
+  | singlePayment    | Single payment    | YES          | metadata.singlePayment       |
+
+
+================================================================================
+7) ACCOUNTING  (sectionKey: accounting)
+================================================================================
+
+  | fieldKey             | Label                         | Configurable | Save path                         |
+  |----------------------|-------------------------------|--------------|-----------------------------------|
+  | consolidatingBp      | Consolidating BP              | YES          | metadata.consolidatingBp          |
+  | planningGroup        | Planning group                | YES          | metadata.planningGroup            |
+  | accountsPayable      | Accounts payable              | YES          | metadata.accountsPayable          |
+  | downPaymentClearing  | Down payment clearing account | YES          | metadata.downPaymentClearing      |
+  | downPaymentInterim   | Down payment interim account  | YES          | metadata.downPaymentInterim       |
+  | affiliate            | Affiliate                     | YES          | metadata.affiliate                |
+
+
+================================================================================
+8) REMARKS  (sectionKey: remarks)
+================================================================================
+
+  | fieldKey | Label   | Configurable | Save path        |
+  |----------|---------|--------------|------------------|
+  | remarks  | Remarks | YES          | metadata.remarks |
+
+
+================================================================================
+9) EXAMPLE ROW
+================================================================================
+
+  {
+    "fieldKey": "interestArrears",
+    "label": "Interest on arrears %",
+    "sectionKey": "payment",
+    "fieldType": "number",
+    "visible": true,
+    "required": false,
+    "configurable": true,
+    "source": "BUILT_IN",
+    "hasOverride": false
+  }
+
+  Locked identity fields: configurable=false, visible=true always.
+  fieldType: text | number | select | checkbox | email | textarea
+
+
+================================================================================
+10) HIDE / SHOW / RESET
+================================================================================
+
+  PUT /api/v1/companies/{companyId}/form-configurations/vendor
+  {
+    "fields": [
+      { "fieldKey": "interestArrears", "isVisible": false },
+      { "fieldKey": "taxId", "isVisible": false }
+    ]
+  }
+
+  taxId is accepted and stored as federalTaxId.
+  GET then shows federalTaxId with visible:false, hasOverride:true.
+
+  DELETE /api/v1/companies/{companyId}/form-configurations/vendor
+    → restore ERP defaults (all configurable fields default visible:true).
+
+
+================================================================================
+11) VENDOR SAVE
+================================================================================
+
+  Core columns:
+    name, vendorCode, supplierType, email, phone, address, city, country,
+    taxId, isActive
+
+  Everything else: metadata.<fieldKey>
+    except bankIban → metadata.bankIban (not metadata.iban)
+            bankSwift → metadata.bankSwift
+            totalDiscount → metadata.totalDiscount
+
+  If PhoneInput has country code + number, concatenate into the phone string.
+
+
+QA / LOGIN (live Ana schema)
+--------------------------------------------------------------------------------
+
+  DEMO_ACME / ADMIN001 is not on this schema.
+
+    companyCode:    ANA_MACHINERY_P_LTD
+    employeeCode:   ANA02
+    password:       Jegan@123
+
+  Ana may already have extras hidden (visible:false / Customized).
+  Those rows MUST still appear on Form Configuration. Missing from GET = bug.
+
+
+FE CHECKLIST
+--------------------------------------------------------------------------------
+
+  [ ] Form Config lists all fieldKeys from sections 1–8
+  [ ] Payment Terms includes interestArrears, commitmentLimit,
+      effectiveDiscount, dunningTerm (plus existing terms fields)
+  [ ] New section "Business Partner Bank" lists bankCountry…bankIban
+  [ ] Payment Run lists houseBank* + referenceDetails + paymentBlock
+      + singlePayment
+  [ ] Accounting lists consolidatingBp…affiliate
+  [ ] Contact includes phone, mobile, tel2, fax, shippingType, contactPerson
+  [ ] Identity includes foreignName…federalTaxId
+  [ ] Address includes address, city, country
+  [ ] Remarks includes remarks
+  [ ] No countryCode / dialCode row
+  [ ] No Address Line 1/2/3 built-in rows
+  [ ] Toggle off → Vendor form hides field via form-schema visible:false
+  [ ] Keys used: recommended fieldKeys above (aliases still work on PUT)
+
+================================================================================
+END
+================================================================================

@@ -78,7 +78,7 @@ describe('FormConfigurationService', () => {
     const contact = result.sections.find((s: { sectionKey: string }) => s.sectionKey === 'contact');
     const byKey = Object.fromEntries(
       (contact?.fields ?? []).map((f: { fieldKey: string; label: string }) => [f.fieldKey, f]),
-    ) as Record<string, { fieldKey: string; label: string; sectionKey: string; source: string; configurable: boolean }>;
+    ) as Record<string, { fieldKey: string; label: string; sectionKey: string; source: string; configurable: boolean; fieldType: string }>;
     for (const fieldKey of ['phone', 'mobile', 'tel2']) {
       expect(byKey[fieldKey]).toMatchObject({
         fieldKey,
@@ -86,6 +86,7 @@ describe('FormConfigurationService', () => {
         source: 'BUILT_IN',
         configurable: true,
       });
+      expect(byKey[fieldKey].fieldType).toBe('text');
     }
     expect(byKey.phone.label).toBe('Tel 1');
     expect(byKey.mobile.label).toBe('Mobile phone');
@@ -95,6 +96,134 @@ describe('FormConfigurationService', () => {
     );
     expect(allKeys).not.toContain('countryCode');
     expect(allKeys).not.toContain('dialCode');
+  });
+
+  it('returns the full Vendor Form Config registry FE expects', async () => {
+    const { service } = makeService();
+    const result = await service.getConfiguration(companyId, 'vendor');
+    const allKeys = result.sections.flatMap((s: { fields: { fieldKey: string }[] }) =>
+      s.fields.map((f) => f.fieldKey),
+    );
+    const bySection = Object.fromEntries(
+      result.sections.map((s: { sectionKey: string; fields: { fieldKey: string }[] }) => [
+        s.sectionKey,
+        s.fields.map((f) => f.fieldKey),
+      ]),
+    ) as Record<string, string[]>;
+
+    expect(allKeys).toEqual(
+      expect.arrayContaining([
+        'vendorCategory',
+        'supplierCode',
+        'vendorName',
+        'foreignName',
+        'aliasName',
+        'group',
+        'currency',
+        'bpType',
+        'industry',
+        'federalTaxId',
+        'phone',
+        'tel2',
+        'mobile',
+        'fax',
+        'email',
+        'website',
+        'shippingType',
+        'contactPerson',
+        'address',
+        'city',
+        'country',
+        'paymentTerms',
+        'paymentMethod',
+        'interestArrears',
+        'priceList',
+        'totalDiscount',
+        'creditLimit',
+        'commitmentLimit',
+        'effectiveDiscount',
+        'dunningTerm',
+        'bankCountry',
+        'bankName',
+        'bankCode',
+        'bankAccount',
+        'bankBranch',
+        'bankSwift',
+        'bankIban',
+        'houseBankCountry',
+        'houseBank',
+        'houseBankAccount',
+        'houseBankBranch',
+        'houseBankIban',
+        'houseBankSwift',
+        'referenceDetails',
+        'paymentBlock',
+        'singlePayment',
+        'consolidatingBp',
+        'planningGroup',
+        'accountsPayable',
+        'downPaymentClearing',
+        'downPaymentInterim',
+        'affiliate',
+        'remarks',
+      ]),
+    );
+    expect(allKeys).not.toContain('taxId');
+    expect(allKeys).not.toContain('discountPercent');
+    expect(allKeys).not.toContain('iban');
+    expect(allKeys).not.toContain('swift');
+    expect(allKeys).not.toContain('countryCode');
+    expect(bySection.payment).toEqual(
+      expect.arrayContaining([
+        'paymentTerms',
+        'interestArrears',
+        'priceList',
+        'totalDiscount',
+        'creditLimit',
+        'commitmentLimit',
+        'effectiveDiscount',
+        'dunningTerm',
+      ]),
+    );
+    expect(bySection.bank).toEqual(
+      expect.arrayContaining([
+        'bankCountry',
+        'bankName',
+        'bankCode',
+        'bankAccount',
+        'bankBranch',
+        'bankSwift',
+        'bankIban',
+      ]),
+    );
+    expect(bySection.paymentRun).toEqual(
+      expect.arrayContaining([
+        'houseBankCountry',
+        'houseBank',
+        'referenceDetails',
+        'paymentBlock',
+        'singlePayment',
+      ]),
+    );
+    expect(bySection.accounting).toEqual(
+      expect.arrayContaining([
+        'consolidatingBp',
+        'planningGroup',
+        'accountsPayable',
+        'downPaymentClearing',
+        'downPaymentInterim',
+        'affiliate',
+      ]),
+    );
+  });
+
+  it('accepts legacy taxId on PUT and stores federalTaxId', async () => {
+    const { service, repository } = makeService();
+    await service.updateConfiguration(companyId, 'vendor', {
+      fields: [{ fieldKey: 'taxId', isVisible: false }],
+    });
+    expect(repository.upsertOverride).toHaveBeenCalledWith(companyId, 'vendor', 'federalTaxId', false);
+    expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'taxId');
   });
 
   it('maps vendorName to core name storage', () => {

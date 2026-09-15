@@ -1,0 +1,95 @@
+================================================================================
+ANA ONLY — Vendor Module Testing model applied
+Date:       2026-09-15
+Scope:      ANA_MACHINERY_P_LTD  /  Ana_corporation_db  /  companyId 28
+Source:     Vendor Module Testing.docx
+Script:     scripts/configure-ana-vendor-model.js
+Audience:   ERP-Frontend
+From:       ERP-Backend / data setup
+================================================================================
+
+
+WHAT CHANGED
+--------------------------------------------------------------------------------
+
+  Company-scoped ONLY (form_configuration overrides + custom_field_definitions).
+  Global built-in registry was NOT changed for other companies.
+
+
+HIDDEN BUILT-INS (Form Config Off / Customized)
+--------------------------------------------------------------------------------
+
+  Identity:   foreignName, aliasName, bpType, industry, federalTaxId (taxId)
+  Contact:    phone, mobile, tel2, fax
+  Address:    address  (replaced by Address Line 1/2/3)
+  Payment:    interestArrears
+
+
+VISIBLE BUILT-INS (per doc ✅)
+--------------------------------------------------------------------------------
+
+  Identity:   vendorName, supplierCode, vendorCategory, group, currency, isActive
+  Contact:    email, website, shippingType, contactPerson
+  Address:    city, country
+  Payment:    paymentTerms, paymentMethod, priceList, totalDiscount, creditLimit,
+              commitmentLimit, effectiveDiscount, dunningTerm
+  Bank:       bankCountry…bankIban (+ bankSwift)
+  PaymentRun: houseBank*, referenceDetails, paymentBlock, singlePayment
+  Accounting: unchanged (no doc changes)
+  Remarks:    remarks
+
+
+ACTIVE CUSTOM FIELDS (Ana)
+--------------------------------------------------------------------------------
+
+  general     gstin                     GSTIN
+  contact     contactPersonName1        Contact Person's Name 1
+  contact     mobile1                   Mobile 1
+  contact     landlineTelephone         Landline Telephone
+  contact     contactPersonName2        Contact Person's Name 2
+  contact     mobile2                   Mobile 2
+  address     addressLine1/2/3          Address Line 1/2/3
+  address     stateName                 State name
+  address     pinCode                   PIN code
+  bank        bankBeneficiaryName       Beneficiary Name
+  bank        bankIfsc                  IFSC code
+  paymentRun  houseBankBeneficiaryName  Beneficiary Name
+  paymentRun  houseBankIfsc             IFSC code
+
+  Duplicate/legacy custom fields deactivated (mobil1, pINCode, accounting
+  beneficiaryName copies, gSTINUinFederalTaxId, etc.).
+
+
+NOT DONE (needs product / FE or global change)
+--------------------------------------------------------------------------------
+
+  - Section title "Payment Terms" → "Payment" (global section label)
+  - "Vendor's Bank details" / "Our Bank details" section renames (global)
+  - Payment terms option text "net 15 days" (lookup/seed data, not form config)
+  - Built-in label renames for all companies (Account number, etc.) —
+    Ana uses custom fields where the doc asked for additional/rename
+
+
+HOW TO RE-RUN
+--------------------------------------------------------------------------------
+
+  npm run db:proxy   (if needed)
+  node scripts/configure-ana-vendor-model.js
+
+  Login: ANA_MACHINERY_P_LTD / ANA02
+
+
+FE CHECK
+--------------------------------------------------------------------------------
+
+  Refresh Form Configuration + Vendor create/edit against local BE.
+  Custom fields appear via form-schema resolvedSections (source CUSTOM).
+  Hidden built-ins: visible:false on GET form-configurations/vendor.
+
+  Expected Form Config sections for custom fields:
+    general / contact / address / bank / paymentRun
+    (Beneficiary Name under bank + paymentRun — not Accounting)
+
+================================================================================
+END
+================================================================================

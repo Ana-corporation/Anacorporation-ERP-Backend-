@@ -1,0 +1,131 @@
+================================================================================
+BE REPLY — Vendor Form Configuration PAYMENT TERMS GET MISMATCH
+Date:       2026-09-15
+Audience:   ERP-Frontend
+From:       ERP-Backend
+API:        GET /companies/{companyId}/form-configurations/vendor
+================================================================================
+
+
+SUMMARY
+--------------------------------------------------------------------------------
+
+  FE diagnosis is correct for LIVE Cloud Run.
+
+  Live still serves the OLD registry (commit 871eeb0):
+    payment section ≈ 6 rows, paymentBlock under payment.
+
+  Full registry (9 payment keys + bank + paymentRun) is FIXED in LOCAL BE
+  code and is NOT pushed/deployed yet.
+
+  FE does not invent rows — UI row count = GET row count.
+  If local FE still shows 6 rows, FE BACKEND_URL is not localhost:3002
+  (or local BE process is not running this uncommitted code).
+
+
+================================================================================
+7) GET OUTPUT FOR FE
+================================================================================
+
+  Environment URL (LIVE — FAIL / matches your screenshot):
+    https://anacorporation-erp-backend-983704016599.asia-southeast1.run.app
+  Commit / deploy version (LIVE):
+    871eeb0  (phones labels only — old payment section)
+  companyId:
+    28
+  companyCode:
+    ANA_MACHINERY_P_LTD
+
+  Environment URL (LOCAL — PASS with uncommitted registry):
+    http://localhost:3002
+  Commit / deploy version (LOCAL):
+    uncommitted on development-anc (full vendor registry)
+  Same companyId / schema: Ana_corporation_db
+
+
+LOCAL GET DUMP (Ana companyId 28 — overrides applied)
+--------------------------------------------------------------------------------
+
+  Minimal dump:
+
+  sectionKey  | fieldKey           | visible | hasOverride | configurable
+  ------------|--------------------|---------|-------------|-------------
+  payment     | paymentTerms       | true    | false       | true
+  payment     | paymentMethod      | true    | false       | true
+  payment     | interestArrears    | true    | false       | true
+  payment     | priceList          | false   | true        | true
+  payment     | totalDiscount      | false   | true        | true
+  payment     | creditLimit        | false   | true        | true
+  payment     | commitmentLimit    | true    | false       | true
+  payment     | effectiveDiscount  | true    | false       | true
+  payment     | dunningTerm        | true    | false       | true
+
+  bank        | bankCountry        | true    | false       | true
+  bank        | bankName           | true    | false       | true
+  bank        | bankCode           | true    | false       | true
+  bank        | bankAccount        | true    | false       | true
+  bank        | bankBranch         | true    | false       | true
+  bank        | bankSwift          | false   | true        | true
+  bank        | bankIban           | false   | true        | true
+
+  paymentRun  | houseBankCountry   | true    | false       | true
+  paymentRun  | houseBank          | false   | true        | true
+  paymentRun  | houseBankAccount   | true    | false       | true
+  paymentRun  | houseBankBranch    | true    | false       | true
+  paymentRun  | houseBankIban      | true    | false       | true
+  paymentRun  | houseBankSwift     | true    | false       | true
+  paymentRun  | referenceDetails   | true    | false       | true
+  paymentRun  | paymentBlock       | false   | true        | true
+  paymentRun  | singlePayment      | false   | true        | true
+
+  Confirmed:
+  - payment has all 9 expected keys (PASS)
+  - paymentBlock NOT under payment (PASS) — under paymentRun
+  - sectionKey bank present (PASS)
+  - Discount fieldKey = totalDiscount (alias discountPercent still accepted on PUT)
+  - Labels: "Total discount %" (not "Discount %") on local after fix
+
+
+PAYMENT SECTION SHAPE (LOCAL EXPECTED)
+--------------------------------------------------------------------------------
+
+  {
+    "sectionKey": "payment",
+    "label": "Payment Terms",
+    "fields": [
+      { "fieldKey": "paymentTerms",      "label": "Payment terms",         "fieldType": "select", "visible": true,  "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": false },
+      { "fieldKey": "paymentMethod",     "label": "Payment Method",        "fieldType": "select", "visible": true,  "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": false },
+      { "fieldKey": "interestArrears",   "label": "Interest on arrears %", "fieldType": "number", "visible": true,  "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": false },
+      { "fieldKey": "priceList",         "label": "Price list",            "fieldType": "text",   "visible": false, "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": true },
+      { "fieldKey": "totalDiscount",     "label": "Total discount %",      "fieldType": "number", "visible": false, "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": true },
+      { "fieldKey": "creditLimit",       "label": "Credit limit",          "fieldType": "number", "visible": false, "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": true },
+      { "fieldKey": "commitmentLimit",   "label": "Commitment limit",      "fieldType": "number", "visible": true,  "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": false },
+      { "fieldKey": "effectiveDiscount", "label": "Effective discount",    "fieldType": "number", "visible": true,  "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": false },
+      { "fieldKey": "dunningTerm",       "label": "Dunning term",          "fieldType": "select", "visible": true,  "required": false, "configurable": true, "source": "BUILT_IN", "hasOverride": false }
+    ]
+  }
+
+
+ACCEPTANCE
+--------------------------------------------------------------------------------
+
+  LOCAL (uncommitted): PASS all checklist items in section 6
+  LIVE Cloud Run:      FAIL until commit + push + deploy
+
+  FE local test checklist:
+    [ ] FE BACKEND_URL = http://localhost:3002
+    [ ] BE running npm run start:dev (or start:prod with latest build)
+    [ ] npm run db:proxy running
+    [ ] Network tab host = localhost:3002 for form-configurations/vendor
+    [ ] payment.fields length = 9
+
+
+NEXT STEP
+--------------------------------------------------------------------------------
+
+  BE will commit + push when product owner asks.
+  After Cloud Run deploy, re-hit LIVE GET — Payment Terms must show 9 toggles.
+
+================================================================================
+END
+================================================================================

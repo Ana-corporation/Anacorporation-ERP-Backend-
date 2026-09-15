@@ -14,9 +14,11 @@ import {
   getBuiltInFields,
   isSupportedFormConfigurationEntity,
   resolveBuiltInVisibility,
+  fieldHasOverride,
 } from './built-in-field-registry';
 import { UpdateFormConfigurationDto } from './dto/form-configuration.dto';
 import { FormConfigurationRepository } from './form-configuration.repository';
+import { resolveVendorSectionDefsForCompany } from './ana-vendor-section-labels';
 
 export interface BuiltInFieldConfigurationItem {
   fieldKey: string;
@@ -57,7 +59,12 @@ export class FormConfigurationService {
     const resolvedEntity = this.assertSupportedEntity(entityType);
     const registry = getBuiltInFields(resolvedEntity);
     const overrides = await this.loadOverrideMap(companyId, resolvedEntity);
-    const sections = this.groupBuiltInConfiguration(resolvedEntity, registry, overrides);
+    const sections = this.groupBuiltInConfiguration(
+      companyId,
+      resolvedEntity,
+      registry,
+      overrides,
+    );
 
     return serialize({
       entityType: resolvedEntity,
@@ -98,14 +105,17 @@ export class FormConfigurationService {
       }
 
       if (row.isVisible === field.defaultVisible) {
-        await this.repository.deleteOverride(companyId, resolvedEntity, row.fieldKey);
+        await this.repository.deleteOverride(companyId, resolvedEntity, field.fieldKey);
       } else {
         await this.repository.upsertOverride(
           companyId,
           resolvedEntity,
-          row.fieldKey,
+          field.fieldKey,
           row.isVisible,
         );
+      }
+      for (const alias of field.aliases ?? []) {
+        await this.repository.deleteOverride(companyId, resolvedEntity, alias);
       }
     }
 
@@ -143,13 +153,18 @@ export class FormConfigurationService {
   }
 
   groupBuiltInConfiguration(
+    companyId: string,
     entityType: CustomFieldEntityType,
     registry: BuiltInFieldDefinition[],
     overrides: Map<string, boolean>,
   ): FormConfigurationSection[] {
-    const sectionDefs =
+    const baseSectionDefs =
       CUSTOM_FIELD_MODULES.find((m) => m.entityType === entityType)?.sections ??
       (entityType === 'item' ? ITEM_SECTIONS : VENDOR_SECTIONS);
+    const sectionDefs =
+      entityType === 'vendor'
+        ? resolveVendorSectionDefsForCompany(companyId, baseSectionDefs)
+        : baseSectionDefs.map((s) => ({ key: s.key, label: s.label }));
 
     const fieldsBySection = new Map<string, BuiltInFieldConfigurationItem[]>();
     for (const field of registry) {
@@ -164,7 +179,7 @@ export class FormConfigurationService {
         required: field.required,
         configurable: field.configurable,
         source: 'BUILT_IN',
-        hasOverride: overrides.has(field.fieldKey),
+        hasOverride: fieldHasOverride(field, overrides),
       });
       fieldsBySection.set(field.sectionKey, list);
     }

@@ -171,24 +171,20 @@ API — FINAL VENDOR FORM SCHEMA (EXPANDED, backward compatible)
 BUILT-IN FIELD KEYS (Vendor registry)
 --------------------------------------------------------------------------------
 
-  | fieldKey       | Label           | Section  | Configurable | API mapping      |
-  |----------------|-----------------|----------|--------------|------------------|
-  | vendorName     | Vendor Name     | general  | NO (locked)  | name             |
-  | supplierCode   | Supplier Code   | general  | NO (locked)  | vendorCode       |
-  | vendorCategory | Vendor Category | general  | NO (locked)  | supplierType     |
-  | email          | Email           | contact  | YES          | email            |
-  | phone          | Tel 1           | contact  | YES          | phone            |
-  | tel2           | Tel 2           | contact  | YES          | metadata.tel2    |
-  | mobile         | Mobile phone    | contact  | YES          | metadata.mobile  |
-  | website        | Website         | contact  | YES          | metadata.website |
+  Full list (Form Configuration GET): see
+    docs/FE-HANDOFF-VENDOR-FORM-CONFIG-FULL-REGISTRY.txt
 
-  Contact phones: fieldKeys are phone / mobile / tel2 (BUILT_IN, configurable).
-  Country-code dropdown is FE PhoneInput only — no countryCode / dialCode registry row.
-  | paymentTerms   | Payment Terms   | payment  | YES          | metadata.*       |
-  | creditLimit    | Credit Limit    | payment  | YES          | metadata.*       |
+  Identity (locked): vendorName, supplierCode, vendorCategory
+  Federal Tax ID fieldKey is federalTaxId (aliases: taxId, tax_id) → column taxId
+  Discount fieldKey is totalDiscount (alias: discountPercent)
+  Bank IBAN / SWIFT fieldKeys are bankIban / bankSwift (aliases: iban / swift)
+
+  Contact phones: phone / mobile / tel2 (BUILT_IN, configurable).
+  Country-code dropdown is FE PhoneInput only — no countryCode / dialCode row.
+  Address Line 1/2/3 and State are CUSTOM fields — not in this registry.
 
   Note: fieldKey is for configuration UI; Vendor save API still uses
-  name / vendorCode / supplierType / metadata keys on create/update.
+  name / vendorCode / supplierType / taxId / metadata keys on create/update.
 
 
 INDEPENDENCE FROM CUSTOM FIELDS

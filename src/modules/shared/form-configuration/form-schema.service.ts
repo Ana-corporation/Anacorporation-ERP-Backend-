@@ -10,6 +10,7 @@ import { CustomFieldsRepository } from '../custom-fields/custom-fields.repositor
 import { CustomFieldsValidationService } from '../custom-fields/custom-fields-validation.service';
 import { getBuiltInFields } from './built-in-field-registry';
 import { FormConfigurationService } from './form-configuration.service';
+import { resolveVendorSectionDefsForCompany } from './ana-vendor-section-labels';
 
 @Injectable()
 export class FormSchemaService {
@@ -43,9 +44,13 @@ export class FormSchemaService {
         configurable: false,
       }));
 
-    const sectionDefs =
+    const baseSectionDefs =
       CUSTOM_FIELD_MODULES.find((m) => m.entityType === entityType)?.sections ??
       (entityType === 'item' ? ITEM_SECTIONS : VENDOR_SECTIONS);
+    const sectionDefs =
+      entityType === 'vendor'
+        ? resolveVendorSectionDefsForCompany(companyId, baseSectionDefs)
+        : baseSectionDefs.map((s) => ({ key: s.key, label: s.label }));
 
     const resolvedSections = this.buildResolvedSections(
       sectionDefs,

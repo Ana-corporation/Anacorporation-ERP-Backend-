@@ -17,6 +17,8 @@ export interface BuiltInFieldDefinition {
   configurable: boolean;
   sortOrder: number;
   storage: BuiltInFieldStorage;
+  /** Older Form Config keys that map to this field (GET returns fieldKey only). */
+  aliases?: readonly string[];
 }
 
 /** Stable fieldKey → API path (for FE + QA). */
