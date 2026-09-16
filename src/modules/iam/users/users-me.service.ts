@@ -119,8 +119,18 @@ export class UsersMeService {
         throw new BusinessException('File upload failed', HttpStatus.INTERNAL_SERVER_ERROR);
       }
       await this.repository.updateProfilePhoto(userId, durableUrl, userId);
-      avatarUrl =
+      const readable =
         (await this.storageService.resolveReadableUrl(durableUrl)) || durableUrl;
+      if (!readable.includes('X-Goog-Signature') && !readable.includes('X-Goog-Algorithm')) {
+        this.logger.error(
+          `Avatar uploaded but signed URL was not produced (got durable/private URL). Check GCS_CREDENTIALS_JSON on Cloud Run.`,
+        );
+        throw new BusinessException(
+          'Avatar uploaded but could not create a viewable URL. Contact support.',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+      avatarUrl = readable;
     } catch (error) {
       this.logger.error(
         'Avatar upload failed',

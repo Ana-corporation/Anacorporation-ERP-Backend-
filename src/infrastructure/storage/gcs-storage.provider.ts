@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Storage } from '@google-cloud/storage';
+import { writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
   SignedUrlOptions,
   StorageProvider,
@@ -26,19 +29,29 @@ export class GcsStorageProvider extends StorageProvider {
     this.publicBaseUrl = this.configService.get<string>('gcs.publicBaseUrl');
 
     let credentials: Record<string, unknown> | undefined;
+    let resolvedKeyFile = keyFilePath;
     if (credentialsJson) {
       try {
         credentials = JSON.parse(credentialsJson) as Record<string, unknown>;
+        // Cloud Run / YAML env escaping often leaves literal "\n" in private_key.
+        if (typeof credentials.private_key === 'string') {
+          credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
+        }
+        // Prefer a real key file — most reliable for V4 signing on Cloud Run.
+        const tmpPath = join(tmpdir(), 'erp-gcs-credentials.json');
+        writeFileSync(tmpPath, JSON.stringify(credentials), { encoding: 'utf8', mode: 0o600 });
+        resolvedKeyFile = tmpPath;
+        credentials = undefined;
       } catch {
         this.logger.error('GCS_CREDENTIALS_JSON is not valid JSON — signed avatar URLs will fail');
       }
     }
 
-    const credentialMode = credentials
-      ? 'json'
-      : keyFilePath
-        ? 'keyFile'
-        : 'ADC';
+    const credentialMode = resolvedKeyFile
+      ? credentialsJson
+        ? 'json-file'
+        : 'keyFile'
+      : 'ADC';
 
     if (!this.bucket) {
       this.logger.error(
@@ -52,8 +65,7 @@ export class GcsStorageProvider extends StorageProvider {
 
     this.storage = new Storage({
       ...(projectId ? { projectId } : {}),
-      ...(credentials ? { credentials } : {}),
-      ...(!credentials && keyFilePath ? { keyFilename: keyFilePath } : {}),
+      ...(resolvedKeyFile ? { keyFilename: resolvedKeyFile } : {}),
     });
   }
 
@@ -93,17 +105,23 @@ export class GcsStorageProvider extends StorageProvider {
     if (!this.bucket) {
       throw new Error('GCS_BUCKET is not configured');
     }
-    // On Cloud Run (ADC, no private key) this uses IAM signBlob — runtime SA needs
-    // roles/iam.serviceAccountTokenCreator on itself + storage access on the bucket.
-    const [url] = await this.storage
-      .bucket(this.bucket)
-      .file(options.key)
-      .getSignedUrl({
-        version: 'v4',
-        action: 'read',
-        expires: Date.now() + (options.expiresInSeconds ?? 3600) * 1000,
-      });
-    return url;
+    try {
+      const [url] = await this.storage
+        .bucket(this.bucket)
+        .file(options.key)
+        .getSignedUrl({
+          version: 'v4',
+          action: 'read',
+          expires: Date.now() + (options.expiresInSeconds ?? 3600) * 1000,
+        });
+      return url;
+    } catch (error) {
+      this.logger.error(
+        `GCS getSignedUrl failed bucket=${this.bucket} key=${options.key}`,
+        error instanceof Error ? error.stack : error,
+      );
+      throw error;
+    }
   }
 
   getPublicUrl(key: string): string {
