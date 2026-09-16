@@ -210,12 +210,17 @@ export class UsersService {
         email,
         mobile: dto.mobile ?? null,
       });
-      // If existing employee was selected, keep membership login code in sync.
-      if (employee && !dto.employeeId) {
+      // Keep membership login code + org placement in sync with employees master.
+      if (employee) {
         await this.repository.updateMembership(
           userId,
           companyId,
-          { employeeId: employee.employeeCode },
+          {
+            ...(!dto.employeeId ? { employeeId: employee.employeeCode } : {}),
+            departmentId: employee.departmentId?.toString() ?? null,
+            designationId: employee.designationId?.toString() ?? null,
+            branchId: employee.branchId?.toString() ?? null,
+          },
           actorId,
         );
       }

@@ -72,7 +72,8 @@ VERDICT
   membership.status is "ACTIVE" or "INACTIVE" (not lowercase).
 
   phone   = User.mobile
-  avatarUrl = User.profilePhoto (absolute URL FE can load)
+  avatarUrl = User.profilePhoto, returned as a signed GCS URL when the bucket is private
+               (browser can load it; do not strip ?X-Goog-* query params)
   employeeCode = membership employee code (UserCompany.employeeId)
 
   Platform owner: user profile still returned; membership org fields may be null.
@@ -138,9 +139,16 @@ VERDICT
     Max:     2 MB
     Rejected: svg, exe, html, js, other types
 
-    200  { "avatarUrl": "https://..." }
+    201  { "avatarUrl": "https://storage.googleapis.com/...?X-Goog-Algorithm=...&X-Goog-Signature=..." }
 
-    Next GET /auth/me or GET /users/me includes the same avatarUrl on user.
+    IMPORTANT (private GCS bucket):
+    - avatarUrl in API responses is a short-lived signed URL (browser can load it).
+    - Use that exact URL in <img src> / next/image — do not strip query params.
+    - After upload success: set local avatar from response.data.avatarUrl immediately,
+      then refresh profile via GET /users/me or GET /auth/me (those also return signed avatarUrl).
+    - Raw https://storage.googleapis.com/<bucket>/<key> without signature will 403 in the browser.
+
+    Next GET /auth/me or GET /users/me includes the same signed avatarUrl on user.
 
   ------------------------------------------------------------------------------
   PATCH /users/me/settings   (optional — personal prefs only)
@@ -217,7 +225,10 @@ VERDICT
 
   [ ] Header / avatar: user.avatarUrl from login or GET /users/me
   [ ] Profile read-only: email, employeeCode, departmentName, designationName,
-        warehouseName, membership.status, role.roleName
+        warehouseName (Assigned location), membership.status, role.roleName
+        Note: if membership FKs were never set, BE fills department/designation
+        from the linked Employee master. warehouseName stays null until an admin
+        sets warehouse via PATCH .../users/{id}/membership (Employee has no warehouse).
   [ ] Profile editable: displayName, phone  → PATCH /users/me
   [ ] Photo: POST /users/me/avatar  field=file
   [ ] Null org fields → show "—"

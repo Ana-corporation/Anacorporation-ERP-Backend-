@@ -26,6 +26,24 @@ export class CompanyAccessContextRepository {
     });
   }
 
+  /** Org placement on employees master — used when UserCompany FKs were never set. */
+  findEmployeeOrgByUser(userId: string, companyId: string) {
+    return this.prisma.employee.findFirst({
+      where: {
+        userId: parseBigIntId(userId),
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+      },
+      select: {
+        departmentId: true,
+        designationId: true,
+        branchId: true,
+        department: { select: { name: true } },
+        designation: { select: { name: true } },
+      },
+    });
+  }
+
   findUserCompanies(userId: string) {
     return this.prisma.userCompany.findMany({
       where: {

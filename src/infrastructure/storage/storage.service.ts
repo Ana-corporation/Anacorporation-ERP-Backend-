@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FileStatus } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
@@ -18,6 +18,8 @@ export interface StoreFileInput {
 
 @Injectable()
 export class StorageService {
+  private readonly logger = new Logger(StorageService.name);
+
   constructor(
     private readonly storageProvider: StorageProvider,
     private readonly prisma: PrismaService,
@@ -63,12 +65,18 @@ export class StorageService {
           publicUrl: result.url,
         },
       });
-    } catch {
+    } catch (error) {
+      this.logger.error(
+        `GCS upload failed for key=${storageKey} bucket=${bucket}`,
+        error instanceof Error ? error.stack : error,
+      );
       await this.prisma.fileAsset.update({
         where: { id: fileAsset.id },
         data: { status: FileStatus.FAILED },
       });
-      throw new Error('File upload failed');
+      throw new Error(
+        error instanceof Error ? `File upload failed: ${error.message}` : 'File upload failed',
+      );
     }
   }
 
@@ -88,10 +96,51 @@ export class StorageService {
     });
   }
 
-  async getSignedUrl(organizationId: string, fileId: string) {
+  async getSignedUrl(organizationId: string, fileId: string, expiresInSeconds = 3600) {
     const file = await this.findFile(organizationId, fileId);
     if (!file) return null;
-    return this.storageProvider.getSignedUrl({ key: file.storageKey });
+    return this.storageProvider.getSignedUrl({ key: file.storageKey, expiresInSeconds });
+  }
+
+  /**
+   * Private GCS buckets cannot serve storage.googleapis.com/... URLs in the browser.
+   * Convert a stored durable URL to a short-lived signed URL when it belongs to our bucket.
+   */
+  async resolveReadableUrl(
+    storedUrl: string | null | undefined,
+    expiresInSeconds = 7 * 24 * 3600,
+  ): Promise<string | null> {
+    if (!storedUrl) return null;
+    const key = this.extractGcsObjectKey(storedUrl);
+    if (!key) return storedUrl;
+    try {
+      return await this.storageProvider.getSignedUrl({ key, expiresInSeconds });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to sign GCS URL for key=${key}`,
+        error instanceof Error ? error.message : error,
+      );
+      return storedUrl;
+    }
+  }
+
+  private extractGcsObjectKey(storedUrl: string): string | null {
+    const bucket = this.configService.get<string>('gcs.bucket') || 'erp-files';
+    const prefixes = [
+      `https://storage.googleapis.com/${bucket}/`,
+      `https://storage.cloud.google.com/${bucket}/`,
+      `gs://${bucket}/`,
+    ];
+    const publicBaseUrl = this.configService.get<string>('gcs.publicBaseUrl');
+    if (publicBaseUrl) {
+      prefixes.push(`${publicBaseUrl.replace(/\/$/, '')}/`);
+    }
+    for (const prefix of prefixes) {
+      if (storedUrl.startsWith(prefix)) {
+        return decodeURIComponent(storedUrl.slice(prefix.length).split('?')[0]);
+      }
+    }
+    return null;
   }
 
   async deleteFile(

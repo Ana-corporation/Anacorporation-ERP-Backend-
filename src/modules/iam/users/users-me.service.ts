@@ -42,8 +42,12 @@ export class UsersMeService {
     private readonly auditService: AuditService,
   ) {}
 
-  getProfile(userId: string, companyId: string) {
-    return this.authService.getMyProfile(userId, companyId);
+  async getProfile(userId: string, companyId: string) {
+    const profile = await this.authService.getMyProfile(userId, companyId);
+    if (profile.user?.avatarUrl) {
+      profile.user.avatarUrl = await this.storageService.resolveReadableUrl(profile.user.avatarUrl);
+    }
+    return profile;
   }
 
   async patchProfile(
@@ -109,7 +113,14 @@ export class UsersMeService {
         entityType: 'user-avatar',
         entityId: userId,
       });
-      avatarUrl = asset.publicUrl || (await this.storageService.getSignedUrl(companyId, asset.id)) || '';
+      // Persist durable GCS path (not signed). Return a browser-readable signed URL.
+      const durableUrl = asset.publicUrl;
+      if (!durableUrl) {
+        throw new BusinessException('File upload failed', HttpStatus.INTERNAL_SERVER_ERROR);
+      }
+      await this.repository.updateProfilePhoto(userId, durableUrl, userId);
+      avatarUrl =
+        (await this.storageService.resolveReadableUrl(durableUrl)) || durableUrl;
     } catch (error) {
       this.logger.error(
         'Avatar upload failed',
@@ -122,7 +133,6 @@ export class UsersMeService {
       throw new BusinessException('File upload failed', HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    await this.repository.updateProfilePhoto(userId, avatarUrl, userId);
     await this.userContextCache.invalidate(userId, companyId);
     await this.auditService.log({
       companyId,

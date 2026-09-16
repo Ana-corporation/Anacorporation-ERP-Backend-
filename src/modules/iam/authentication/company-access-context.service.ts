@@ -9,6 +9,7 @@ import {
   NotFoundException,
 } from '@/common/exceptions/business.exception';
 import { EntitlementService } from '@/modules/subscription/entitlements/entitlement.service';
+import { StorageService } from '@/infrastructure/storage/storage.service';
 import { CompanyAccessContextRepository } from './company-access-context.repository';
 import { mapLoginMembership, mapLoginUserProfile } from './auth-profile.mapper';
 import {
@@ -25,6 +26,7 @@ export class CompanyAccessContextService {
   constructor(
     private readonly repository: CompanyAccessContextRepository,
     private readonly entitlementService: EntitlementService,
+    private readonly storageService: StorageService,
   ) {}
 
   async buildCompanyAccessContext(
@@ -72,10 +74,17 @@ export class CompanyAccessContextService {
       overrides,
     });
 
-    const user = membership.user;
+    const user = mapLoginUserProfile(membership.user, membership);
+    user.avatarUrl = await this.storageService.resolveReadableUrl(user.avatarUrl);
+
+    const membershipForFe = await this.membershipWithEmployeeFallback(
+      membership,
+      userId,
+      companyId,
+    );
 
     return {
-      user: mapLoginUserProfile(user, membership),
+      user,
       companies: companies.map((row) => ({
         companyId: row.company.companyId.toString(),
         companyCode: row.company.companyCode,
@@ -88,7 +97,7 @@ export class CompanyAccessContextService {
         companyCode: company.companyCode,
         name: company.name,
         status: company.status,
-        membership: mapLoginMembership(membership),
+        membership: mapLoginMembership(membershipForFe),
         role: primaryRole?.role
           ? {
               roleId: primaryRole.role.roleId.toString(),
@@ -112,6 +121,33 @@ export class CompanyAccessContextService {
         },
         modules,
       },
+    };
+  }
+
+  /**
+   * Profile UI reads UserCompany. Older invites only set employeeId code and left
+   * department/designation null even when employees master had them — fill for FE.
+   */
+  private async membershipWithEmployeeFallback(
+    membership: NonNullable<
+      Awaited<ReturnType<CompanyAccessContextRepository['findMembership']>>
+    >,
+    userId: string,
+    companyId: string,
+  ) {
+    if (membership.departmentId && membership.designationId) {
+      return membership;
+    }
+
+    const employee = await this.repository.findEmployeeOrgByUser(userId, companyId);
+    if (!employee) return membership;
+
+    return {
+      ...membership,
+      departmentId: membership.departmentId ?? employee.departmentId,
+      designationId: membership.designationId ?? employee.designationId,
+      department: membership.department ?? employee.department,
+      designation: membership.designation ?? employee.designation,
     };
   }
 

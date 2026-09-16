@@ -70,8 +70,16 @@ describe('CompanyAccessContextService — supply-chain resource roles', () => {
       getEffectiveEntitlements: jest.fn(),
     } as unknown as EntitlementService;
 
+    const storageService = {
+      resolveReadableUrl: jest.fn(async (url: string | null) => url),
+    };
+
     return {
-      service: new CompanyAccessContextService(repository, entitlementService),
+      service: new CompanyAccessContextService(
+        repository,
+        entitlementService,
+        storageService as never,
+      ),
       repository,
     };
   }

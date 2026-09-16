@@ -18,12 +18,14 @@ export class GcsStorageProvider extends StorageProvider {
   constructor(private readonly configService: ConfigService) {
     super();
     const projectId = this.configService.get<string>('gcs.projectId');
-    const keyFilePath = this.configService.get<string>('gcs.keyFilePath');
+    const keyFilePath =
+      this.configService.get<string>('gcs.keyFilePath') ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS;
     this.bucket = this.configService.get<string>('gcs.bucket') || 'erp-files';
     this.publicBaseUrl = this.configService.get<string>('gcs.publicBaseUrl');
 
     this.storage = new Storage({
-      projectId,
+      ...(projectId ? { projectId } : {}),
       ...(keyFilePath ? { keyFilename: keyFilePath } : {}),
     });
   }
