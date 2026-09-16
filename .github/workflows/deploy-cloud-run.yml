@@ -165,6 +165,20 @@ jobs:
           echo "Deploying image ${IMAGE}"
           echo "Cloud SQL instance ${CLOUD_SQL_INSTANCE}"
 
+          # Ensure Cloud Run runtime SA can write avatars + sign private URLs.
+          RUNTIME_SA="erp-cloudsql-dev@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          GCS_BUCKET_NAME="$(python3 -c 'import os; print((os.environ.get("GCS_BUCKET") or "").strip())')"
+          if [[ -n "${GCS_BUCKET_NAME}" ]]; then
+            gsutil iam ch "serviceAccount:${RUNTIME_SA}:roles/storage.objectAdmin" "gs://${GCS_BUCKET_NAME}" \
+              || echo "WARN: could not grant storage.objectAdmin on gs://${GCS_BUCKET_NAME} (may already be set or need owner)."
+            gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
+              --project="${{ secrets.GCP_PROJECT_ID }}" \
+              --member="serviceAccount:${RUNTIME_SA}" \
+              --role="roles/iam.serviceAccountTokenCreator" \
+              --quiet \
+              || echo "WARN: could not grant serviceAccountTokenCreator on ${RUNTIME_SA}."
+          fi
+
           deploy_common=(
             --image "${IMAGE}"
             --region "${REGION}"
@@ -180,6 +194,7 @@ jobs:
             --no-cpu-throttling
             --startup-probe=tcpSocket.port=8080,periodSeconds=5,timeoutSeconds=2,failureThreshold=24
             --env-vars-file cloud-run-env.yaml
+            --service-account "${RUNTIME_SA}"
           )
 
           set +e
