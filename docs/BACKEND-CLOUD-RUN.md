@@ -114,6 +114,33 @@ Settings → Secrets and variables → Actions.
 | `GCP_SQL_DATABASE` | `swenter-dev` |
 | `GCP_SQL_SCHEMA` | Schema that holds the tables (`Erp_test_db` unless you moved them) |
 
+**Required for avatar / file uploads (GCS):**
+
+| Secret | Value |
+|---|---|
+| `GCS_PROJECT_ID` | `project-b6b7f679-b5c2-42d8-bb4` |
+| `GCS_BUCKET` | `erp-files-ana-machinery` |
+
+Do **not** set `GCS_KEY_FILE_PATH` on Cloud Run. The runtime service account uses Application Default Credentials.
+
+Grant the Cloud Run **runtime** service account access to the bucket (and signBlob for private-URL avatars):
+
+```bash
+PROJECT_ID=project-b6b7f679-b5c2-42d8-bb4
+PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')
+RUNTIME_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+BUCKET=erp-files-ana-machinery
+
+gsutil iam ch "serviceAccount:${RUNTIME_SA}:roles/storage.objectAdmin" "gs://${BUCKET}"
+
+gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}" \
+  --project="${PROJECT_ID}" \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/iam.serviceAccountTokenCreator"
+```
+
+After adding the GitHub secrets, re-run **Deploy to Cloud Run** (or push to `development-anc`).
+
 The Cloud Run **runtime** service account also needs `roles/cloudsql.client`:
 
 ```bash

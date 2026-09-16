@@ -82,6 +82,8 @@ jobs:
           GCP_SQL_PASSWORD: ${{ secrets.GCP_SQL_PASSWORD }}
           GCP_SQL_DATABASE: ${{ secrets.GCP_SQL_DATABASE }}
           GCP_SQL_SCHEMA: ${{ secrets.GCP_SQL_SCHEMA }}
+          GCS_PROJECT_ID: ${{ secrets.GCS_PROJECT_ID }}
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
         run: |
           python3 - <<'PY'
           import json
@@ -127,6 +129,13 @@ jobs:
               or (urlparse(raw_database_url).path or "/").lstrip("/")
               or "swenter-dev"
           )
+          gcs_project = (os.environ.get("GCS_PROJECT_ID") or "").strip()
+          gcs_bucket = (os.environ.get("GCS_BUCKET") or "").strip()
+          if not gcs_bucket:
+              raise SystemExit(
+                  "GCS_BUCKET GitHub secret is required for avatar/file uploads on Cloud Run. "
+                  "Set GCS_BUCKET=erp-files-ana-machinery and GCS_PROJECT_ID=<gcp-project-id>."
+              )
           lines = [
               pair("NODE_ENV", "production"),
               pair("API_PREFIX", "api/v1"),
@@ -140,7 +149,10 @@ jobs:
               pair("GCP_SQL_INSTANCE_CONNECTION_NAME", instance),
               pair("GCP_SQL_DATABASE", database_name),
               pair("GCP_SQL_SCHEMA", schema),
+              pair("GCS_BUCKET", gcs_bucket),
           ]
+          if gcs_project:
+              lines.append(pair("GCS_PROJECT_ID", gcs_project))
           for key in ("GCP_SQL_USER", "GCP_SQL_PASSWORD"):
               value = os.environ.get(key, "")
               if value:

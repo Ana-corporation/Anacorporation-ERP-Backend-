@@ -29,7 +29,10 @@ export class StorageService {
   async uploadFile(input: StoreFileInput) {
     const extension = input.originalName.split('.').pop() || 'bin';
     const storageKey = `${input.organizationId}/${uuidv4()}.${extension}`;
-    const bucket = this.configService.get<string>('gcs.bucket') || 'erp-files';
+    const bucket = (this.configService.get<string>('gcs.bucket') || '').trim();
+    if (!bucket) {
+      throw new Error('GCS_BUCKET is not configured');
+    }
 
     const fileAsset = await this.prisma.fileAsset.create({
       data: {
@@ -125,7 +128,8 @@ export class StorageService {
   }
 
   private extractGcsObjectKey(storedUrl: string): string | null {
-    const bucket = this.configService.get<string>('gcs.bucket') || 'erp-files';
+    const bucket = (this.configService.get<string>('gcs.bucket') || '').trim();
+    if (!bucket) return null;
     const prefixes = [
       `https://storage.googleapis.com/${bucket}/`,
       `https://storage.cloud.google.com/${bucket}/`,
