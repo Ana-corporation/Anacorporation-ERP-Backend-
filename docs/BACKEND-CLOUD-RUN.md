@@ -120,8 +120,9 @@ Settings → Secrets and variables → Actions.
 |---|---|
 | `GCS_PROJECT_ID` | `project-b6b7f679-b5c2-42d8-bb4` |
 | `GCS_BUCKET` | `erp-files-ana-machinery` |
+| `GCS_CREDENTIALS_JSON` | Full contents of the GCS service-account JSON (same key used locally). Required so Cloud Run can V4-sign private avatar URLs. |
 
-Do **not** set `GCS_KEY_FILE_PATH` on Cloud Run. The runtime service account uses Application Default Credentials.
+Do **not** set `GCS_KEY_FILE_PATH` on Cloud Run. Prefer `GCS_CREDENTIALS_JSON` for signing.
 
 Grant the Cloud Run **runtime** service account access to the bucket (and signBlob for private-URL avatars):
 

@@ -21,9 +21,24 @@ export class GcsStorageProvider extends StorageProvider {
     const keyFilePath =
       this.configService.get<string>('gcs.keyFilePath') ||
       process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    // Cloud Run: do not ship a JSON key. Leave keyFilePath empty and use ADC.
+    const credentialsJson = (this.configService.get<string>('gcs.credentialsJson') || '').trim();
     this.bucket = (this.configService.get<string>('gcs.bucket') || '').trim();
     this.publicBaseUrl = this.configService.get<string>('gcs.publicBaseUrl');
+
+    let credentials: Record<string, unknown> | undefined;
+    if (credentialsJson) {
+      try {
+        credentials = JSON.parse(credentialsJson) as Record<string, unknown>;
+      } catch {
+        this.logger.error('GCS_CREDENTIALS_JSON is not valid JSON — signed avatar URLs will fail');
+      }
+    }
+
+    const credentialMode = credentials
+      ? 'json'
+      : keyFilePath
+        ? 'keyFile'
+        : 'ADC';
 
     if (!this.bucket) {
       this.logger.error(
@@ -31,15 +46,14 @@ export class GcsStorageProvider extends StorageProvider {
       );
     } else {
       this.logger.log(
-        `GCS storage ready bucket=${this.bucket} project=${projectId || '(ADC)'} credentials=${
-          keyFilePath ? 'keyFile' : 'ADC'
-        }`,
+        `GCS storage ready bucket=${this.bucket} project=${projectId || '(ADC)'} credentials=${credentialMode}`,
       );
     }
 
     this.storage = new Storage({
       ...(projectId ? { projectId } : {}),
-      ...(keyFilePath ? { keyFilename: keyFilePath } : {}),
+      ...(credentials ? { credentials } : {}),
+      ...(!credentials && keyFilePath ? { keyFilename: keyFilePath } : {}),
     });
   }
 

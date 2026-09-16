@@ -84,6 +84,7 @@ jobs:
           GCP_SQL_SCHEMA: ${{ secrets.GCP_SQL_SCHEMA }}
           GCS_PROJECT_ID: ${{ secrets.GCS_PROJECT_ID }}
           GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+          GCS_CREDENTIALS_JSON: ${{ secrets.GCS_CREDENTIALS_JSON }}
         run: |
           python3 - <<'PY'
           import json
@@ -131,10 +132,16 @@ jobs:
           )
           gcs_project = (os.environ.get("GCS_PROJECT_ID") or "").strip()
           gcs_bucket = (os.environ.get("GCS_BUCKET") or "").strip()
+          gcs_credentials_json = (os.environ.get("GCS_CREDENTIALS_JSON") or "").strip()
           if not gcs_bucket:
               raise SystemExit(
                   "GCS_BUCKET GitHub secret is required for avatar/file uploads on Cloud Run. "
                   "Set GCS_BUCKET=erp-files-ana-machinery and GCS_PROJECT_ID=<gcp-project-id>."
+              )
+          if not gcs_credentials_json:
+              raise SystemExit(
+                  "GCS_CREDENTIALS_JSON GitHub secret is required so Cloud Run can sign private "
+                  "avatar URLs (ADC alone cannot V4-sign without tokenCreator)."
               )
           lines = [
               pair("NODE_ENV", "production"),
@@ -150,6 +157,7 @@ jobs:
               pair("GCP_SQL_DATABASE", database_name),
               pair("GCP_SQL_SCHEMA", schema),
               pair("GCS_BUCKET", gcs_bucket),
+              pair("GCS_CREDENTIALS_JSON", gcs_credentials_json),
           ]
           if gcs_project:
               lines.append(pair("GCS_PROJECT_ID", gcs_project))
