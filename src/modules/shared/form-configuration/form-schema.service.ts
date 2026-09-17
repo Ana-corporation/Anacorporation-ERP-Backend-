@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { serialize } from '@/common/utils/bigint.util';
+import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import {
   CUSTOM_FIELD_MODULES,
   CustomFieldEntityType,
@@ -8,6 +9,7 @@ import {
 } from '../custom-fields/custom-fields.constants';
 import { CustomFieldsRepository } from '../custom-fields/custom-fields.repository';
 import { CustomFieldsValidationService } from '../custom-fields/custom-fields-validation.service';
+import { TabAccessService } from '../tab-access/tab-access.service';
 import { getBuiltInFields } from './built-in-field-registry';
 import { FormConfigurationService } from './form-configuration.service';
 import { resolveVendorSectionDefsForCompany } from './ana-vendor-section-labels';
@@ -18,9 +20,14 @@ export class FormSchemaService {
     private readonly formConfigurationService: FormConfigurationService,
     private readonly customFieldsRepository: CustomFieldsRepository,
     private readonly customFieldsValidationService: CustomFieldsValidationService,
+    private readonly tabAccessService: TabAccessService,
   ) {}
 
-  async resolveFormSchema(companyId: string, entityType: CustomFieldEntityType) {
+  async resolveFormSchema(
+    companyId: string,
+    entityType: CustomFieldEntityType,
+    user?: AuthenticatedUser,
+  ) {
     const registry = getBuiltInFields(entityType);
     const overrides = await this.formConfigurationService.loadOverrideMap(companyId, entityType);
 
@@ -52,20 +59,36 @@ export class FormSchemaService {
         ? resolveVendorSectionDefsForCompany(companyId, baseSectionDefs)
         : baseSectionDefs.map((s) => ({ key: s.key, label: s.label }));
 
+    const visibleTabKeys = user
+      ? await this.tabAccessService.getVisibleTabKeysForUser({
+          companyId,
+          entityType,
+          user,
+        })
+      : new Set(sectionDefs.map((s) => s.key));
+
+    const visibleSectionDefs = sectionDefs.filter((s) => visibleTabKeys.has(s.key));
+    const visibleBuiltInFields = builtInFields.filter((f) => visibleTabKeys.has(f.sectionKey));
+    const visibleCustomFields = customFields.filter((f) =>
+      visibleTabKeys.has(f.sectionKey ?? 'custom'),
+    );
+
     const resolvedSections = this.buildResolvedSections(
-      sectionDefs,
-      builtInFields,
-      customFields,
+      visibleSectionDefs,
+      visibleBuiltInFields,
+      visibleCustomFields,
     );
 
     return serialize({
       entityType,
       /** Legacy: custom field definitions only (unchanged contract). */
-      fields: customFields.map(({ key, label, source, visible, configurable, ...rest }) => rest),
-      /** Legacy: section tab metadata only (unchanged contract). */
-      sections: sectionDefs,
-      /** Built-in developer fields with effective company visibility. */
-      builtInFields: builtInFields.map(({ storage, ...field }) => field),
+      fields: visibleCustomFields.map(
+        ({ key, label, source, visible, configurable, ...rest }) => rest,
+      ),
+      /** Legacy: section tab metadata only — role-filtered at runtime. */
+      sections: visibleSectionDefs,
+      /** Built-in developer fields with effective company visibility (role-filtered). */
+      builtInFields: visibleBuiltInFields.map(({ storage, ...field }) => field),
       /** Merged built-in + custom fields grouped by section (preferred for Vendor form). */
       resolvedSections,
     });

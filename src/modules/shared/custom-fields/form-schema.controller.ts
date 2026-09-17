@@ -33,6 +33,7 @@ export class FormSchemaController {
     return this.formSchemaService.resolveFormSchema(
       companyId,
       entityType as CustomFieldEntityType,
+      user,
     );
   }
 }

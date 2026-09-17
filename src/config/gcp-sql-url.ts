@@ -35,7 +35,7 @@ export function applyGcpSqlDatabaseUrl(
   const user = String(config.GCP_SQL_USER || config.GCP_SQL_DATABASE || '');
   const password = String(config.GCP_SQL_PASSWORD || '');
   const database = String(config.GCP_SQL_DATABASE || '');
-  const schema = String(config.GCP_SQL_SCHEMA || 'Ana_corporation_db');
+  const schema = String(config.GCP_SQL_SCHEMA || 'Erp_test_db');
   const current = String(config.DATABASE_URL || '');
 
   if (onCloudRun && instance && user && password && database) {

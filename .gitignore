@@ -20,8 +20,12 @@ npm-debug.log*
 
 # env
 .env
+.env.development
+.env.production
 .env.local
 .env.*.local
+!.env.example
+
 
 # local DB dump used during Cloud SQL migration
 .migrate-tmp/

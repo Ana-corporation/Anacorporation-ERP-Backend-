@@ -31,6 +31,7 @@ model Role {
   rolePermissions    RolePermission[]
   rolePermissionSets RolePermissionSet[]
   userRoles          UserRole[]
+  tabAccess          CompanyTabAccess[]
 
   @@unique([companyId, roleCode])
   @@index([companyId])

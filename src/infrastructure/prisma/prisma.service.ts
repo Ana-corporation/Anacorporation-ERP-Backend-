@@ -1,8 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import { applyGcpSqlDatabaseUrl } from '../../config/gcp-sql-url';
+import { resolveDatabaseEnv } from '../../config/resolve-database-env';
 
-applyGcpSqlDatabaseUrl();
+// Ensure DATABASE_URL is resolved before the Prisma client is constructed.
+resolveDatabaseEnv();
 
 const TRANSIENT_DB_ERROR_CODES = new Set(['P1001', 'P1002', 'P1017']);
 
@@ -25,7 +26,7 @@ function delay(ms: number): Promise<void> {
 }
 
 function createPrismaClient() {
-  applyGcpSqlDatabaseUrl();
+  resolveDatabaseEnv();
   const base = new PrismaClient();
 
   return base.$extends({

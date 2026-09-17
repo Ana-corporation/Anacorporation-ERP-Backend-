@@ -1,7 +1,8 @@
-import { applyGcpSqlDatabaseUrl } from './gcp-sql-url';
+import { resolveDatabaseEnv } from './resolve-database-env';
 
 export const databaseConfig = () => {
-  applyGcpSqlDatabaseUrl();
+  // Startup-only; never select DB from a request.
+  resolveDatabaseEnv();
   return {
     url: process.env.DATABASE_URL,
   };

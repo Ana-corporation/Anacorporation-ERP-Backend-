@@ -141,6 +141,8 @@ const ADMIN_PERMISSIONS = [
   { module: 'shared', code: 'custom_fields:delete', name: 'Delete Custom Fields', action: 'delete' },
   { module: 'shared', code: 'form_configurations:view', name: 'View Form Configurations', action: 'view' },
   { module: 'shared', code: 'form_configurations:edit', name: 'Edit Form Configurations', action: 'edit' },
+  { module: 'shared', code: 'tab_access:view', name: 'View Tab Access Configuration', action: 'view' },
+  { module: 'shared', code: 'tab_access:edit', name: 'Edit Tab Access Configuration', action: 'edit' },
   { module: 'subscription', code: 'subscription:view', name: 'View Company Subscription Summary', action: 'view' },
   { module: 'subscription', code: 'subscription:edit', name: 'Manage Company Subscription', action: 'edit' },
   { module: 'subscription', code: 'subscription_plans:view', name: 'View Subscription Plans', action: 'view' },
@@ -282,5 +284,7 @@ export const COMPANY_ADMIN_BACKFILL_PERMISSION_CODES = [
   'custom_fields:delete',
   'form_configurations:view',
   'form_configurations:edit',
+  'tab_access:view',
+  'tab_access:edit',
   ...COMPANY_ADMIN_SETUP_PERMISSION_CODES,
 ] as const satisfies readonly PermissionCode[];

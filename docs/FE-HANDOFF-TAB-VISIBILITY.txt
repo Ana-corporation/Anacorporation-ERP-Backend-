@@ -1,0 +1,201 @@
+================================================================================
+FE HANDOFF — Role-based Tab Visibility Configuration
+ONE checklist for Frontend (Vendor + Item)
+Date:       2026-09-17
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (implemented — do not redesign BE RBAC)
+================================================================================
+
+
+0) CONCEPT (DO NOT MIX WITH PERMISSIONS)
+--------------------------------------------------------------------------------
+
+  Tab Visibility  ≠  Permissions
+
+  Tab Visibility (THIS FEATURE)
+    Company Admin chooses which ROLES can SEE each tab.
+    Example: Vendor → Accounting tab visible to Admin + Accounts Manager only.
+
+  Permissions (EXISTING RBAC — unchanged)
+    Control what the user can DO inside a tab (view / edit / delete).
+    Example: Accounting tab visible + vendors:view allowed + vendors:edit denied.
+
+  Never store tab visibility inside role_permissions.
+  Never hide tabs only on the FE — BE enforces at form-schema time.
+
+
+1) ARCHITECTURE LAYERS
+--------------------------------------------------------------------------------
+
+  Module (supply-chain)
+    ↓
+  Entity (vendor | item)
+    ↓
+  Tab Registry (BE code — sectionKey = tabKey)
+    ↓
+  Company Tab Access (company_tab_access table)
+    ↓
+  Role
+    ↓
+  User (primary/active role)
+    ↓
+  Existing Permissions (unchanged)
+    ↓
+  Final UI (form-schema — hidden tabs omitted)
+
+
+2) SETTINGS NAV (ADD THIS)
+--------------------------------------------------------------------------------
+
+  Settings
+  ├── Form Configuration     → built-in FIELD show/hide
+  ├── Custom Fields          → UDF create/edit
+  └── Tab Access             → which ROLES can SEE each tab   ← NEW
+
+  Keep Tab Access as its own screen (or clear sub-tab).
+  Do NOT merge into Form Configuration field list.
+
+
+3) PERMISSIONS (NEW)
+--------------------------------------------------------------------------------
+
+  tab_access:view   → open Tab Access settings
+  tab_access:edit   → save role allow-list per tab
+
+  Company ADMIN gets these via backfill on login (re-login once after deploy).
+
+  Runtime form (create/edit Vendor/Item) still uses existing module/resource
+  permissions (e.g. supply-chain:view / vendors:view) — NOT tab_access:*.
+
+
+4) ADMIN APIs
+--------------------------------------------------------------------------------
+
+  Base: /api/v1/companies/{companyId}/entities/{entityType}/tabs
+  entityType: vendor | item
+
+  GET  /api/v1/companies/{companyId}/entities/{entityType}/tabs
+       Permission: tab_access:view
+       Returns all registry tabs + every ACTIVE company role + isVisible.
+
+  PUT  /api/v1/companies/{companyId}/entities/{entityType}/tabs/{tabKey}/access
+       Permission: tab_access:edit
+       Body:
+         {
+           "roleIds": ["12", "45", "78"]
+         }
+       Meaning: ONLY these roles can see this tab (allow-list).
+       Empty array [] = hide tab from all roles.
+
+  Example tabKeys (vendor):
+    general, contact, address, payment, bank, paymentRun, accounting, remarks, custom
+
+  Example tabKeys (item):
+    header, general, classification, purchasing, sales, inventory,
+    planning, production, remarks, custom
+
+
+5) GET RESPONSE SHAPE (SETTINGS UI)
+--------------------------------------------------------------------------------
+
+  {
+    "entityType": "vendor",
+    "moduleCode": "supply-chain",
+    "tabs": [
+      {
+        "tabKey": "accounting",
+        "label": "Accounting",
+        "displayOrder": 7,
+        "isDefaultVisible": true,
+        "requiredPermission": null,
+        "hasOverride": true,
+        "roles": [
+          { "roleId": "1", "roleCode": "ADMIN", "roleName": "Admin", "isVisible": true },
+          { "roleId": "2", "roleCode": "MANAGER", "roleName": "Manager", "isVisible": false },
+          { "roleId": "5", "roleCode": "SALES", "roleName": "Sales", "isVisible": false }
+        ]
+      }
+    ]
+  }
+
+  Settings UI suggestion:
+    - Rows = tabs (label)
+    - Columns = roles (checkbox = isVisible)
+    - Save one tab at a time via PUT with roleIds of checked roles
+    - Or collect all checked roles for that tabKey and PUT once
+
+
+6) RUNTIME (VENDOR / ITEM FORM) — CRITICAL
+--------------------------------------------------------------------------------
+
+  Still use:
+
+    GET /api/v1/companies/{companyId}/entities/{entityType}/form-schema
+
+  Preferred render tree:
+
+    resolvedSections[]   ← PRIMARY (already role-filtered by BE)
+
+  After this feature:
+    - Tabs the user's role cannot see are OMITTED (not returned with visible:false)
+    - Do NOT invent tabs from a hard-coded FE list if form-schema omitted them
+    - Do NOT call Tab Access admin APIs from the runtime form
+
+  FE checklist:
+    [ ] Build tab strip ONLY from form-schema.sections OR resolvedSections
+    [ ] Never keep a static FE tab list that shows Accounting when BE hid it
+    [ ] After login as a restricted role, confirm hidden tabs are gone
+    [ ] Permissions still gate Save / Delete buttons inside visible tabs
+
+
+7) DEFAULT BEHAVIOUR
+--------------------------------------------------------------------------------
+
+  Before any Tab Access save for a tab:
+    → All roles see the tab (isDefaultVisible = true)
+
+  After first PUT for that tab:
+    → Only listed roleIds see it
+
+  New role created later (after a tab was configured):
+    → That new role does NOT see the tab until Admin adds it to the allow-list
+
+
+8) DO / DON'T
+--------------------------------------------------------------------------------
+
+  DO
+    - Use BE responses as source of truth for visible tabs
+    - Separate Tab Access settings from Form Configuration (fields)
+    - Gate settings page with tab_access:view / tab_access:edit
+    - Treat roleIds as strings (BigInt serialized)
+
+  DON'T
+    - Hide tabs only in FE CSS / conditional UI without BE config
+    - Put tab visibility into role permission matrices
+    - Expect accounting:view permission codes for tabs (not how this works)
+    - Call PUT tab access from end-user Vendor form screens
+
+
+9) QUICK QA
+--------------------------------------------------------------------------------
+
+  1. Login as Company Admin → Settings → Tab Access → Vendor
+  2. Accounting: check only Admin + Accounts roles → Save
+  3. Login as Sales role → open Vendor create/edit
+  4. Expect: Accounting tab missing from UI
+  5. Login as Admin → Accounting still present
+  6. Confirm Sales can still use other visible tabs per permissions
+
+
+10) RELATED DOCS
+--------------------------------------------------------------------------------
+
+  Form Configuration + Custom Fields:
+    docs/FE-HANDOFF-FORM-CONFIG-CUSTOM-FIELDS-ONE-CHECKLIST.txt
+
+  This file covers Tab Visibility only.
+
+================================================================================
+END
+================================================================================

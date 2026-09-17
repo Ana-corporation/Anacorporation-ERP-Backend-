@@ -1,11 +1,13 @@
 import { z } from 'zod';
-import { applyGcpSqlDatabaseUrl } from './gcp-sql-url';
+import { resolveDatabaseEnv } from './resolve-database-env';
 
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().int().min(1).default(3002),
     DATABASE_URL: z.string().min(1),
+    DEV_DATABASE_URL: z.string().optional(),
+    PROD_DATABASE_URL: z.string().optional(),
     JWT_SECRET: z.string().min(1),
     FRONTEND_ORIGIN: z.string().optional(),
     CORS_ORIGIN: z.string().optional(),
@@ -45,7 +47,14 @@ const envSchema = z
   });
 
 export function validate(config: Record<string, unknown>) {
-  applyGcpSqlDatabaseUrl(config);
+  // Align process.env + Nest config with the selected DEV/PROD URL.
+  resolveDatabaseEnv();
+  if (process.env.DATABASE_URL) {
+    config.DATABASE_URL = process.env.DATABASE_URL;
+  }
+  if (process.env.DIRECT_DATABASE_URL) {
+    config.DIRECT_DATABASE_URL = process.env.DIRECT_DATABASE_URL;
+  }
 
   const onCloudRun = Boolean(config.K_SERVICE || process.env.K_SERVICE);
   if (onCloudRun && !String(config.DATABASE_URL || '').trim()) {

@@ -1,0 +1,269 @@
+================================================================================
+FE HANDOFF — Form Configuration + Custom Fields + Runtime Form Schema
+ONE checklist for Frontend (Vendor + Item)
+Date:       2026-09-17
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (architecture already implemented — do not redesign BE)
+================================================================================
+
+
+0) ARCHITECTURE (DO NOT MIX THESE)
+--------------------------------------------------------------------------------
+
+  Layer 1 — Built-in Field Registry (BE code + deploy)
+    Standard ERP fields: Name, Code, Phone, Email, Bank fields, etc.
+    New built-ins = backend code change + deploy. FE does not create them.
+
+  Layer 2 — Form Configuration (Settings)
+    Per-company visibility for BUILT-IN fields ONLY.
+    Stored in company_field_configurations.
+    Protected fields (Name, Code, etc.) cannot be hidden.
+    Custom fields NEVER appear on this page.
+
+  Layer 3 — Custom Fields (Settings)
+    Company UDFs only.
+    Stored in custom_field_definitions.
+    Creating/editing a custom field must NOT call Form Configuration APIs
+    and must NOT expect the field to show on the Form Configuration list.
+
+  Layer 4 — Runtime Form Schema (Vendor / Item create · edit · view)
+    GET /api/v1/companies/{companyId}/entities/{entityType}/form-schema
+    Merges:
+      - Built-in registry
+      - Company built-in visibility overrides
+      - Active custom fields
+    Preferred response for rendering:
+      - resolvedSections   ← PRIMARY for form UI
+      - builtInFields      ← secondary (visibility / debug)
+    Legacy fields[] = custom definitions only — NOT the main render source.
+
+
+================================================================================
+1) SETTINGS NAV
+================================================================================
+
+  Settings
+  ├── Form Configuration     → built-in show/hide (vendor | item)
+  └── Custom Fields          → create / edit / deactivate UDFs
+
+  Never merge these two screens into one field list.
+
+
+================================================================================
+2) PERMISSIONS
+================================================================================
+
+  Form Configuration
+    form_configurations:view
+    form_configurations:edit
+
+  Custom Fields admin
+    custom_fields:view | create | edit | delete  (as already wired)
+
+  Vendor / Item form-schema (end users)
+    supply-chain:view
+    (custom_fields:view is NOT required to load the form)
+
+  FE checks:
+    can("form_configurations:view")
+    can("form_configurations:edit")
+    can("custom_fields:view")   // admin page only
+    can("supply-chain:view")    // entity forms
+
+
+================================================================================
+3) FORM CONFIGURATION PAGE (BUILT-INS ONLY)
+================================================================================
+
+  Entity tabs: Vendor | Item
+
+  APIs
+  ----
+  GET    /api/v1/companies/{companyId}/form-configurations/vendor
+  GET    /api/v1/companies/{companyId}/form-configurations/item
+  PUT    /api/v1/companies/{companyId}/form-configurations/vendor|item
+  DELETE /api/v1/companies/{companyId}/form-configurations/vendor|item
+
+  GET response (shape)
+  --------------------
+  {
+    "entityType": "vendor",
+    "sections": [
+      {
+        "sectionKey": "general",
+        "label": "General",
+        "fields": [
+          {
+            "fieldKey": "vendorName",
+            "label": "Vendor Name",
+            "fieldType": "text",
+            "visible": true,
+            "required": true,
+            "configurable": false,   // ← lock toggle in UI
+            "source": "BUILT_IN",
+            "hasOverride": false
+          }
+        ]
+      }
+    ]
+  }
+
+  PUT body
+  --------
+  {
+    "fields": [
+      { "fieldKey": "website", "isVisible": false },
+      { "fieldKey": "contactEmail", "isVisible": true }
+    ]
+  }
+
+  UI rules
+  --------
+  [ ] Render sections/fields from Form Configuration GET only
+  [ ] Every row is source BUILT_IN — never inject Custom Field definitions here
+  [ ] If configurable === false → toggle disabled (Name / Code / protected)
+  [ ] Show hasOverride indicator if useful
+  [ ] On PUT success → refetch Form Configuration GET
+  [ ] On PUT success → invalidate / refetch any open Vendor/Item form-schema cache
+  [ ] On DELETE (reset) → same refetch / invalidate
+  [ ] Handle errors: PROTECTED_FIELD_CANNOT_HIDE, INVALID_FIELD_KEY
+
+
+================================================================================
+4) CUSTOM FIELDS PAGE (CUSTOMS ONLY)
+================================================================================
+
+  APIs (existing)
+  ---------------
+  Meta:   GET /api/v1/custom-fields/meta/modules
+          GET /api/v1/custom-fields/meta/modules/{entityType}/sections
+  CRUD:   /api/v1/companies/{companyId}/custom-fields
+
+  UI rules
+  --------
+  [ ] Create / edit / deactivate custom fields here only
+  [ ] Do NOT call form-configurations APIs when saving a custom field
+  [ ] Do NOT expect the new UDF to appear on Form Configuration page
+  [ ] After create / edit / deactivate → invalidate Vendor/Item form-schema cache
+  [ ] Use valid sectionKey from meta (wrong key → field may land under "custom")
+
+
+================================================================================
+5) VENDOR / ITEM CREATE · EDIT · VIEW (RUNTIME FORM)
+================================================================================
+
+  API (required)
+  --------------
+  GET /api/v1/companies/{companyId}/entities/vendor/form-schema
+  GET /api/v1/companies/{companyId}/entities/item/form-schema
+
+  Preferred response usage
+  ------------------------
+  resolvedSections[]     ← PRIMARY render tree
+    sectionKey, label, fields[]
+      each field:
+        source: "BUILT_IN" | "CUSTOM"
+        key / fieldKey / fieldName
+        apiKey          (built-in bind path, e.g. name, metadata.website, purchase.weight)
+        label, fieldType, required, visible
+
+  builtInFields[]        ← all built-ins with effective visibility (optional)
+
+  fields[]               ← LEGACY custom-only list — do NOT use as sole form source
+  sections[]             ← tab metadata only — do NOT treat as full field tree
+
+  Render rules
+  ------------
+  [ ] On mount: always fetch form-schema for the entityType
+  [ ] Build UI from resolvedSections (skip fields with visible === false if present)
+  [ ] BUILT_IN → bind to main Vendor/Item DTO via apiKey / key
+  [ ] CUSTOM   → bind to customFields payload keyed by fieldName
+  [ ] Hidden built-in: omit from UI; do not send nulls that wipe stored values on PATCH
+  [ ] After Form Configuration or Custom Fields change: refetch form-schema before open / on focus
+
+  Submit mapping
+  --------------
+  Built-in visible fields  → core / metadata / bags on vendor|item body
+  Custom visible fields    → customFields: { [fieldName]: value }
+
+
+================================================================================
+6) REFETCH / CACHE RULES (CRITICAL)
+================================================================================
+
+  After Form Configuration PUT or DELETE:
+    1. Refetch form-configurations GET for that entity
+    2. Invalidate cached form-schema for vendor and/or item
+    3. If create/edit form is open → refetch form-schema immediately
+
+  After Custom Fields create / edit / deactivate:
+    1. Refetch custom-fields list
+    2. Invalidate / refetch form-schema for that entityType
+
+  Do not wait for hard refresh / re-login for schema changes
+  (permissions still require re-login only when roles change).
+
+
+================================================================================
+7) WHAT NOT TO DO
+================================================================================
+
+  [ ] Do not show custom fields on Form Configuration page
+  [ ] Do not show built-in registry fields as "custom fields" on Custom Fields page
+  [ ] Do not render Vendor/Item forms from fields[] alone
+  [ ] Do not invent built-in fields on FE — only registry + form-schema
+  [ ] Do not call Form Configuration API to "register" a new custom field
+  [ ] Do not strip apiKey / key / source when mapping form-schema fields
+
+
+================================================================================
+8) QA CHECKLIST
+================================================================================
+
+  Form Configuration
+  [ ] Hide website (vendor) → absent from resolvedSections → create/edit form updates
+  [ ] Protected Name/Code toggle locked; PUT hide returns 400 and UI shows error
+  [ ] Reset (DELETE) restores default visibility
+
+  Custom Fields
+  [ ] Create UDF → appears on next form-schema under correct section
+  [ ] Create UDF → does NOT appear on Form Configuration list
+  [ ] Deactivate / hide UDF → removed from form-schema resolvedSections
+
+  Item parity
+  [ ] Same patterns for entityType=item (Form Config + form-schema)
+
+  Cache
+  [ ] Change Form Config → open Vendor create without hard refresh → UI matches
+  [ ] Create Custom Field → open Vendor create without hard refresh → UDF visible
+
+
+================================================================================
+9) RELATED DOCS (DETAIL / REFERENCE)
+================================================================================
+
+  Prefer this file as the single FE work plan.
+  Detail references if needed:
+
+    docs/FE-HANDOFF-BUILT-IN-FIELD-CONFIGURATION.txt
+    docs/FE-HANDOFF-FORM-CONFIGURATION-ITEM.txt
+    docs/FE-HANDOFF-VENDOR-FORM-CONFIG-FULL-REGISTRY.txt
+    docs/FE-HANDOFF-FORM-CONFIG-BE-STATUS.txt
+    docs/VENDOR-CUSTOM-FIELDS-FRONTEND-HANDOFF.txt
+      (older — supplement with resolvedSections; do not use fields[] alone)
+
+
+================================================================================
+10) BE STATUS (FOR FE CONTEXT)
+================================================================================
+
+  Backend already implements this architecture.
+  No new FE tables or BE redesign required for this checklist.
+  Optional BE hardening (not blocking FE):
+    - Align reserved custom field names with registry fieldKeys
+    - Item display-label collision checks
+
+
+================================================================================
+END
+================================================================================

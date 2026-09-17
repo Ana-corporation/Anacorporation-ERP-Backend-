@@ -3,10 +3,8 @@ import { Logger, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
-import * as fs from 'fs';
-import * as path from 'path';
 import { AppModule } from './app.module';
-import { applyGcpSqlDatabaseUrl } from './config/gcp-sql-url';
+import { resolveDatabaseEnv, logDatabaseTarget } from './config/resolve-database-env';
 import { SimpleLogger } from './common/logger/simple.logger';
 import { requestLogger } from './common/logger/request-logger.middleware';
 import { PrismaService } from './infrastructure/prisma/prisma.service';
@@ -15,33 +13,12 @@ function isCloudRun() {
   return Boolean(process.env.K_SERVICE);
 }
 
-function loadEnvFile() {
-  const envPath = path.join(process.cwd(), '.env');
-  if (!fs.existsSync(envPath)) return;
-
-  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq <= 0) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
-    }
-  }
-  applyGcpSqlDatabaseUrl();
-}
-
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  loadEnvFile();
+
+  // Startup-only: pick DEV or PROD database before Nest / Prisma construct clients.
+  resolveDatabaseEnv();
+  logDatabaseTarget((msg) => logger.log(msg));
 
   const port = Number(process.env.PORT) || 3002;
 
