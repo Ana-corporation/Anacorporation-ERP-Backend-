@@ -3,6 +3,7 @@ import { FormConfigurationService } from './form-configuration.service';
 import { FormConfigurationRepository } from './form-configuration.repository';
 import { CustomFieldsRepository } from '../custom-fields/custom-fields.repository';
 import { CustomFieldsValidationService } from '../custom-fields/custom-fields-validation.service';
+import { TabAccessService } from '../tab-access/tab-access.service';
 
 describe('FormSchemaService', () => {
   const companyId = '15';
@@ -36,10 +37,15 @@ describe('FormSchemaService', () => {
       ]),
     } as unknown as CustomFieldsRepository;
 
+    const tabAccessService = {
+      getVisibleTabKeysForUser: jest.fn(),
+    } as unknown as TabAccessService;
+
     return new FormSchemaService(
       formConfigurationService,
       customFieldsRepository,
       new CustomFieldsValidationService(),
+      tabAccessService,
     );
   }
 

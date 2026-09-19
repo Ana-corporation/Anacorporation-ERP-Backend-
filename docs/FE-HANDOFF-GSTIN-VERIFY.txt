@@ -1,0 +1,67 @@
+================================================================================
+FE HANDOFF — GSTIN Verify (Ana Machinery only for now)
+Date:       2026-09-18
+Audience:   ERP-Frontend
+Backend:    POST /api/v1/companies/{companyId}/gstin/verify
+================================================================================
+
+SCOPE
+  Verify Indian GSTIN via gstinapi.in only (no e-way / e-invoice).
+  Enabled company codes (default): ANA_MACHINERY_P_LTD
+  companyId for Ana = 28 (confirm from login / companies API).
+
+PERMISSION
+  vendors:view
+
+API
+  POST /api/v1/companies/{companyId}/gstin/verify
+  Authorization: Bearer <token>
+  Content-Type: application/json
+
+  Body:
+  {
+    "gstin": "00AAAAA0000A1ZT",
+    "includeProfile": true
+  }
+
+  Sandbox (0 credits): 00AAAAA0000A1ZT
+
+SUCCESS (shape)
+  {
+    "gstin": "...",
+    "verified": true,
+    "creditsRemaining": 487,
+    "suggestedFields": {
+      "gstin": "...",
+      "legalName": "...",
+      "tradeName": "...",
+      "status": "...",
+      "address": "...",
+      "city": "...",
+      "pincode": "...",
+      "state": "...",
+      "taxpayerType": "..."
+    },
+    "raw": { ... full provider payload ... }
+  }
+
+FE MAPPING (Ana Vendor)
+  customFields.gstin     ← suggestedFields.gstin
+  name / foreignName     ← legalName or tradeName (product choice)
+  address / city / etc.  ← suggestedFields.* when empty
+
+ERRORS (do not retry blindly)
+  400 GSTIN_INVALID_PATTERN / GSTIN_BAD_REQUEST
+  403 GSTIN_NOT_ENABLED_FOR_COMPANY / GSTIN_FORBIDDEN
+  404 GSTIN_NOT_FOUND
+  402 GSTIN_CREDITS_EXHAUSTED
+  503 GSTIN_API_NOT_CONFIGURED / GSTIN_UNAUTHORIZED
+  502 rate limit / upstream — show "try again"
+
+BE CONFIG (ops)
+  GSTIN_API_KEY=gak_...
+  GSTIN_ENABLED_COMPANY_CODES=ANA_MACHINERY_P_LTD
+
+================================================================================
+END
+================================================================================

@@ -17,6 +17,7 @@
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
+    "types": ["node", "jest"],
     "paths": {
       "@/*": ["./src/*"]
     }
@@ -26,7 +27,6 @@
     "node_modules",
     "dist",
     "test",
-    "**/*spec.ts",
     "src/modules/crm/**",
     "src/modules/inventory/items/**",
     "src/modules/inventory/stock/**",

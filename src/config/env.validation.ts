@@ -22,6 +22,10 @@ const envSchema = z
     GCS_CREDENTIALS_JSON: z.string().optional(),
     SESSION_IDLE_FLOOR_MIN: z.coerce.number().int().positive().optional(),
     TEMP_PASSWORD_TTL_HOURS: z.coerce.number().int().optional(),
+    /** gstinapi.in — server only; never expose to FE */
+    GSTIN_API_KEY: z.string().optional(),
+    /** Comma-separated company codes; default ANA_MACHINERY_P_LTD */
+    GSTIN_ENABLED_COMPANY_CODES: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.TEMP_PASSWORD_TTL_HOURS !== undefined && data.TEMP_PASSWORD_TTL_HOURS < 1) {

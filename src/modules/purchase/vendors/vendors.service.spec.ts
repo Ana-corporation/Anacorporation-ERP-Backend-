@@ -1,3 +1,4 @@
+import { describe, it, expect, jest } from '@jest/globals';
 import { VendorsService } from './vendors.service';
 import { VendorsRepository } from './vendors.repository';
 import { CustomFieldsValuesService } from '@/modules/shared/custom-fields/custom-fields.service';
@@ -13,21 +14,24 @@ describe('VendorsService — metadata merge', () => {
     };
 
     const repository = {
-      findById: jest.fn().mockResolvedValue(existing),
-      update: jest.fn().mockResolvedValue(existing),
+      findById: jest.fn(async () => existing),
+      update: jest.fn(async () => existing),
     } as unknown as VendorsRepository;
 
     const customFieldsValuesService = {
-      mergeEntityWithCustomFields: jest.fn().mockResolvedValue(existing),
+      mergeEntityWithCustomFields: jest.fn(async () => existing),
     } as unknown as CustomFieldsValuesService;
 
     const prisma = {
-      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<void>) => fn({})),
+      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     } as unknown as PrismaService;
 
     const service = new VendorsService(
       repository,
-      { log: jest.fn(), withAudit: jest.fn(async (row) => row) } as unknown as AuditService,
+      {
+        log: jest.fn(async () => undefined),
+        withAudit: jest.fn(async (row: Record<string, unknown>) => row),
+      } as unknown as AuditService,
       prisma,
       customFieldsValuesService,
       {} as never,
@@ -56,21 +60,24 @@ describe('VendorsService — metadata merge', () => {
     };
 
     const repository = {
-      findById: jest.fn().mockResolvedValue(existing),
-      update: jest.fn().mockResolvedValue(existing),
+      findById: jest.fn(async () => existing),
+      update: jest.fn(async () => existing),
     } as unknown as VendorsRepository;
 
     const customFieldsValuesService = {
-      mergeEntityWithCustomFields: jest.fn().mockResolvedValue(existing),
+      mergeEntityWithCustomFields: jest.fn(async () => existing),
     } as unknown as CustomFieldsValuesService;
 
     const prisma = {
-      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<void>) => fn({})),
+      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     } as unknown as PrismaService;
 
     const service = new VendorsService(
       repository,
-      { log: jest.fn(), withAudit: jest.fn(async (row) => row) } as unknown as AuditService,
+      {
+        log: jest.fn(async () => undefined),
+        withAudit: jest.fn(async (row: Record<string, unknown>) => row),
+      } as unknown as AuditService,
       prisma,
       customFieldsValuesService,
       {} as never,
