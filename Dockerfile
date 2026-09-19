@@ -47,9 +47,11 @@ RUN npm install --omit=dev --ignore-scripts \
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+# Runtime DB env resolver (required by dist/config/resolve-database-env.js)
+COPY scripts/resolve-database-env.js ./scripts/resolve-database-env.js
 COPY scripts/cloud-run-entry.js ./scripts/cloud-run-entry.js
 
-RUN node -e "require('bcrypt'); const fs=require('fs'); const p=fs.existsSync('dist/main.js')?'dist/main.js':fs.existsSync('dist/src/main.js')?'dist/src/main.js':''; if(!p){console.error('Nest entry missing'); process.exit(1)} console.log('Nest entry',p)" \
+RUN node -e "require('bcrypt'); const fs=require('fs'); const p=fs.existsSync('dist/main.js')?'dist/main.js':fs.existsSync('dist/src/main.js')?'dist/src/main.js':''; if(!p){console.error('Nest entry missing'); process.exit(1)} if(!fs.existsSync('scripts/resolve-database-env.js')){console.error('resolve-database-env.js missing'); process.exit(1)} console.log('Nest entry',p)" \
   && chown -R node:node /app
 
 USER node

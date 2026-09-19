@@ -144,7 +144,5 @@ async function bootstrap() {
 bootstrap().catch((error) => {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(`Fatal bootstrap error: ${message}`);
-  if (!isCloudRun()) {
-    process.exit(1);
-  }
+  process.exit(1);
 });
