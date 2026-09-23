@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { bigintIdSchema } from '@/common/zod/common.schemas';
+import {
+  optionalNullablePhoneE164Schema,
+  optionalPhoneE164Schema,
+} from '@/common/utils/phone.util';
 
 export const InviteCompanyUserSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email(),
-  mobile: z.string().optional(),
+  mobile: optionalPhoneE164Schema,
   employeeId: z.string().max(40).optional(),
   roleId: bigintIdSchema.optional(),
   sendInviteEmail: z.boolean().optional().default(true),
@@ -17,7 +21,7 @@ export const UpdateCompanyUserProfileSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   displayName: z.string().min(1).optional(),
-  mobile: z.string().optional().nullable(),
+  mobile: optionalNullablePhoneE164Schema,
 });
 
 export const SetCompanyUserRoleSchema = z.object({

@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { bigintIdSchema, companyStatusSchema } from '@/common/zod/common.schemas';
+import {
+  optionalNullablePhoneE164Schema,
+  optionalPhoneE164Schema,
+} from '@/common/utils/phone.util';
 
 /** Tenant identifier: trim, uppercase, A-Z 0-9 _ - only. Immutable after create. */
 export const companyCodeSchema = z.preprocess(
@@ -22,7 +26,7 @@ export const CreateCompanySchema = z.object({
   legalName: z.string().max(255).optional(),
   domain: z.string().max(255).optional(),
   email: z.string().email().optional(),
-  phone: z.string().max(30).optional(),
+  phone: optionalPhoneE164Schema,
   city: z.string().max(100).optional(),
   logoUrl: z.string().max(500).optional().nullable(),
   timezone: z.string().optional(),
@@ -36,7 +40,7 @@ export const UpdateCompanySchema = z.object({
   legalName: z.string().max(255).optional().nullable(),
   domain: z.string().max(255).optional().nullable(),
   email: z.string().email().optional().nullable(),
-  phone: z.string().max(30).optional().nullable(),
+  phone: optionalNullablePhoneE164Schema,
   city: z.string().max(100).optional().nullable(),
   logoUrl: z.string().max(500).optional().nullable(),
   timezone: z.string().optional(),

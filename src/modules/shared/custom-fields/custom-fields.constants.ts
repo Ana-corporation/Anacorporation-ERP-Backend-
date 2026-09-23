@@ -93,6 +93,7 @@ export const ITEM_SECTIONS: ModuleSectionDef[] = [
   { key: 'inventory', label: 'Inventory' },
   { key: 'planning', label: 'Planning' },
   { key: 'production', label: 'Production' },
+  { key: 'properties', label: 'Properties' },
   { key: 'remarks', label: 'Remarks' },
   { key: 'custom', label: 'Custom' },
 ];
@@ -351,6 +352,57 @@ export const ITEM_RESERVED_CORE_KEYS = [
 
 export const ITEM_RESERVED_FIELD_NAMES: readonly string[] = [...ITEM_RESERVED_CORE_KEYS];
 
+/**
+ * Friendly Item standard-field labels (normalized lowercase → display label).
+ * Blocks create when displayName matches a standard Item field.
+ */
+export const ITEM_RESERVED_DISPLAY_LABELS: Readonly<Record<string, string>> = {
+  id: 'Id',
+  'item code': 'Item Code',
+  itemcode: 'Item Code',
+  description: 'Description',
+  'item type': 'Item Type',
+  itemtype: 'Item Type',
+  'item group': 'Item Group',
+  itemgroup: 'Item Group',
+  barcode: 'Barcode',
+  'unit price': 'Unit Price',
+  unitprice: 'Unit Price',
+  manufacturer: 'Manufacturer',
+  remarks: 'Remarks',
+  metadata: 'Metadata',
+  'custom fields': 'Custom Fields',
+  customfields: 'Custom Fields',
+  'created at': 'Created At',
+  createdat: 'Created At',
+  'updated at': 'Updated At',
+  updatedat: 'Updated At',
+  'company id': 'Company Id',
+  companyid: 'Company Id',
+  'item id': 'Item Id',
+  itemid: 'Item Id',
+};
+
+/** fieldName (lowercase) → friendly Item label for error messages */
+export const ITEM_RESERVED_FIELD_LABELS: Readonly<Record<string, string>> = {
+  id: 'Id',
+  itemid: 'Item Id',
+  itemcode: 'Item Code',
+  companyid: 'Company Id',
+  description: 'Description',
+  itemtype: 'Item Type',
+  itemgroup: 'Item Group',
+  barcode: 'Barcode',
+  unitprice: 'Unit Price',
+  manufacturer: 'Manufacturer',
+  remarks: 'Remarks',
+  metadata: 'Metadata',
+  customfields: 'Custom Fields',
+  isactive: 'Active',
+  createdat: 'Created At',
+  updatedat: 'Updated At',
+};
+
 export function getReservedFieldNames(entityType: CustomFieldEntityType): readonly string[] {
   if (entityType === 'vendor') return VENDOR_RESERVED_FIELD_NAMES;
   if (entityType === 'item') return ITEM_RESERVED_FIELD_NAMES;
@@ -360,6 +412,9 @@ export function getReservedFieldNames(entityType: CustomFieldEntityType): readon
 export function getReservedDisplayLabels(entityType: CustomFieldEntityType): readonly string[] {
   if (entityType === 'vendor') {
     return [...new Set(Object.values(VENDOR_RESERVED_DISPLAY_LABELS))];
+  }
+  if (entityType === 'item') {
+    return [...new Set(Object.values(ITEM_RESERVED_DISPLAY_LABELS))];
   }
   return [];
 }
@@ -381,14 +436,23 @@ export function findReservedDisplayLabel(
   entityType: CustomFieldEntityType,
   displayName: string,
 ): string | null {
-  if (entityType !== 'vendor') return null;
   const key = normalizeLabelKey(displayName);
   const compact = key.replace(/\s+/g, '');
-  return (
-    VENDOR_RESERVED_DISPLAY_LABELS[key] ??
-    VENDOR_RESERVED_DISPLAY_LABELS[compact] ??
-    null
-  );
+  if (entityType === 'vendor') {
+    return (
+      VENDOR_RESERVED_DISPLAY_LABELS[key] ??
+      VENDOR_RESERVED_DISPLAY_LABELS[compact] ??
+      null
+    );
+  }
+  if (entityType === 'item') {
+    return (
+      ITEM_RESERVED_DISPLAY_LABELS[key] ??
+      ITEM_RESERVED_DISPLAY_LABELS[compact] ??
+      null
+    );
+  }
+  return null;
 }
 
 /** Friendly label for a reserved fieldName (falls back to fieldName). */
@@ -396,9 +460,14 @@ export function getReservedFieldLabel(
   entityType: CustomFieldEntityType,
   fieldName: string,
 ): string {
-  if (entityType !== 'vendor') return fieldName;
   const lower = fieldName.toLowerCase();
-  return VENDOR_RESERVED_FIELD_LABELS[lower] ?? fieldName;
+  if (entityType === 'vendor') {
+    return VENDOR_RESERVED_FIELD_LABELS[lower] ?? fieldName;
+  }
+  if (entityType === 'item') {
+    return ITEM_RESERVED_FIELD_LABELS[lower] ?? fieldName;
+  }
+  return fieldName;
 }
 
 /**

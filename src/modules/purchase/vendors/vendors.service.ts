@@ -11,6 +11,7 @@ import {
 } from '@/common/exceptions/business.exception';
 import { serialize } from '@/common/utils/bigint.util';
 import { toPaginatedResult } from '@/common/utils/pagination.util';
+import { normalizeVendorMetadataPhones } from '@/common/utils/phone.util';
 import { CustomFieldsValuesService } from '@/modules/shared/custom-fields/custom-fields.service';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
 import { extractCfFilters, VendorListQueryDto } from './dto/vendor-list-query.dto';
@@ -372,6 +373,14 @@ export class VendorsService {
     if (attachments !== undefined) {
       merged.attachments = attachments;
     }
-    return merged;
+
+    try {
+      return normalizeVendorMetadataPhones(merged);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid phone number';
+      throw new BusinessException(message, HttpStatus.BAD_REQUEST, [
+        { field: 'metadata', message },
+      ]);
+    }
   }
 }

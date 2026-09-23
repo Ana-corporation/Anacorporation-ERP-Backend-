@@ -11,6 +11,7 @@ import {
 import { serialize } from '@/common/utils/bigint.util';
 import { toPaginatedResult } from '@/common/utils/pagination.util';
 import { DataAccessPoliciesService } from '@/modules/iam/data-access-policies/data-access-policies.service';
+import { CustomFieldsValuesService } from '@/modules/shared/custom-fields/custom-fields.service';
 import {
   ITEM_ATTACHMENT_MAX_BYTES,
   resolveItemAttachmentMime,
@@ -37,6 +38,7 @@ export class ItemsService {
     private readonly auditService: AuditService,
     private readonly dataAccessPoliciesService: DataAccessPoliciesService,
     private readonly storageService: StorageService,
+    private readonly customFieldsValuesService: CustomFieldsValuesService,
   ) {}
 
   async findAll(companyId: string, query: PaginationQueryDto, _userId?: string) {
@@ -63,11 +65,20 @@ export class ItemsService {
         );
       }
     }
-    return this.auditService.withAudit(serialize(item) as Record<string, unknown>);
+
+    const withCustomFields = await this.customFieldsValuesService.mergeEntityWithCustomFields(
+      companyId,
+      'item',
+      item.itemId.toString(),
+      serialize(item) as Record<string, unknown>,
+    );
+
+    return this.auditService.withAudit(withCustomFields as Record<string, unknown>);
   }
 
   async create(companyId: string, dto: CreateItemDto, actorId: string) {
-    await this.assertVendorInCompany(companyId, dto.preferredVendorId);
+    const { customFields, ...itemDto } = dto;
+    await this.assertVendorInCompany(companyId, itemDto.preferredVendorId);
 
     const settings = await this.repository.getOrCreateItemSettings(companyId, actorId);
     const mode = settings.itemCodeMode;
@@ -76,7 +87,7 @@ export class ItemsService {
     let itemCode: string;
 
     if (mode === 'MANUAL') {
-      const raw = dto.itemCode?.trim();
+      const raw = itemDto.itemCode?.trim();
       if (!raw) {
         throw new BusinessException(
           'itemCode is required when item code mode is MANUAL',
@@ -95,13 +106,21 @@ export class ItemsService {
 
     let item;
     try {
-      item = await this.repository.create(companyId, dto, itemCode, actorId);
+      item = await this.repository.create(companyId, itemDto as CreateItemDto, itemCode, actorId);
     } catch (error) {
       if (this.isUniqueConstraintError(error)) {
         throw new ConflictException('Item code already exists');
       }
       throw error;
     }
+
+    await this.customFieldsValuesService.persistCustomFields(
+      companyId,
+      'item',
+      item.itemId.toString(),
+      customFields,
+      'create',
+    );
 
     await this.auditService.log({
       companyId,
@@ -112,7 +131,7 @@ export class ItemsService {
       newValue: { itemCode: item.itemCode, description: item.description, itemCodeMode: mode },
     });
 
-    return this.auditService.withAudit(serialize(item) as Record<string, unknown>);
+    return this.findOne(item.itemId.toString(), companyId);
   }
 
   async getItemSettings(companyId: string, actorId?: string) {
@@ -168,9 +187,23 @@ export class ItemsService {
 
   async update(id: string, companyId: string, dto: UpdateItemDto, actorId: string) {
     await this.assertItemExists(id, companyId);
-    await this.assertVendorInCompany(companyId, dto.preferredVendorId);
+    const { customFields, ...itemDto } = dto;
+    await this.assertVendorInCompany(companyId, itemDto.preferredVendorId);
 
-    const item = await this.repository.update(id, dto, actorId);
+    const hasItemFields = Object.values(itemDto).some((value) => value !== undefined);
+    if (hasItemFields) {
+      await this.repository.update(id, itemDto as UpdateItemDto, actorId);
+    }
+
+    if (customFields !== undefined) {
+      await this.customFieldsValuesService.persistCustomFields(
+        companyId,
+        'item',
+        id,
+        customFields,
+        'update',
+      );
+    }
 
     await this.auditService.log({
       companyId,
@@ -181,7 +214,7 @@ export class ItemsService {
       newValue: dto as Record<string, unknown>,
     });
 
-    return this.auditService.withAudit(serialize(item) as Record<string, unknown>);
+    return this.findOne(id, companyId);
   }
 
   async remove(id: string, companyId: string, actorId: string) {

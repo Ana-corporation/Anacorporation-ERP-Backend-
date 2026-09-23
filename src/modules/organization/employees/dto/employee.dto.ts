@@ -5,6 +5,7 @@ import {
   optionalNullableBigintIdSchema,
   optionalPatchBigintIdSchema,
 } from '@/common/zod/common.schemas';
+import { optionalNullablePhoneE164Schema } from '@/common/utils/phone.util';
 
 const emptyToNull = (value: unknown) =>
   value === '' || value === undefined ? null : value;
@@ -17,7 +18,7 @@ export const CreateEmployeeSchema = z.object({
     z.string().trim().max(100).default(''),
   ),
   email: z.preprocess(emptyToNull, z.string().trim().email().max(255).nullable().optional()),
-  mobile: z.preprocess(emptyToNull, z.string().trim().max(30).nullable().optional()),
+  mobile: optionalNullablePhoneE164Schema,
   branchId: optionalNullableBigintIdSchema,
   departmentId: optionalNullableBigintIdSchema,
   designationId: optionalNullableBigintIdSchema,
@@ -37,7 +38,7 @@ export const UpdateEmployeeSchema = z.object({
   firstName: z.string().trim().min(1).max(100).optional(),
   lastName: z.string().trim().max(100).nullable().optional(),
   email: z.preprocess(emptyToNull, z.string().trim().email().max(255).nullable().optional()),
-  mobile: z.preprocess(emptyToNull, z.string().trim().max(30).nullable().optional()),
+  mobile: optionalNullablePhoneE164Schema,
   branchId: optionalPatchBigintIdSchema,
   departmentId: optionalPatchBigintIdSchema,
   designationId: optionalPatchBigintIdSchema,

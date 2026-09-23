@@ -1,0 +1,164 @@
+================================================================================
+FE HANDOFF — International phone validation (libphonenumber-js)
+Date:       2026-09-22
+Audience:   ERP-Frontend
+Backend:    ERP-Backend (libphonenumber-js — already live)
+================================================================================
+
+
+GOAL
+--------------------------------------------------------------------------------
+
+  Phone / mobile inputs must follow each country’s numbering rules.
+  Example: India (+91) = exactly 10 national digits.
+  Invalid: +91999455545881  (12 digits after +91) → BE returns 400.
+
+
+BACKEND STATUS (READY)
+--------------------------------------------------------------------------------
+
+  Package: libphonenumber-js
+  Rule:   validate → normalize → store / accept as E.164 only
+          e.g. +919994555458
+
+  Wired on BE:
+    - Custom field type "phone"  (covers Vendor "Mobile 1" / mobile1 UDF)
+    - Vendor.phone
+    - Vendor metadata.mobile, metadata.tel2
+    - Vendor bulk import phone
+    - Employee mobile, company/branch phone, customer phone
+    - User profile phone, company-user invite mobile, MFA SMS phone
+
+  Default when number has NO "+" prefix: country IN (India-first).
+  Numbers WITH "+" are validated for that country automatically.
+
+
+================================================================================
+1) PACKAGE (USE THE SAME AS BE)
+================================================================================
+
+  npm install libphonenumber-js
+
+  Why: same Google numbering metadata as BE — FE UX + BE gate stay aligned.
+  Do NOT invent country-length regex tables.
+
+
+================================================================================
+2) UX PATTERN (RECOMMENDED)
+================================================================================
+
+  [ ] Country selector (flag / dial code) + national number input
+  [ ] On blur / submit: parse with selected country → check isValid()
+  [ ] On submit: send E.164 string only  (phone.format('E.164'))
+  [ ] Show clear error before submit, e.g.
+        "Enter a valid 10-digit Indian mobile number"
+  [ ] Optional: format display as national (99945 55458) while editing;
+      always submit E.164
+
+  Minimal code sketch:
+
+    import { parsePhoneNumberFromString } from 'libphonenumber-js';
+    import type { CountryCode } from 'libphonenumber-js';
+
+    function toE164(nationalOrFull: string, country: CountryCode = 'IN'): string | null {
+      const raw = nationalOrFull.trim();
+      if (!raw) return null;
+      const parsed = parsePhoneNumberFromString(
+        raw,
+        raw.startsWith('+') ? undefined : country,
+      );
+      if (!parsed?.isValid()) return null;
+      return parsed.format('E.164');
+    }
+
+  Empty / clear field → omit key or send null (same as today).
+
+
+================================================================================
+3) WHERE TO APPLY (PRIORITY)
+================================================================================
+
+  HIGH (Ana Vendor form — matches screenshot "Mobile 1")
+  ----------------------------------------------------
+  - Custom Fields with fieldType === "phone"
+    (resolvedSections / form-schema source CUSTOM)
+    bind: customFields.{fieldName}   e.g. customFields.mobile1
+  - Built-in contact phones:
+      phone          (Tel 1 / Vendor.phone)
+      metadata.mobile
+      metadata.tel2
+
+  ALSO
+  ----
+  - Item/Vendor any future CF type phone
+  - Employee mobile, User profile phone, Company/Branch phone
+  - Invite user mobile
+
+
+================================================================================
+4) API CONTRACT
+================================================================================
+
+  Submit / expect E.164:
+
+    "phone": "+919994555458"
+    "customFields": { "mobile1": "+919994555458" }
+    "metadata": { "mobile": "+919994555458", "tel2": "+442071838750" }
+
+  Valid India examples:
+    +919994555458
+    9994555458          (BE treats as IN → +919994555458)
+
+  Invalid (BE 400):
+    +91999455545881     ← too many digits after +91
+    12345
+    "not-a-phone"
+
+  Error shape (typical Zod / BusinessException):
+    message ≈ "Invalid phone number for the selected country"
+    or CF:   "\"Mobile 1\" must be a valid phone number for the country"
+
+  FE: surface field-level error on the phone control; do not silent-drop.
+
+
+================================================================================
+5) FORM-SCHEMA / RENDER
+================================================================================
+
+  When form-schema field has fieldType "phone" (built-in or CUSTOM):
+  [ ] Render country + number control (not a plain free-text maxLength)
+  [ ] Validate with libphonenumber-js before POST/PATCH
+  [ ] Prefill from GET: if value is E.164, parse and show country + national
+
+
+================================================================================
+6) DO NOT
+================================================================================
+
+  [ ] Do not send raw national-only without country when user picked non-IN
+      (always prefer E.164 on the wire)
+  [ ] Do not rely on maxLength alone (50 / 30 chars is not country validation)
+  [ ] Do not strip "+" before submit
+  [ ] Do not block other countries — US/UK/etc. with +countryCode must work
+
+
+================================================================================
+7) ACCEPTANCE
+================================================================================
+
+  [ ] India: 10 digits after +91 → save OK; shows on GET as E.164
+  [ ] India: 11+ digits after +91 → FE blocks; if bypassed, BE 400
+  [ ] Switch country to US/UK → valid local length accepted as E.164
+  [ ] Vendor Mobile 1 (customFields.mobile1) uses same control
+  [ ] Clearing the field clears value (null / omit) without 400
+
+
+================================================================================
+ONE-LINE ASK
+================================================================================
+
+  Use libphonenumber-js on FE (country picker + E.164 submit); BE already
+  rejects invalid phones the same way — keep UX and API aligned.
+
+END
+================================================================================

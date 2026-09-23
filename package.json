@@ -67,6 +67,7 @@
     "csv-parse": "^7.0.2",
     "exceljs": "^4.4.0",
     "ioredis": "^5.4.2",
+    "libphonenumber-js": "^1.13.13",
     "nestjs-zod": "^5.4.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

@@ -106,6 +106,8 @@ const itemBaseShape = {
   properties: jsonBag,
   attachments: z.array(z.record(z.string(), z.unknown())).optional(),
   metadata: jsonBag,
+  /** UDF map keyed by fieldName — persisted in custom_field_values (entity=item). */
+  customFields: z.record(z.string(), z.unknown()).optional(),
 
   isActive: z.boolean().optional(),
 };

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { optionalPhoneE164Schema } from '@/common/utils/phone.util';
 import { SUPPLIER_TYPES } from '../vendor-code.util';
 
 /** Match prisma/purchase/vendors.prisma column sizes. */
@@ -24,7 +25,7 @@ export const CreateVendorSchema = z.object({
     emptyToUndefined,
     z.string().trim().email().max(255).optional(),
   ),
-  phone: optionalTrimmed(50),
+  phone: optionalPhoneE164Schema,
   address: optionalTrimmed(500),
   city: optionalTrimmed(100),
   country: optionalTrimmed(100),
@@ -44,7 +45,7 @@ export const UpdateVendorSchema = z.object({
     emptyToUndefined,
     z.string().trim().email().max(255).optional(),
   ),
-  phone: optionalTrimmed(50),
+  phone: optionalPhoneE164Schema,
   address: optionalTrimmed(500),
   city: optionalTrimmed(100),
   country: optionalTrimmed(100),
@@ -55,6 +56,5 @@ export const UpdateVendorSchema = z.object({
   attachments: z.array(z.record(z.string(), z.unknown())).optional(),
   customFields: z.record(z.string(), z.unknown()).optional(),
 });
-
 export class CreateVendorDto extends createZodDto(CreateVendorSchema) {}
 export class UpdateVendorDto extends createZodDto(UpdateVendorSchema) {}

@@ -1,6 +1,7 @@
 import { Injectable, HttpStatus } from '@nestjs/common';
 import { CustomFieldDefinition, Prisma } from '@prisma/client';
 import { BusinessException } from '@/common/exceptions/business.exception';
+import { normalizePhoneNumber } from '@/common/utils/phone.util';
 import {
   CustomFieldEntityType,
   CustomFieldOption,
@@ -271,10 +272,13 @@ export class CustomFieldsValidationService {
       }
       case 'phone': {
         const str = String(raw).trim();
-        if (str.length < 3 || str.length > 50) {
-          throw new BusinessException(`"${def.displayName}" must be a valid phone number`);
+        const normalized = normalizePhoneNumber(str);
+        if (!normalized) {
+          throw new BusinessException(
+            `"${def.displayName}" must be a valid phone number for the country`,
+          );
         }
-        return str;
+        return normalized;
       }
       case 'dropdown': {
         const str = String(raw).trim();

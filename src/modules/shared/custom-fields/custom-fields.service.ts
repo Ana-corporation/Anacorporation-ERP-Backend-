@@ -99,12 +99,12 @@ export class CustomFieldsDefinitionsService {
     const sectionKey = resolveRequiredSectionKey(entityType, dto.sectionKey);
     if (!sectionKey) {
       throw new BusinessException(
-        'sectionKey is required and must be a valid Vendor section',
+        `sectionKey is required and must be a valid ${entityType} section`,
         HttpStatus.BAD_REQUEST,
         [
           {
             field: 'sectionKey',
-            message: 'Required. Use a key from GET .../custom-fields/meta/modules/vendor/sections',
+            message: `Required. Use a key from GET .../custom-fields/meta/modules/${entityType}/sections`,
           },
         ],
       );
@@ -220,7 +220,7 @@ export class CustomFieldsDefinitionsService {
       const resolved = resolveRequiredSectionKey(entityType, dto.sectionKey);
       if (!resolved) {
         throw new BusinessException(
-          'sectionKey must be a valid Vendor section',
+          `sectionKey must be a valid ${entityType} section`,
           HttpStatus.BAD_REQUEST,
           [{ field: 'sectionKey', message: 'Invalid sectionKey' }],
         );
@@ -281,7 +281,7 @@ export class CustomFieldsDefinitionsService {
     await this.repository.softDeleteDefinition(fieldId, actorId);
     return {
       message:
-        'Custom field deactivated. Existing Vendor values are retained and will not appear on new create/edit forms.',
+        'Custom field deactivated. Existing values are retained and will not appear on new create/edit forms.',
     };
   }
 
@@ -319,10 +319,11 @@ export class CustomFieldsDefinitionsService {
   private assertNotReservedDisplayName(entityType: CustomFieldEntityType, displayName: string) {
     const label = findReservedDisplayLabel(entityType, displayName);
     if (label) {
+      const entityLabel = entityType === 'item' ? 'Item' : 'Vendor';
       throw new BusinessException(
-        `${label} is already a standard Vendor field.`,
+        `${label} is already a standard ${entityLabel} field.`,
         HttpStatus.BAD_REQUEST,
-        [{ field: 'displayName', message: `${label} is already a standard Vendor field.` }],
+        [{ field: 'displayName', message: `${label} is already a standard ${entityLabel} field.` }],
       );
     }
   }
@@ -334,13 +335,14 @@ export class CustomFieldsDefinitionsService {
   ) {
     if (!isReservedFieldName(entityType, fieldName)) return;
     const label = getReservedFieldLabel(entityType, fieldName);
+    const entityLabel = entityType === 'item' ? 'Item' : 'Vendor';
     throw new BusinessException(
-      `${label} is already a standard Vendor field.`,
+      `${label} is already a standard ${entityLabel} field.`,
       HttpStatus.BAD_REQUEST,
       [
         {
           field: 'fieldName',
-          message: `Cannot use "${fieldName}" (from "${displayName}") — reserved for standard Vendor field "${label}".`,
+          message: `Cannot use "${fieldName}" (from "${displayName}") — reserved for standard ${entityLabel} field "${label}".`,
         },
       ],
     );
