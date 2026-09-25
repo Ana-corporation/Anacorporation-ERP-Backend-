@@ -80,6 +80,7 @@ export const VENDOR_SECTIONS: ModuleSectionDef[] = [
   { key: 'paymentRun', label: 'Payment Run' },
   { key: 'accounting', label: 'Accounting' },
   { key: 'remarks', label: 'Remarks' },
+  { key: 'attachments', label: 'Attachments' },
   { key: 'custom', label: 'Custom' },
 ];
 
@@ -95,6 +96,7 @@ export const ITEM_SECTIONS: ModuleSectionDef[] = [
   { key: 'production', label: 'Production' },
   { key: 'properties', label: 'Properties' },
   { key: 'remarks', label: 'Remarks' },
+  { key: 'attachments', label: 'Attachments' },
   { key: 'custom', label: 'Custom' },
 ];
 

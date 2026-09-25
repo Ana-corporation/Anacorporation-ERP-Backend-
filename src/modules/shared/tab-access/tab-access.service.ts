@@ -9,6 +9,7 @@ import {
   getTabDefinition,
   getTabRegistry,
   isSupportedTabEntity,
+  normalizeTabKey,
   resolveEntityModuleCode,
   TabRegistryEntry,
 } from './tab-registry';
@@ -75,7 +76,8 @@ export class TabAccessService {
     dto: UpdateTabAccessDto,
   ) {
     const resolved = this.assertSupportedEntity(entityType);
-    const tab = getTabDefinition(resolved, tabKey);
+    const canonicalKey = normalizeTabKey(resolved, tabKey);
+    const tab = canonicalKey ? getTabDefinition(resolved, canonicalKey) : undefined;
     if (!tab) {
       throw new BusinessException(
         `Unknown tab key: ${tabKey}`,
@@ -97,6 +99,8 @@ export class TabAccessService {
       );
     }
 
+    // Empty roleIds → isVisible=false for every company role (hide from all).
+    // Rows are still written so form-schema does not fall back to isDefaultVisible.
     const roleVisibility = companyRoles.map((role) => ({
       roleId: role.roleId,
       isVisible: allowedIds.has(role.roleId.toString()),
@@ -116,6 +120,8 @@ export class TabAccessService {
   /**
    * Effective visible tab keys for a user in a company/entity.
    * Hidden tabs must not appear in runtime form-schema.
+   * Empty allow-list (all isVisible=false) → tab omitted for everyone.
+   * No ADMIN / tenantAdmin silent bypass — Tab Access is independent of CRUD perms.
    */
   async getVisibleTabKeysForUser(params: {
     companyId: string;
@@ -144,7 +150,7 @@ export class TabAccessService {
       if (!this.userHasRequiredPermission(user, tab)) continue;
 
       if (configuredTabs.has(tab.tabKey)) {
-        if (accessByTab.get(tab.tabKey)) visible.add(tab.tabKey);
+        if (accessByTab.get(tab.tabKey) === true) visible.add(tab.tabKey);
         continue;
       }
 
@@ -154,8 +160,7 @@ export class TabAccessService {
       }
 
       if (tab.isDefaultVisible) {
-        // No company override yet: default visible (ADMIN / unset companies)
-        // Users without a company role still get defaults (e.g. platform support).
+        // No company override yet: default visible
         visible.add(tab.tabKey);
       }
     }

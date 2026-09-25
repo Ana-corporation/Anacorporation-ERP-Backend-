@@ -1,0 +1,74 @@
+================================================================================
+BE FIX — Tab Access hide applied on Vendor/Item form-schema
+Date:       2026-09-25
+Audience:   ERP-Frontend (verify) + QA
+Backend:    ERP-Backend — FIXED
+Related:    docs/FE-HANDOFF-TAB-VISIBILITY.txt
+================================================================================
+
+
+PROBLEM (FIXED)
+--------------------------------------------------------------------------------
+
+  Admin cleared all roles for Vendor "General" Tab Access → Save OK,
+  but New/Edit Vendor still showed General.
+
+  Root cause:
+    1) form-schema filtered by tabKey===sectionKey only.
+       Built-in Contact/Address fields use sectionKey contact/address.
+       Hiding tabKey=general left contact+address in resolvedSections →
+       FE still rendered a General tab.
+    2) Attachments was not in Tab Access / section catalog.
+    3) Empty sections (e.g. attachments) were dropped from resolvedSections.
+
+
+FIX SUMMARY
+--------------------------------------------------------------------------------
+
+  [x] Canonical Vendor Tab Access keys:
+        general | payment | bank | paymentRun | accounting |
+        remarks | attachments | custom
+
+  [x] mapSectionKeyToTabKey(vendor):
+        contact → general
+        address → general
+        (other sectionKeys map 1:1)
+
+  [x] form-schema filters sections/fields by mapped tabKey allow-list
+      for the current user's primary company role
+
+  [x] Empty roleIds on PUT → isVisible=false for ALL company roles
+      (hide from everyone; does not fall back to default-visible)
+
+  [x] Alias normalize on PUT:
+        paymentTerms / payment_terms → payment
+        payment_run / PaymentRun → paymentRun
+        General → general
+
+  [x] resolvedSections includes visible sections even when fields=[]
+      (Attachments marker)
+
+  [x] No ADMIN silent bypass of Tab Access (CRUD perms ≠ tab visibility)
+
+
+RUNTIME CONTRACT (UNCHANGED PATH)
+--------------------------------------------------------------------------------
+
+  GET /api/v1/companies/{companyId}/entities/vendor/form-schema
+  Authorization: Bearer <user>
+
+  → data.resolvedSections[] / data.sections[] omit tabs the role cannot see
+  → FE builds tab strip ONLY from these keys
+
+
+QA
+--------------------------------------------------------------------------------
+
+  1. PUT .../vendor/tabs/general/access  { "roleIds": [] }
+  2. Login as any company role
+  3. GET form-schema → no general, contact, or address sections
+  4. PUT general with roleIds including that role → sections return
+
+
+END
+================================================================================

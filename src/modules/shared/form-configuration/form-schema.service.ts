@@ -10,6 +10,7 @@ import {
 import { CustomFieldsRepository } from '../custom-fields/custom-fields.repository';
 import { CustomFieldsValidationService } from '../custom-fields/custom-fields-validation.service';
 import { TabAccessService } from '../tab-access/tab-access.service';
+import { mapSectionKeyToTabKey } from '../tab-access/tab-registry';
 import { getBuiltInFields } from './built-in-field-registry';
 import { FormConfigurationService } from './form-configuration.service';
 import { resolveVendorSectionDefsForCompany } from './ana-vendor-section-labels';
@@ -65,12 +66,17 @@ export class FormSchemaService {
           entityType,
           user,
         })
-      : new Set(sectionDefs.map((s) => s.key));
+      : new Set(
+          sectionDefs.map((s) => mapSectionKeyToTabKey(entityType, s.key)),
+        );
 
-    const visibleSectionDefs = sectionDefs.filter((s) => visibleTabKeys.has(s.key));
-    const visibleBuiltInFields = builtInFields.filter((f) => visibleTabKeys.has(f.sectionKey));
+    const isSectionVisible = (sectionKey: string) =>
+      visibleTabKeys.has(mapSectionKeyToTabKey(entityType, sectionKey));
+
+    const visibleSectionDefs = sectionDefs.filter((s) => isSectionVisible(s.key));
+    const visibleBuiltInFields = builtInFields.filter((f) => isSectionVisible(f.sectionKey));
     const visibleCustomFields = customFields.filter((f) =>
-      visibleTabKeys.has(f.sectionKey ?? 'custom'),
+      isSectionVisible(f.sectionKey ?? 'custom'),
     );
 
     const resolvedSections = this.buildResolvedSections(
@@ -144,10 +150,9 @@ export class FormSchemaService {
       fieldsBySection.set(sectionKey, list);
     }
 
-    const knownSections = sectionOrder.filter((key) => fieldsBySection.has(key));
-    const extraSections = [...fieldsBySection.keys()].filter((key) => !sectionOrder.includes(key));
-
-    return [...knownSections, ...extraSections].map((sectionKey) => ({
+    // Include every visible section (even empty) so FE can render Attachments / markers.
+    // Do not leak sections that Tab Access hid.
+    return sectionOrder.map((sectionKey) => ({
       sectionKey,
       label: sectionDefs.find((s) => s.key === sectionKey)?.label ?? sectionKey,
       fields: fieldsBySection.get(sectionKey) ?? [],
