@@ -63,6 +63,7 @@ model Company {
   fieldConfigurations    CompanyFieldConfiguration[]
   tabAccess              CompanyTabAccess[]
   importSessions         ImportSession[]
+  vendorFormInvitations  VendorFormInvitation[]
 
   @@map("companies")
 }

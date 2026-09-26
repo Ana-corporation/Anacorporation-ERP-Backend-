@@ -6,6 +6,7 @@ import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { AuditModule } from './infrastructure/audit/audit.module';
 import { StorageModule } from './infrastructure/storage/storage.module';
+import { MailModule } from './infrastructure/mail/mail.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -30,6 +31,7 @@ import { JobsModule } from './jobs/jobs.module';
     RedisModule,
     AuditModule,
     StorageModule,
+    MailModule,
     // QueueModule (BullMQ) deferred until cloud — needs Redis and is unused locally.
     HealthModule,
     JobsModule,

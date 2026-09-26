@@ -65,12 +65,15 @@ CREATE INDEX IF NOT EXISTS "data_access_policy_warehouses_policy_id_idx"
 CREATE INDEX IF NOT EXISTS "data_access_policy_warehouses_warehouse_id_idx"
   ON "data_access_policy_warehouses" ("warehouse_id");
 
--- 3) Migrate legacy polymorphic scopes (if table still exists)
+-- 3) Migrate legacy polymorphic scopes (if table still exists).
+-- Match the active search_path (Erp_test_db), not only public — otherwise
+-- the table is left behind and DROP TYPE data_scope_type fails on the shadow DB.
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'data_access_policy_scopes'
+    WHERE table_schema = ANY (current_schemas(false))
+      AND table_name = 'data_access_policy_scopes'
   ) THEN
     INSERT INTO "data_access_policy_branches" ("policy_id", "branch_id", "created_at")
     SELECT s."policy_id", s."scope_id", s."created_at"

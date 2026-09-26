@@ -20,4 +20,6 @@ export const appConfig = () => ({
   port: parseInt(process.env.PORT || '3002', 10),
   apiPrefix: process.env.API_PREFIX || 'api/v1',
   corsOrigin: parseCorsOrigin(),
+  frontendOrigin: (process.env.FRONTEND_ORIGIN || 'http://localhost:3001').replace(/\/$/, ''),
+  schedulerSecret: process.env.SCHEDULER_SECRET,
 });

@@ -26,6 +26,12 @@ const envSchema = z
     GSTIN_API_KEY: z.string().optional(),
     /** Comma-separated company codes; default ANA_MACHINERY_P_LTD */
     GSTIN_ENABLED_COMPANY_CODES: z.string().optional(),
+    MAIL_HOST: z.string().optional(),
+    MAIL_PORT: z.coerce.number().int().optional(),
+    MAIL_USER: z.string().optional(),
+    MAIL_PASSWORD: z.string().optional(),
+    MAIL_FROM: z.string().optional(),
+    SCHEDULER_SECRET: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.TEMP_PASSWORD_TTL_HOURS !== undefined && data.TEMP_PASSWORD_TTL_HOURS < 1) {

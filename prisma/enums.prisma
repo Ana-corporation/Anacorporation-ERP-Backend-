@@ -294,3 +294,13 @@ enum ItemCodeMode {
 
   @@map("item_code_mode")
 }
+
+enum VendorFormInvitationStatus {
+  PENDING
+  SENT
+  SUBMITTED
+  EXPIRED
+  CANCELLED
+
+  @@map("vendor_form_invitation_status")
+}
