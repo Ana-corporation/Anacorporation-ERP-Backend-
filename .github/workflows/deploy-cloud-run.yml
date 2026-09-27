@@ -85,6 +85,12 @@ jobs:
           GCS_PROJECT_ID: ${{ secrets.GCS_PROJECT_ID }}
           GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
           GCS_CREDENTIALS_JSON: ${{ secrets.GCS_CREDENTIALS_JSON }}
+          MAIL_HOST: ${{ secrets.MAIL_HOST }}
+          MAIL_PORT: ${{ secrets.MAIL_PORT }}
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
         run: |
           python3 - <<'PY'
           import json
@@ -161,7 +167,16 @@ jobs:
           ]
           if gcs_project:
               lines.append(pair("GCS_PROJECT_ID", gcs_project))
-          for key in ("GCP_SQL_USER", "GCP_SQL_PASSWORD"):
+          for key in (
+              "GCP_SQL_USER",
+              "GCP_SQL_PASSWORD",
+              "MAIL_HOST",
+              "MAIL_PORT",
+              "MAIL_USER",
+              "MAIL_PASSWORD",
+              "MAIL_FROM",
+              "SCHEDULER_SECRET",
+          ):
               value = os.environ.get(key, "")
               if value:
                   lines.append(pair(key, value))
