@@ -1,12 +1,16 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import {
+  optionalNullablePhoneE164Schema,
+  optionalPhoneE164Schema,
+} from '@/common/utils/phone.util';
 
 export const mfaTypeSchema = z.enum(['totp', 'sms', 'email', 'webauthn']);
 
 export const CreateUserMfaSchema = z.object({
   mfaType: mfaTypeSchema,
   secret: z.string().max(255).optional(),
-  phone: z.string().max(30).optional(),
+  phone: optionalPhoneE164Schema,
   email: z.string().email().max(255).optional(),
   isPrimary: z.boolean().optional().default(false),
   isEnabled: z.boolean().optional().default(true),
@@ -16,7 +20,7 @@ export const CreateUserMfaSchema = z.object({
 
 export const UpdateUserMfaSchema = z.object({
   secret: z.string().max(255).optional().nullable(),
-  phone: z.string().max(30).optional().nullable(),
+  phone: optionalNullablePhoneE164Schema,
   email: z.string().email().max(255).optional().nullable(),
   isPrimary: z.boolean().optional(),
   isEnabled: z.boolean().optional(),

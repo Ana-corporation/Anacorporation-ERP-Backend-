@@ -1,0 +1,260 @@
+================================================================================
+FE HANDOFF — Custom Fields: unlock Item module (Settings)
+Date:       2026-09-21
+Audience:   ERP-Frontend
+Backend:    ERP-Backend — Item CF ready (same model as Vendor)
+Related:    docs/FE-HANDOFF-FORM-CONFIG-CUSTOM-FIELDS-ONE-CHECKLIST.txt
+            docs/VENDOR-CUSTOM-FIELDS-FRONTEND-HANDOFF.txt
+            docs/CUSTOM-FIELDS-FINAL-CONCLUSIONS-HANDOFF.txt (Vendor locked)
+================================================================================
+
+
+GOAL
+--------------------------------------------------------------------------------
+
+  Settings → Custom Fields must support Module = Vendor | Item.
+
+  Item create / edit / view already prefers form-schema.resolvedSections +
+  customFields bind — confirm that path; primary FE work is admin UI.
+
+
+BACKEND STATUS (READY — DO NOT REDESIGN)
+--------------------------------------------------------------------------------
+
+  [x] GET  /api/v1/custom-fields/meta/modules
+        → vendor + item
+  [x] GET  /api/v1/custom-fields/meta/modules/item/sections
+        → sections[] + reservedFieldNames + reservedDisplayNames
+  [x] CRUD /api/v1/companies/{companyId}/custom-fields
+        → entityType=item accepted (whitelist: vendor | item)
+  [x] GET  /api/v1/companies/{companyId}/entities/item/form-schema
+        → ACTIVE Item UDFs in fields[] + resolvedSections (source: "CUSTOM")
+  [x] POST/PATCH/GET Item accept/return customFields: { [fieldName]: value }
+        → persisted in custom_field_values (entity = item)
+
+
+ARCHITECTURE (KEEP)
+--------------------------------------------------------------------------------
+
+  Layer 2  Form Configuration  = built-in visibility ONLY
+  Layer 3  Custom Fields       = UDFs ONLY (this screen)
+  Layer 4  form-schema         = runtime merge (PRIMARY for Item/Vendor forms)
+
+  Never call Form Configuration APIs when creating/editing a custom field.
+  Never expect a new UDF to appear on Form Configuration.
+
+
+================================================================================
+1) SETTINGS → CUSTOM FIELDS (MAIN CHANGE)
+================================================================================
+
+  Today: module hardcoded to "vendor".
+  Change: Module dropdown driven by meta.
+
+  On page load
+  ------------
+  GET /api/v1/custom-fields/meta/modules
+  Permission: custom_fields:view
+
+  Response (data shape):
+  {
+    "items": [
+      { "entityType": "vendor", "label": "Vendor", "productModule": "supply-chain" },
+      { "entityType": "item",   "label": "Item",   "productModule": "supply-chain" }
+    ]
+  }
+
+  UI:
+  [ ] Module select: options from items[].entityType / label
+  [ ] Default selection: vendor (backward compatible) OR last-used
+  [ ] On module change → reload sections meta + field list for that entityType
+
+
+  Sections + reserved names (create/edit form)
+  --------------------------------------------
+  GET /api/v1/custom-fields/meta/modules/{entityType}/sections
+  Permission: custom_fields:view
+
+  Example — Item:
+  GET /api/v1/custom-fields/meta/modules/item/sections
+
+  Response:
+  {
+    "entityType": "item",
+    "sections": [
+      { "key": "header",         "label": "Header" },
+      { "key": "general",        "label": "General" },
+      { "key": "classification", "label": "Classification" },
+      { "key": "purchasing",     "label": "Purchasing" },
+      { "key": "sales",          "label": "Sales" },
+      { "key": "inventory",      "label": "Inventory" },
+      { "key": "planning",       "label": "Planning" },
+      { "key": "production",     "label": "Production" },
+      { "key": "properties",     "label": "Properties" },
+      { "key": "remarks",        "label": "Remarks" },
+      { "key": "custom",         "label": "Custom" }
+    ],
+    "reservedFieldNames": [ "itemCode", "description", ... ],
+    "reservedDisplayNames": [ "Item Code", "Description", ... ]
+  }
+
+  NOTE: BE returns section objects as { key, label }.
+        Map to sectionKey in create body (see below).
+        Prefer existing tabs; sectionKey=custom is fallback only.
+
+  UI:
+  [ ] Section dropdown = sections from THIS entityType (not Vendor catalog)
+  [ ] Client-side warn if displayName matches reservedDisplayNames
+  [ ] Client-side warn if fieldName matches reservedFieldNames
+  [ ] Still rely on BE 400 for final enforcement
+
+
+  List definitions
+  ----------------
+  GET /api/v1/companies/{companyId}/custom-fields?entityType=item
+  GET /api/v1/companies/{companyId}/custom-fields?entityType=item&groupedBySection=true
+  Optional: &includeInactive=true
+
+  Permission: custom_fields:view
+
+  [ ] Always pass entityType from Module select
+  [ ] Do not mix Vendor + Item rows in one list
+
+
+  Create
+  ------
+  POST /api/v1/companies/{companyId}/custom-fields
+  Permission: custom_fields:create
+
+  Body example:
+  {
+    "entityType": "item",
+    "sectionKey": "general",
+    "displayName": "Preferred Finish",
+    "fieldType": "text",
+    "isRequired": false,
+    "sortOrder": 40,
+    "isFilterable": false,
+    "helpText": "optional",
+    "validation": null,
+    "options": null
+  }
+
+  Notes:
+  - fieldName optional — BE auto-slugs from displayName
+  - sectionKey REQUIRED — must be in Item sections catalog → else 400
+  - reserved Item displayName / fieldName → 400
+  - Supported fieldType (v1): text, textarea, number, decimal, date,
+    email, phone, dropdown, checkbox
+
+
+  Update / soft-delete
+  --------------------
+  PATCH  /api/v1/companies/{companyId}/custom-fields/{fieldId}
+  DELETE /api/v1/companies/{companyId}/custom-fields/{fieldId}
+
+  Permission: custom_fields:edit | custom_fields:delete
+
+  Soft-delete = deactivate. Historical values retained; field drops from
+  form-schema for new create/edit.
+
+
+  After any create / edit / delete
+  --------------------------------
+  [ ] Invalidate / refetch Item form-schema cache
+       GET .../entities/item/form-schema
+  [ ] If Vendor module was also open in another tab, same for vendor
+
+
+================================================================================
+2) ITEM CREATE · EDIT · VIEW (CONFIRM — LIKELY ALREADY DONE)
+================================================================================
+
+  Runtime schema (PRIMARY)
+  ------------------------
+  GET /api/v1/companies/{companyId}/entities/item/form-schema
+  Permission: supply-chain:view
+  (custom_fields:view NOT required for end users)
+
+  Prefer:
+    data.resolvedSections[]   ← PRIMARY render tree
+      fields[] with source: "BUILT_IN" | "CUSTOM"
+
+  Bind rules:
+  [ ] source BUILT_IN → Item DTO / bag via apiKey (or key)
+  [ ] source CUSTOM   → customFields[fieldName]
+  [ ] On Create: apply defaultValue for CUSTOM when present
+  [ ] On Edit/View: prefill from GET item.customFields[fieldName]
+
+
+  Item CRUD with values
+  ---------------------
+  POST   /api/v1/companies/{companyId}/items
+  PATCH  /api/v1/companies/{companyId}/items/{itemId}
+  GET    /api/v1/companies/{companyId}/items/{itemId}
+
+  Body fragment:
+  {
+    "description": "Widget",
+    "customFields": {
+      "preferredFinish": "Matte Black"
+    }
+  }
+
+  GET returns customFields map (same keys).
+
+  Permissions:
+    supply-chain:view | create | edit
+    (same as Item module today)
+
+
+================================================================================
+3) PERMISSIONS (UNCHANGED)
+================================================================================
+
+  Custom Fields admin page     custom_fields:view|create|edit|delete
+  Item / Vendor forms          supply-chain:view (+ create/edit for save)
+  form-schema                  supply-chain:view
+
+  ADMIN001 / PLATFORM_OWNER typically have custom_fields:* after seed.
+  Re-login if JWT was issued before permission seed.
+
+
+================================================================================
+4) DO NOT
+================================================================================
+
+  [ ] Do not hardcode entityType="vendor" on Custom Fields page
+  [ ] Do not use Vendor section catalog when Module = Item
+  [ ] Do not put Custom Fields CRUD into Form Configuration screen
+  [ ] Do not invent Customer / Employee modules yet (BE whitelist rejects)
+  [ ] Do not require custom_fields:view on Item form load
+
+
+================================================================================
+5) ACCEPTANCE CHECKLIST (FE)
+================================================================================
+
+  [ ] Module dropdown shows Vendor | Item from meta/modules
+  [ ] Selecting Item loads Item sections + Item field list
+  [ ] Create Item UDF sectionKey=general → appears in admin list
+  [ ] Item create/edit form shows new field under correct tab
+       (from form-schema.resolvedSections, source CUSTOM)
+  [ ] Save Item with customFields.{fieldName} → GET returns value
+  [ ] Create with sectionKey=notARealSection → show BE 400
+  [ ] Create with reserved displayName (e.g. "Item Code") → show BE 400
+  [ ] Soft-delete Item UDF → disappears from Item form-schema
+  [ ] Form Configuration page still shows built-ins only (no UDF rows)
+
+
+================================================================================
+ONE-LINE ASK
+================================================================================
+
+  Unlock Settings → Custom Fields for Item: Module select from meta/modules,
+  sections from meta/modules/{entityType}/sections, CRUD with entityType=item,
+  invalidate item form-schema on change — Item form bind already prefers
+  resolvedSections + customFields.
+
+END
+================================================================================

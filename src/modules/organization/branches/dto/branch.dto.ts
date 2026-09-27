@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { optionalOrgCodeSchema } from '@/common/zod/org-code.schema';
+import {
+  optionalNullablePhoneE164Schema,
+  optionalPhoneE164Schema,
+} from '@/common/utils/phone.util';
 
 export const CreateBranchSchema = z.object({
   branchCode: optionalOrgCodeSchema,
@@ -8,7 +12,7 @@ export const CreateBranchSchema = z.object({
   address: z.string().max(255).optional(),
   city: z.string().max(100).optional(),
   country: z.string().max(100).optional(),
-  phone: z.string().max(30).optional(),
+  phone: optionalPhoneE164Schema,
   isActive: z.boolean().optional().default(true),
 });
 
@@ -17,7 +21,7 @@ export const UpdateBranchSchema = z.object({
   address: z.string().max(255).optional().nullable(),
   city: z.string().max(100).optional().nullable(),
   country: z.string().max(100).optional().nullable(),
-  phone: z.string().max(30).optional().nullable(),
+  phone: optionalNullablePhoneE164Schema,
   isActive: z.boolean().optional(),
 });
 

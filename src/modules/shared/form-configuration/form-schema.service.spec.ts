@@ -8,7 +8,10 @@ import { TabAccessService } from '../tab-access/tab-access.service';
 describe('FormSchemaService', () => {
   const companyId = '15';
 
-  function makeService(overrideRows: Array<{ fieldKey: string; isVisible: boolean }> = []) {
+  function makeService(
+    overrideRows: Array<{ fieldKey: string; isVisible: boolean }> = [],
+    visibleTabKeys?: Set<string>,
+  ) {
     const formConfigurationRepository = {
       findOverrides: jest.fn().mockResolvedValue(overrideRows),
     } as unknown as FormConfigurationRepository;
@@ -38,7 +41,27 @@ describe('FormSchemaService', () => {
     } as unknown as CustomFieldsRepository;
 
     const tabAccessService = {
-      getVisibleTabKeysForUser: jest.fn(),
+      getVisibleTabKeysForUser: jest.fn().mockResolvedValue(
+        visibleTabKeys ??
+          new Set([
+            'general',
+            'payment',
+            'bank',
+            'paymentRun',
+            'accounting',
+            'remarks',
+            'attachments',
+            'custom',
+            'header',
+            'classification',
+            'purchasing',
+            'sales',
+            'inventory',
+            'planning',
+            'production',
+            'properties',
+          ]),
+      ),
     } as unknown as TabAccessService;
 
     return new FormSchemaService(
@@ -90,28 +113,33 @@ describe('FormSchemaService', () => {
     expect(website?.apiKey).toBe('metadata.website');
   });
 
-  it('resolves item form-schema with bag apiKeys and hides overridden fields', async () => {
-    const service = makeService([
-      { fieldKey: 'barcode', isVisible: false },
-      { fieldKey: 'purchase.weight', isVisible: false },
-    ]);
-    const schema = (await service.resolveFormSchema(companyId, 'item')) as {
-      entityType: string;
-      builtInFields: Array<{ key: string; apiKey?: string; visible: boolean }>;
-      resolvedSections: Array<{ sectionKey: string; fields: Array<{ key: string }> }>;
-    };
-
-    expect(schema.entityType).toBe('item');
-    expect(schema.builtInFields.find((f) => f.key === 'barcode')?.visible).toBe(false);
-    expect(schema.builtInFields.find((f) => f.key === 'purchase.weight')?.apiKey).toBe(
-      'purchase.weight',
+  it('omits general/contact/address from form-schema when general tab hidden for user', async () => {
+    const service = makeService(
+      [],
+      new Set(['payment', 'paymentRun', 'accounting', 'remarks', 'attachments', 'custom', 'bank']),
     );
 
-    const allKeys = schema.resolvedSections.flatMap((s) => s.fields.map((f) => f.key));
-    expect(allKeys).not.toContain('barcode');
-    expect(allKeys).not.toContain('purchase.weight');
-    expect(allKeys).toContain('itemCode');
-    expect(allKeys).toContain('sales.weight');
-    expect(schema.resolvedSections.some((s) => s.sectionKey === 'purchasing')).toBe(true);
+    const user = {
+      sub: '1',
+      email: 'a@b.com',
+      sessionId: 's',
+      permissions: [],
+      modules: [],
+      subscriptionStatus: 'active',
+      firstName: 'A',
+      lastName: 'B',
+    };
+
+    const schema = (await service.resolveFormSchema(companyId, 'vendor', user as never)) as {
+      resolvedSections: Array<{ sectionKey: string }>;
+      sections: Array<{ key: string }>;
+    };
+
+    const sectionKeys = schema.resolvedSections.map((s) => s.sectionKey);
+    expect(sectionKeys).not.toContain('general');
+    expect(sectionKeys).not.toContain('contact');
+    expect(sectionKeys).not.toContain('address');
+    expect(sectionKeys).toContain('payment');
+    expect(schema.sections.some((s) => s.key === 'general')).toBe(false);
   });
 });

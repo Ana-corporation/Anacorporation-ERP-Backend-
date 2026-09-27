@@ -3,6 +3,7 @@ import { ImportType, UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
 import { BusinessException } from '@/common/exceptions/business.exception';
 import { serialize } from '@/common/utils/bigint.util';
+import { normalizePhoneNumber } from '@/common/utils/phone.util';
 import {
   IMPORT_CONFIRM_CHUNK_SIZE,
   IMPORT_ERROR_CODES,
@@ -309,6 +310,20 @@ export class VendorImportService {
         code: IMPORT_ERROR_CODES.INVALID_TEMPLATE,
         message: 'Invalid email format',
       });
+    }
+
+    const phoneRaw = data.phone ? String(data.phone).trim() : '';
+    if (phoneRaw) {
+      const normalized = normalizePhoneNumber(phoneRaw);
+      if (!normalized) {
+        errors.push({
+          field: 'phone',
+          code: IMPORT_ERROR_CODES.INVALID_TEMPLATE,
+          message: 'Invalid phone number for the country',
+        });
+      } else {
+        data.phone = normalized;
+      }
     }
 
     return errors;

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { BusinessException } from '@/common/exceptions/business.exception';
+import { optionalNullablePhoneE164Schema } from '@/common/utils/phone.util';
 import { HttpStatus } from '@nestjs/common';
 
 export const SELF_PROFILE_FORBIDDEN_KEYS = [
@@ -17,13 +18,10 @@ export const SELF_PROFILE_FORBIDDEN_KEYS = [
   'password',
 ] as const;
 
-const emptyToNull = (value: unknown) =>
-  value === '' || value === undefined ? undefined : value === null ? null : value;
-
 export const PatchSelfProfileSchema = z
   .object({
     displayName: z.string().trim().min(1).max(200).optional(),
-    phone: z.preprocess(emptyToNull, z.string().trim().max(30).nullable().optional()),
+    phone: optionalNullablePhoneE164Schema,
   })
   .strict()
   .superRefine((value, ctx) => {
