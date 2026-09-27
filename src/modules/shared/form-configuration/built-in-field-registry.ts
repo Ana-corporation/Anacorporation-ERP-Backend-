@@ -97,9 +97,9 @@ export const VENDOR_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
   // —— Contact ——
   // FE PhoneInput: country code is UI-only, not a registry field.
   core('email', 'E-Mail', 'contact', 'email', 'email', 110),
-  core('phone', 'Tel 1', 'contact', 'phone', 'text', 120),
-  meta('tel2', 'Tel 2', 'contact', 'tel2', 'text', 130),
-  meta('mobile', 'Mobile phone', 'contact', 'mobile', 'text', 140),
+  core('phone', 'Tel 1', 'contact', 'phone', 'number', 120),
+  meta('tel2', 'Tel 2', 'contact', 'tel2', 'number', 130),
+  meta('mobile', 'Mobile phone', 'contact', 'mobile', 'number', 140),
   meta('fax', 'Fax', 'contact', 'fax', 'text', 150),
   meta('website', 'Web site', 'contact', 'website', 'text', 160),
   meta('shippingType', 'Shipping type', 'contact', 'shippingType', 'select', 170),
@@ -112,7 +112,7 @@ export const VENDOR_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
 
   // —— Payment Terms ——
   meta('paymentTerms', 'Payment terms', 'payment', 'paymentTerms', 'select', 310),
-  meta('paymentMethod', 'Payment Method', 'payment', 'paymentMethod', 'select', 320),
+  meta('paymentMethod', 'Payment Method', 'payment', 'paymentMethod', 'text', 320),
   meta('interestArrears', 'Interest on arrears %', 'payment', 'interestArrears', 'number', 330),
   meta('priceList', 'Price list', 'payment', 'priceList', 'text', 340),
   meta('totalDiscount', 'Total discount %', 'payment', 'totalDiscount', 'number', 350, {
@@ -121,7 +121,7 @@ export const VENDOR_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
   meta('creditLimit', 'Credit limit', 'payment', 'creditLimit', 'number', 360),
   meta('commitmentLimit', 'Commitment limit', 'payment', 'commitmentLimit', 'number', 370),
   meta('effectiveDiscount', 'Effective discount', 'payment', 'effectiveDiscount', 'number', 380),
-  meta('dunningTerm', 'Dunning term', 'payment', 'dunningTerm', 'select', 390),
+  meta('dunningTerm', 'Dunning term', 'payment', 'dunningTerm', 'text', 390),
 
   // —— Business Partner Bank ——
   meta('bankCountry', 'Bank country', 'bank', 'bankCountry', 'text', 410),
@@ -146,7 +146,7 @@ export const VENDOR_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
   meta('referenceDetails', 'Reference details', 'paymentRun', 'referenceDetails', 'text', 570),
   meta('paymentBlock', 'Payment block', 'paymentRun', 'paymentBlock', 'checkbox', 580),
   meta('singlePayment', 'Single payment', 'paymentRun', 'singlePayment', 'checkbox', 590),
-  meta('taxGroup', 'Tax Group', 'paymentRun', 'taxGroup', 'select', 595),
+  meta('taxGroup', 'Tax Group', 'paymentRun', 'taxGroup', 'text', 595),
   meta('withholdingTax', 'Withholding Tax', 'paymentRun', 'withholdingTax', 'text', 596),
 
   // —— Accounting ——

@@ -35,6 +35,9 @@ describe('VendorsService — metadata merge', () => {
       prisma,
       customFieldsValuesService,
       {} as never,
+      {
+        findLatestNonCancelledByVendorIds: jest.fn(async () => new Map()),
+      } as never,
     );
 
     await service.update('1', '15', { metadata: { paymentTerms: 'Net60' } }, '99');
@@ -81,6 +84,9 @@ describe('VendorsService — metadata merge', () => {
       prisma,
       customFieldsValuesService,
       {} as never,
+      {
+        findLatestNonCancelledByVendorIds: jest.fn(async () => new Map()),
+      } as never,
     );
 
     await service.update('1', '15', { metadata: { paymentTerms: 'Net60' } }, '99');

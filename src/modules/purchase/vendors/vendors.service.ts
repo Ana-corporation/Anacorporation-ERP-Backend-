@@ -20,6 +20,7 @@ import {
   withVendorAttachmentAliases,
 } from './vendor-attachments.constants';
 import { SUPPLIER_TYPE_PREFIX } from './vendor-code.util';
+import { VendorFormInvitationRepository } from './vendor-form/vendor-form-invitation.repository';
 import { VendorsRepository } from './vendors.repository';
 
 type UploadedMulterFile = {
@@ -38,6 +39,7 @@ export class VendorsService {
     private readonly prisma: PrismaService,
     private readonly customFieldsValuesService: CustomFieldsValuesService,
     private readonly storageService: StorageService,
+    private readonly formInvitations: VendorFormInvitationRepository,
   ) {}
 
   async findAll(companyId: string, query: VendorListQueryDto & Record<string, unknown>) {
@@ -61,7 +63,10 @@ export class VendorsService {
       );
       return {
         ...pageResult,
-        items: withAudit.map((row) => withVendorAttachmentAliases(row)),
+        items: await this.attachFormInvitations(
+          companyId,
+          withAudit.map((row) => withVendorAttachmentAliases(row)),
+        ),
       };
     }
 
@@ -78,7 +83,10 @@ export class VendorsService {
 
     const withAudit = await this.auditService.withAuditList(withCf as Record<string, unknown>[]);
     return toPaginatedResult(
-      withAudit.map((row) => withVendorAttachmentAliases(row)),
+      await this.attachFormInvitations(
+        companyId,
+        withAudit.map((row) => withVendorAttachmentAliases(row)),
+      ),
       total,
       page,
       limit,
@@ -96,9 +104,11 @@ export class VendorsService {
       serialize(vendor) as Record<string, unknown>,
     );
 
-    return this.auditService.withAudit(
+    const withAudit = await this.auditService.withAudit(
       withVendorAttachmentAliases(withCustomFields as Record<string, unknown>),
     );
+    const [withInvitation] = await this.attachFormInvitations(companyId, [withAudit]);
+    return withInvitation;
   }
 
   async create(companyId: string, dto: CreateVendorDto, actorId: string) {
@@ -343,6 +353,36 @@ export class VendorsService {
     }
 
     return { url };
+  }
+
+  private async attachFormInvitations<T extends Record<string, unknown>>(
+    companyId: string,
+    rows: T[],
+  ) {
+    const vendorIds = rows
+      .map((row) => row.vendorId)
+      .filter((id) => id !== null && id !== undefined)
+      .map((id) => (typeof id === 'bigint' ? id : BigInt(String(id))));
+
+    const latest = await this.formInvitations.findLatestNonCancelledByVendorIds(
+      companyId,
+      vendorIds,
+    );
+
+    return rows.map((row) => {
+      const invitation = latest.get(String(row.vendorId)) ?? null;
+      return {
+        ...row,
+        formInvitation: invitation
+          ? {
+              status: invitation.status,
+              sendCount: invitation.sendCount,
+              maxSendCount: invitation.maxSendCount,
+              submittedAt: invitation.submittedAt,
+            }
+          : null,
+      };
+    });
   }
 
   private async assertVendorExists(id: string, companyId: string) {
