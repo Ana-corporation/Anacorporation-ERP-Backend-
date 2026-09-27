@@ -4,14 +4,27 @@ const LIVE_FRONTEND_ORIGINS = [
   'https://www.swenter.com',
 ];
 
+function splitOrigins(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+}
+
 function parseCorsOrigin(): string[] {
   const raw = process.env.FRONTEND_ORIGIN || process.env.CORS_ORIGIN || '';
   const origins = [
-    ...raw.split(',').map((origin) => origin.trim().replace(/\/$/, '')),
+    ...splitOrigins(raw),
     'http://localhost:3001',
     ...LIVE_FRONTEND_ORIGINS,
   ].filter(Boolean);
   return [...new Set(origins)];
+}
+
+/** One site for emailed links. A comma-separated CORS list must not be used as the URL. */
+function resolveFrontendOrigin(): string {
+  const origins = splitOrigins(process.env.FRONTEND_ORIGIN || 'http://localhost:3001');
+  return origins.find((origin) => origin === 'https://swenter.com') || origins[0] || 'http://localhost:3001';
 }
 
 export const appConfig = () => ({
@@ -20,6 +33,6 @@ export const appConfig = () => ({
   port: parseInt(process.env.PORT || '3002', 10),
   apiPrefix: process.env.API_PREFIX || 'api/v1',
   corsOrigin: parseCorsOrigin(),
-  frontendOrigin: (process.env.FRONTEND_ORIGIN || 'http://localhost:3001').replace(/\/$/, ''),
+  frontendOrigin: resolveFrontendOrigin(),
   schedulerSecret: process.env.SCHEDULER_SECRET,
 });
