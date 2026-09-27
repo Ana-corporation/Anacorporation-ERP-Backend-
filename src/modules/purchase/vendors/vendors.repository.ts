@@ -81,12 +81,14 @@ export class VendorsRepository {
     });
   }
 
-  /** Next code for prefix: RM001, CS002, … (ignores legacy "RM001 CSKMETA" style codes). */
+  /**
+   * Next code for prefix: RM001, CS002, …
+   * Includes soft-deleted rows. vendor_code stays unique per company even after delete.
+   */
   async nextVendorCode(companyId: string, prefix: string, client: DbClient = this.prisma) {
     const existing = await this.db(client).vendor.findMany({
       where: {
         companyId: parseBigIntId(companyId),
-        deletedAt: null,
         vendorCode: { startsWith: prefix },
       },
       select: { vendorCode: true },

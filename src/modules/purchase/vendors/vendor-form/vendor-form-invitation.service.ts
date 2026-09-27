@@ -101,6 +101,7 @@ export class VendorFormInvitationService {
     const emailContent = buildVendorFormInviteEmail({
       vendorName: vendor.name,
       formUrl,
+      logoUrl: this.buildLogoUrl(),
     });
 
     let emailResult: { sent: boolean; stub?: boolean };
@@ -377,6 +378,7 @@ export class VendorFormInvitationService {
         const emailContent = buildVendorFormInviteEmail({
           vendorName: invitation.vendor.name,
           formUrl,
+          logoUrl: this.buildLogoUrl(),
           isReminder: true,
         });
 
@@ -526,11 +528,19 @@ export class VendorFormInvitationService {
     return raw as VendorFormFieldSnapshotMap;
   }
 
-  private buildFormUrl(rawToken: string): string {
+  private frontendOrigin(): string {
     const origin =
       this.configService.get<string>('app.frontendOrigin') ??
       process.env.FRONTEND_ORIGIN ??
       'http://localhost:3001';
-    return `${origin.replace(/\/$/, '')}/vendor-form/${rawToken}`;
+    return origin.replace(/\/$/, '');
+  }
+
+  private buildFormUrl(rawToken: string): string {
+    return `${this.frontendOrigin()}/vendor-form/${rawToken}`;
+  }
+
+  private buildLogoUrl(): string {
+    return `${this.frontendOrigin()}/assets/logo/ana-logo.jpeg`;
   }
 }
