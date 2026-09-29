@@ -3,11 +3,15 @@ import { BusinessException } from '@/common/exceptions/business.exception';
 import { FormConfigurationService } from './form-configuration.service';
 import { FormConfigurationRepository } from './form-configuration.repository';
 import { getBuiltInField } from './built-in-field-registry';
+import { TabAccessService } from '../tab-access/tab-access.service';
 
 describe('FormConfigurationService', () => {
   const companyId = '15';
 
-  function makeService(overrides: Partial<FormConfigurationRepository> = {}) {
+  function makeService(
+    overrides: Partial<FormConfigurationRepository> = {},
+    registrationHiddenSections: string[] = [],
+  ) {
     const repository = {
       findOverrides: jest.fn().mockResolvedValue([]),
       upsertOverride: jest.fn(),
@@ -15,8 +19,13 @@ describe('FormConfigurationService', () => {
       deleteAllOverrides: jest.fn(),
       ...overrides,
     } as unknown as FormConfigurationRepository;
+    const tabAccessService = {
+      getRegistrationSectionFilter: jest
+        .fn()
+        .mockResolvedValue((sectionKey: string) => !registrationHiddenSections.includes(sectionKey)),
+    } as unknown as TabAccessService;
 
-    return { service: new FormConfigurationService(repository), repository };
+    return { service: new FormConfigurationService(repository, tabAccessService), repository };
   }
 
   it('returns ERP defaults when no overrides exist', async () => {
@@ -58,12 +67,121 @@ describe('FormConfigurationService', () => {
     await service.updateConfiguration(companyId, 'vendor', {
       fields: [{ fieldKey: 'website', isVisible: false }],
     });
-    expect(repository.upsertOverride).toHaveBeenCalledWith(
-      companyId,
-      'vendor',
-      'website',
-      false,
-    );
+    expect(repository.upsertOverride).toHaveBeenCalledWith(companyId, 'vendor', 'website', {
+      isVisible: false,
+      isRegistrationVisible: null,
+    });
+  });
+
+  describe('registration form visibility', () => {
+    type Field = {
+      fieldKey: string;
+      visible: boolean;
+      registrationVisible: boolean;
+      registrationConfigurable: boolean;
+    };
+    const fieldsOf = (result: { sections: { fields: Field[] }[] }) =>
+      Object.fromEntries(result.sections.flatMap((s) => s.fields).map((f) => [f.fieldKey, f]));
+
+    it('defaults to the Add form visibility and locks staff-only fields', async () => {
+      const { service } = makeService({
+        findOverrides: jest
+          .fn()
+          .mockResolvedValue([{ fieldKey: 'fax', isVisible: false, isRegistrationVisible: null }]),
+      });
+      const byKey = fieldsOf(await service.getConfiguration(companyId, 'vendor'));
+
+      expect(byKey.website).toMatchObject({ registrationVisible: true, registrationConfigurable: true });
+      expect(byKey.fax).toMatchObject({ registrationVisible: false, registrationConfigurable: false });
+      expect(byKey.vendorName).toMatchObject({ registrationVisible: true, registrationConfigurable: false });
+      for (const key of ['supplierCode', 'vendorCategory', 'isActive', 'internalNotes']) {
+        expect(byKey[key]).toMatchObject({ registrationVisible: false, registrationConfigurable: false });
+      }
+    });
+
+    it('stores registration-only overrides without touching Add form visibility', async () => {
+      const { service, repository } = makeService();
+      await service.updateConfiguration(companyId, 'vendor', {
+        fields: [{ fieldKey: 'bankName', isRegistrationVisible: false }],
+      });
+      expect(repository.upsertOverride).toHaveBeenCalledWith(companyId, 'vendor', 'bankName', {
+        isVisible: null,
+        isRegistrationVisible: false,
+      });
+    });
+
+    it('keeps the saved registration value when only isVisible is sent', async () => {
+      const { service, repository } = makeService({
+        findOverrides: jest
+          .fn()
+          .mockResolvedValue([{ fieldKey: 'bankName', isVisible: null, isRegistrationVisible: false }]),
+      });
+      await service.updateConfiguration(companyId, 'vendor', {
+        fields: [{ fieldKey: 'bankName', isVisible: true }],
+      });
+      expect(repository.upsertOverride).toHaveBeenCalledWith(companyId, 'vendor', 'bankName', {
+        isVisible: null,
+        isRegistrationVisible: false,
+      });
+    });
+
+    it('ignores isRegistrationVisible on locked fields', async () => {
+      const { service, repository } = makeService();
+      await service.updateConfiguration(companyId, 'vendor', {
+        fields: [
+          { fieldKey: 'internalNotes', isRegistrationVisible: true },
+          { fieldKey: 'vendorName', isVisible: true, isRegistrationVisible: false },
+        ],
+      });
+      expect(repository.upsertOverride).not.toHaveBeenCalled();
+      expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'internalNotes');
+      expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'vendorName');
+    });
+
+    it('locks fields inside a tab switched off for registration and ignores writes to them', async () => {
+      const { service, repository } = makeService({}, ['bank']);
+      const byKey = fieldsOf(await service.getConfiguration(companyId, 'vendor'));
+
+      expect(byKey.bankName).toMatchObject({
+        visible: true,
+        registrationVisible: false,
+        registrationConfigurable: false,
+      });
+      expect(byKey.website).toMatchObject({ registrationConfigurable: true });
+
+      await service.updateConfiguration(companyId, 'vendor', {
+        fields: [{ fieldKey: 'bankName', isRegistrationVisible: false }],
+      });
+      expect(repository.upsertOverride).not.toHaveBeenCalled();
+    });
+
+    it('PUT with only isRegistrationVisible returns the GET shape and keeps Add Vendor visibility', async () => {
+      const { service } = makeService({
+        findOverrides: jest
+          .fn()
+          .mockResolvedValue([{ fieldKey: 'fax', isVisible: false, isRegistrationVisible: null }]),
+      });
+      const result = await service.updateConfiguration(companyId, 'vendor', {
+        fields: [{ fieldKey: 'phone', isRegistrationVisible: false }],
+      });
+
+      expect(result).toHaveProperty('entityType', 'vendor');
+      expect(result).toHaveProperty('sections');
+      expect(fieldsOf(result).fax).toMatchObject({ visible: false });
+    });
+
+    it('turning registration back on removes the override row', async () => {
+      const { service, repository } = makeService({
+        findOverrides: jest
+          .fn()
+          .mockResolvedValue([{ fieldKey: 'bankName', isVisible: null, isRegistrationVisible: false }]),
+      });
+      await service.updateConfiguration(companyId, 'vendor', {
+        fields: [{ fieldKey: 'bankName', isRegistrationVisible: true }],
+      });
+      expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'bankName');
+      expect(repository.upsertOverride).not.toHaveBeenCalled();
+    });
   });
 
   it('reset removes all overrides', async () => {
@@ -222,7 +340,10 @@ describe('FormConfigurationService', () => {
     await service.updateConfiguration(companyId, 'vendor', {
       fields: [{ fieldKey: 'taxId', isVisible: false }],
     });
-    expect(repository.upsertOverride).toHaveBeenCalledWith(companyId, 'vendor', 'federalTaxId', false);
+    expect(repository.upsertOverride).toHaveBeenCalledWith(companyId, 'vendor', 'federalTaxId', {
+      isVisible: false,
+      isRegistrationVisible: null,
+    });
     expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'taxId');
   });
 
@@ -265,12 +386,10 @@ describe('FormConfigurationService', () => {
     await service.updateConfiguration(companyId, 'item', {
       fields: [{ fieldKey: 'purchase.weight', isVisible: false }],
     });
-    expect(repository.upsertOverride).toHaveBeenCalledWith(
-      companyId,
-      'item',
-      'purchase.weight',
-      false,
-    );
+    expect(repository.upsertOverride).toHaveBeenCalledWith(companyId, 'item', 'purchase.weight', {
+      isVisible: false,
+      isRegistrationVisible: null,
+    });
   });
 
   it('rejects unknown item fieldKey', async () => {

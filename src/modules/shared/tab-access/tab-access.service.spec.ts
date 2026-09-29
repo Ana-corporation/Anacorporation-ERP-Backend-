@@ -87,3 +87,69 @@ describe('TabAccessService.getVisibleTabKeysForUser', () => {
     expect(visible.has('accounting')).toBe(false);
   });
 });
+
+describe('TabAccessService — registration form per tab', () => {
+  const companyId = '28';
+
+  function makeService(savedRows: Array<{ tabKey: string; isRegistrationVisible: boolean }> = []) {
+    const repository = {
+      findCompanyRoles: jest.fn().mockResolvedValue([]),
+      findAccessRows: jest.fn().mockResolvedValue([]),
+      findRegistrationSettings: jest.fn().mockResolvedValue(savedRows),
+      upsertRegistrationSetting: jest.fn(),
+      deleteRegistrationSetting: jest.fn(),
+    };
+    return {
+      service: new TabAccessService(repository as unknown as TabAccessRepository),
+      repository,
+    };
+  }
+
+  type Tab = { tabKey: string; registrationVisible: boolean; registrationConfigurable: boolean };
+  const tabsOf = (result: { tabs: Tab[] }) => Object.fromEntries(result.tabs.map((t) => [t.tabKey, t]));
+
+  it('returns the registration option next to each tab (general locked on, attachments switchable)', async () => {
+    const { service } = makeService([{ tabKey: 'accounting', isRegistrationVisible: false }]);
+    const tabs = tabsOf((await service.getEntityTabs(companyId, 'vendor')) as { tabs: Tab[] });
+
+    expect(tabs.accounting).toMatchObject({ registrationVisible: false, registrationConfigurable: true });
+    expect(tabs.bank).toMatchObject({ registrationVisible: true, registrationConfigurable: true });
+    expect(tabs.general).toMatchObject({ registrationVisible: true, registrationConfigurable: false });
+    expect(tabs.attachments).toMatchObject({ registrationVisible: true, registrationConfigurable: true });
+  });
+
+  it('lets the attachments tab be switched off for registration', async () => {
+    const { service, repository } = makeService();
+    await service.updateTabRegistration(companyId, 'vendor', 'attachments', { isRegistrationVisible: false });
+    expect(repository.upsertRegistrationSetting).toHaveBeenCalledWith(companyId, 'vendor', 'attachments', false);
+  });
+
+  it('stores "off" and deletes the row when switched back on', async () => {
+    const { service, repository } = makeService();
+
+    await service.updateTabRegistration(companyId, 'vendor', 'accounting', { isRegistrationVisible: false });
+    expect(repository.upsertRegistrationSetting).toHaveBeenCalledWith(companyId, 'vendor', 'accounting', false);
+
+    await service.updateTabRegistration(companyId, 'vendor', 'accounting', { isRegistrationVisible: true });
+    expect(repository.deleteRegistrationSetting).toHaveBeenCalledWith(companyId, 'vendor', 'accounting');
+  });
+
+  it('rejects changing a locked tab', async () => {
+    const { service, repository } = makeService();
+    await expect(
+      service.updateTabRegistration(companyId, 'vendor', 'general', { isRegistrationVisible: false }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'TAB_REGISTRATION_NOT_CONFIGURABLE' }),
+    });
+    expect(repository.upsertRegistrationSetting).not.toHaveBeenCalled();
+  });
+
+  it('maps contact/address sections to the general tab for the section filter', async () => {
+    const { service } = makeService([{ tabKey: 'payment', isRegistrationVisible: false }]);
+    const isRegistrationTab = await service.getRegistrationSectionFilter(companyId, 'vendor');
+
+    expect(isRegistrationTab('contact')).toBe(true);
+    expect(isRegistrationTab('payment')).toBe(false);
+    expect(isRegistrationTab('accounting')).toBe(true);
+  });
+});

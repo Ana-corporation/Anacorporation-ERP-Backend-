@@ -3,14 +3,16 @@ import { BusinessException } from '@/common/exceptions/business.exception';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { serialize } from '@/common/utils/bigint.util';
 import { CustomFieldEntityType } from '../custom-fields/custom-fields.constants';
-import { UpdateTabAccessDto } from './dto/tab-access.dto';
+import { UpdateTabAccessDto, UpdateTabRegistrationDto } from './dto/tab-access.dto';
 import { TabAccessRepository } from './tab-access.repository';
 import {
   getTabDefinition,
   getTabRegistry,
   isSupportedTabEntity,
+  mapSectionKeyToTabKey,
   normalizeTabKey,
   resolveEntityModuleCode,
+  resolveTabRegistrationState,
   TabRegistryEntry,
 } from './tab-registry';
 
@@ -35,6 +37,7 @@ export class TabAccessService {
     const tabs = getTabRegistry(resolved);
     const roles = await this.repository.findCompanyRoles(companyId);
     const accessRows = await this.repository.findAccessRows(companyId, resolved);
+    const savedRegistration = await this.loadRegistrationSettings(companyId, resolved);
 
     const accessByTabRole = new Map<string, boolean>();
     const configuredTabs = new Set<string>();
@@ -53,6 +56,7 @@ export class TabAccessService {
         isDefaultVisible: tab.isDefaultVisible,
         requiredPermission: tab.requiredPermission ?? null,
         hasOverride: configuredTabs.has(tab.tabKey),
+        ...resolveTabRegistrationState(resolved, tab.tabKey, savedRegistration.get(tab.tabKey)),
         roles: roles.map((role) => {
           const key = `${tab.tabKey}:${role.roleId.toString()}`;
           const isVisible = accessByTabRole.has(key)
@@ -115,6 +119,60 @@ export class TabAccessService {
     });
 
     return this.getEntityTabs(companyId, resolved);
+  }
+
+  async updateTabRegistration(
+    companyId: string,
+    entityType: string,
+    tabKey: string,
+    dto: UpdateTabRegistrationDto,
+  ) {
+    const resolved = this.assertSupportedEntity(entityType);
+    const canonicalKey = normalizeTabKey(resolved, tabKey);
+    const tab = canonicalKey ? getTabDefinition(resolved, canonicalKey) : undefined;
+    if (!tab) {
+      throw new BusinessException(
+        `Unknown tab key: ${tabKey}`,
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'tabKey', message: `Tab "${tabKey}" is not in the registry` }],
+        'TAB_NOT_FOUND',
+      );
+    }
+
+    if (!resolveTabRegistrationState(resolved, tab.tabKey, undefined).registrationConfigurable) {
+      throw new BusinessException(
+        `${tab.label} cannot be changed for the registration form`,
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'tabKey', message: `${tab.label} is locked for the registration form` }],
+        'TAB_REGISTRATION_NOT_CONFIGURABLE',
+      );
+    }
+
+    // Shown is the default, so only "off" is stored.
+    if (dto.isRegistrationVisible) {
+      await this.repository.deleteRegistrationSetting(companyId, resolved, tab.tabKey);
+    } else {
+      await this.repository.upsertRegistrationSetting(companyId, resolved, tab.tabKey, false);
+    }
+
+    return this.getEntityTabs(companyId, resolved);
+  }
+
+  /** Form-schema sectionKey → whether that tab is on the public registration form. */
+  async getRegistrationSectionFilter(
+    companyId: string,
+    entityType: CustomFieldEntityType,
+  ): Promise<(sectionKey: string) => boolean> {
+    const saved = await this.loadRegistrationSettings(companyId, entityType);
+    return (sectionKey: string) => {
+      const tabKey = mapSectionKeyToTabKey(entityType, sectionKey);
+      return resolveTabRegistrationState(entityType, tabKey, saved.get(tabKey)).registrationVisible;
+    };
+  }
+
+  private async loadRegistrationSettings(companyId: string, entityType: CustomFieldEntityType) {
+    const rows = await this.repository.findRegistrationSettings(companyId, entityType);
+    return new Map(rows.map((row) => [row.tabKey, row.isRegistrationVisible]));
   }
 
   /**

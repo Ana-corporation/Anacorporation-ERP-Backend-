@@ -67,6 +67,42 @@ export class TabAccessRepository {
     });
   }
 
+  findRegistrationSettings(companyId: string, entityType: CustomFieldEntityType) {
+    return this.prisma.companyTabRegistrationSetting.findMany({
+      where: { companyId: parseBigIntId(companyId), entityType },
+    });
+  }
+
+  upsertRegistrationSetting(
+    companyId: string,
+    entityType: CustomFieldEntityType,
+    tabKey: string,
+    isRegistrationVisible: boolean,
+  ) {
+    return this.prisma.companyTabRegistrationSetting.upsert({
+      where: {
+        companyId_entityType_tabKey: {
+          companyId: parseBigIntId(companyId),
+          entityType,
+          tabKey,
+        },
+      },
+      update: { isRegistrationVisible },
+      create: {
+        companyId: parseBigIntId(companyId),
+        entityType,
+        tabKey,
+        isRegistrationVisible,
+      },
+    });
+  }
+
+  deleteRegistrationSetting(companyId: string, entityType: CustomFieldEntityType, tabKey: string) {
+    return this.prisma.companyTabRegistrationSetting.deleteMany({
+      where: { companyId: parseBigIntId(companyId), entityType, tabKey },
+    });
+  }
+
   async replaceTabAccess(params: {
     companyId: string;
     moduleCode: string;

@@ -1,3 +1,5 @@
+import { VENDOR_REGISTRATION_EXCLUDED_FIELD_KEYS } from '@/modules/shared/form-configuration/built-in-field-registry';
+
 export const VENDOR_FORM_TTL_HOURS = 48;
 
 /** Hours between reminder emails (backend decides which invitations are due). */
@@ -7,15 +9,8 @@ export const VENDOR_FORM_DEFAULT_MAX_SEND_COUNT = 3;
 
 export const VENDOR_FORM_MAX_SEND_COUNT_LIMIT = 10;
 
-/** Built-in fields vendors must not modify via the public form. */
-export const VENDOR_FORM_INTERNAL_ONLY_FIELD_KEYS = new Set([
-  'supplierCode',
-  'vendorCode',
-  'vendorCategory',
-  'supplierType',
-  'isActive',
-  'internalNotes',
-]);
+/** Built-in fields vendors must not see or modify via the public form. */
+export const VENDOR_FORM_INTERNAL_ONLY_FIELD_KEYS = VENDOR_REGISTRATION_EXCLUDED_FIELD_KEYS;
 
 export const VENDOR_FORM_ERROR_CODES = {
   EXPIRED: 'VENDOR_FORM_EXPIRED',
@@ -24,6 +19,16 @@ export const VENDOR_FORM_ERROR_CODES = {
   CANCELLED: 'VENDOR_FORM_CANCELLED',
   FIELD_NOT_ALLOWED: 'VENDOR_FORM_FIELD_NOT_ALLOWED',
   INTERNAL_FIELD: 'VENDOR_FORM_INTERNAL_FIELD',
+  REQUIRED_FIELD: 'VENDOR_FORM_REQUIRED_FIELD',
+  INVALID_FIELD: 'VENDOR_FORM_INVALID_FIELD',
+  REGISTRATION_PENDING: 'VENDOR_REGISTRATION_PENDING',
+  ATTACHMENTS_DISABLED: 'VENDOR_FORM_ATTACHMENTS_DISABLED',
+  ATTACHMENT_TOO_LARGE: 'VENDOR_FORM_ATTACHMENT_TOO_LARGE',
+  ATTACHMENT_TYPE: 'VENDOR_FORM_ATTACHMENT_TYPE',
+  ATTACHMENT_LIMIT: 'VENDOR_FORM_ATTACHMENT_LIMIT',
+  ATTACHMENT_EMPTY: 'VENDOR_FORM_ATTACHMENT_EMPTY',
+  ATTACHMENT_RATE_LIMIT: 'VENDOR_FORM_ATTACHMENT_RATE_LIMIT',
+  ATTACHMENT_NOT_FOUND: 'VENDOR_FORM_ATTACHMENT_NOT_FOUND',
 } as const;
 
 export type VendorFieldFilledBy = 'INTERNAL' | 'VENDOR';

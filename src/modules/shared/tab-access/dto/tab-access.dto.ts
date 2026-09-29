@@ -6,3 +6,9 @@ export const UpdateTabAccessSchema = z.object({
 });
 
 export class UpdateTabAccessDto extends createZodDto(UpdateTabAccessSchema) {}
+
+export const UpdateTabRegistrationSchema = z.object({
+  isRegistrationVisible: z.boolean(),
+});
+
+export class UpdateTabRegistrationDto extends createZodDto(UpdateTabRegistrationSchema) {}

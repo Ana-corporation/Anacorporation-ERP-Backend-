@@ -30,6 +30,7 @@ import {
   UpdateCustomFieldDefinitionDto,
 } from './dto/custom-field-definition.dto';
 import { CustomFieldsRepository } from './custom-fields.repository';
+import { resolveCustomRegistrationVisibility } from '../form-configuration/built-in-field-registry';
 import {
   assertDropdownHasOptions,
   assertValidationRulesShape,
@@ -173,6 +174,7 @@ export class CustomFieldsDefinitionsService {
         isActive: dto.isActive,
         isReadOnly: dto.isReadOnly,
         isHidden: dto.isHidden,
+        isRegistrationVisible: dto.isRegistrationVisible,
         isSearchable: dto.isSearchable,
         isFilterable: dto.isFilterable,
         isSortable: dto.isSortable,
@@ -378,6 +380,8 @@ export class CustomFieldsDefinitionsService {
       isActive: item.isActive,
       isReadOnly: item.isReadOnly,
       isHidden: item.isHidden,
+      isRegistrationVisible: item.isRegistrationVisible,
+      registrationVisible: resolveCustomRegistrationVisibility(item),
       isSearchable: item.isSearchable,
       isFilterable: item.isFilterable,
       isSortable: item.isSortable,

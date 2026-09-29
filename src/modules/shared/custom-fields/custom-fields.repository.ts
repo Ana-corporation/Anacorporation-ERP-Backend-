@@ -20,7 +20,9 @@ export class CustomFieldsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   private db(client?: DbClient): Prisma.TransactionClient {
-    return (client ?? this.prisma) as unknown as Prisma.TransactionClient;
+    // Branches instead of `client ?? this.prisma`: the union makes tsc compare the full client types.
+    if (client) return client as unknown as Prisma.TransactionClient;
+    return this.prisma as unknown as Prisma.TransactionClient;
   }
 
   findDefinitionsByCompany(
@@ -102,6 +104,7 @@ export class CustomFieldsRepository {
       isActive?: boolean;
       isReadOnly?: boolean;
       isHidden?: boolean;
+      isRegistrationVisible?: boolean;
       isSearchable?: boolean;
       isFilterable?: boolean;
       isSortable?: boolean;
@@ -129,6 +132,7 @@ export class CustomFieldsRepository {
         isActive: data.isActive ?? true,
         isReadOnly: data.isReadOnly ?? false,
         isHidden: data.isHidden ?? false,
+        isRegistrationVisible: data.isRegistrationVisible ?? true,
         isSearchable: data.isSearchable ?? false,
         isFilterable: data.isFilterable ?? false,
         isSortable: data.isSortable ?? false,
@@ -166,6 +170,9 @@ export class CustomFieldsRepository {
       ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       ...(dto.isReadOnly !== undefined ? { isReadOnly: dto.isReadOnly } : {}),
       ...(dto.isHidden !== undefined ? { isHidden: dto.isHidden } : {}),
+      ...(dto.isRegistrationVisible !== undefined
+        ? { isRegistrationVisible: dto.isRegistrationVisible }
+        : {}),
       ...(dto.isSearchable !== undefined ? { isSearchable: dto.isSearchable } : {}),
       ...(dto.isFilterable !== undefined ? { isFilterable: dto.isFilterable } : {}),
       ...(dto.isSortable !== undefined ? { isSortable: dto.isSortable } : {}),

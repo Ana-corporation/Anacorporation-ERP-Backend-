@@ -1,0 +1,19 @@
+// shared | company_tab_registration_settings
+// Company-level "Show on Registration Form" per form tab (public vendor link has no role).
+// No row = tab default (shown).
+
+model CompanyTabRegistrationSetting {
+  settingId             BigInt   @id @default(autoincrement()) @map("setting_id")
+  companyId             BigInt   @map("company_id")
+  entityType            String   @map("entity_type") @db.VarChar(40)
+  tabKey                String   @map("tab_key") @db.VarChar(80)
+  isRegistrationVisible Boolean  @map("is_registration_visible")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@unique([companyId, entityType, tabKey], map: "company_tab_registration_company_entity_tab_uidx")
+  @@index([companyId, entityType], map: "company_tab_registration_company_entity_idx")
+  @@map("company_tab_registration_settings")
+}

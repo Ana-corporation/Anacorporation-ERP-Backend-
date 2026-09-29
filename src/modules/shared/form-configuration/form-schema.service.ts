@@ -11,7 +11,7 @@ import { CustomFieldsRepository } from '../custom-fields/custom-fields.repositor
 import { CustomFieldsValidationService } from '../custom-fields/custom-fields-validation.service';
 import { TabAccessService } from '../tab-access/tab-access.service';
 import { mapSectionKeyToTabKey } from '../tab-access/tab-registry';
-import { getBuiltInFields } from './built-in-field-registry';
+import { getBuiltInFields, resolveCustomRegistrationVisibility } from './built-in-field-registry';
 import { FormConfigurationService } from './form-configuration.service';
 import { resolveVendorSectionDefsForCompany } from './ana-vendor-section-labels';
 
@@ -30,11 +30,22 @@ export class FormSchemaService {
     user?: AuthenticatedUser,
   ) {
     const registry = getBuiltInFields(entityType);
-    const overrides = await this.formConfigurationService.loadOverrideMap(companyId, entityType);
-
-    const builtInFields = registry.map((field) =>
-      this.formConfigurationService.toBuiltInSchemaField(field, overrides),
+    const overrides = await this.formConfigurationService.loadFieldOverrides(companyId, entityType);
+    const isRegistrationTab = await this.tabAccessService.getRegistrationSectionFilter(
+      companyId,
+      entityType,
     );
+
+    // A tab switched off for registration hides (and locks) all of its fields there.
+    const builtInFields = registry.map((field) => {
+      const schemaField = this.formConfigurationService.toBuiltInSchemaField(field, overrides);
+      const tabOn = isRegistrationTab(field.sectionKey);
+      return {
+        ...schemaField,
+        registrationVisible: schemaField.registrationVisible && tabOn,
+        registrationConfigurable: schemaField.registrationConfigurable && tabOn,
+      };
+    });
 
     const definitions = await this.customFieldsRepository.findDefinitionsByCompany(
       companyId,
@@ -50,6 +61,8 @@ export class FormSchemaService {
         source: 'CUSTOM' as const,
         visible: true,
         configurable: false,
+        registrationVisible:
+          resolveCustomRegistrationVisibility(def) && isRegistrationTab(def.sectionKey ?? 'custom'),
       }));
 
     const baseSectionDefs =
@@ -83,13 +96,14 @@ export class FormSchemaService {
       visibleSectionDefs,
       visibleBuiltInFields,
       visibleCustomFields,
+      isRegistrationTab,
     );
 
     return serialize({
       entityType,
       /** Legacy: custom field definitions only (unchanged contract). */
       fields: visibleCustomFields.map(
-        ({ key, label, source, visible, configurable, ...rest }) => rest,
+        ({ key, label, source, visible, configurable, registrationVisible, ...rest }) => rest,
       ),
       /** Legacy: section tab metadata only — role-filtered at runtime. */
       sections: visibleSectionDefs,
@@ -110,11 +124,14 @@ export class FormSchemaService {
         source: 'CUSTOM';
         visible: boolean;
         configurable: boolean;
+        registrationVisible: boolean;
       }
     >,
+    isRegistrationTab: (sectionKey: string) => boolean,
   ) {
     const sectionOrder = sectionDefs.map((s) => s.key);
     const fieldsBySection = new Map<string, unknown[]>();
+    const sectionsWithRegistrationFields = new Set<string>();
 
     for (const field of builtInFields) {
       if (!field.visible) continue;
@@ -122,9 +139,11 @@ export class FormSchemaService {
       const { storage, ...publicField } = field;
       list.push(publicField);
       fieldsBySection.set(field.sectionKey, list);
+      if (field.registrationVisible) sectionsWithRegistrationFields.add(field.sectionKey);
     }
     for (const field of customFields) {
       const sectionKey = field.sectionKey ?? 'custom';
+      if (field.registrationVisible) sectionsWithRegistrationFields.add(sectionKey);
       const list = fieldsBySection.get(sectionKey) ?? [];
       list.push({
         key: field.key,
@@ -146,15 +165,20 @@ export class FormSchemaService {
         sortOrder: field.sortOrder,
         isFilterable: field.isFilterable,
         isReadOnly: field.isReadOnly,
+        registrationVisible: field.registrationVisible,
       });
       fieldsBySection.set(sectionKey, list);
     }
 
     // Include every visible section (even empty) so FE can render Attachments / markers.
     // Do not leak sections that Tab Access hid.
+    // registrationVisible: the tab is on for registration AND has at least one field the vendor sees.
     return sectionOrder.map((sectionKey) => ({
       sectionKey,
       label: sectionDefs.find((s) => s.key === sectionKey)?.label ?? sectionKey,
+      registrationVisible:
+        isRegistrationTab(sectionKey) &&
+        (sectionKey === 'attachments' || sectionsWithRegistrationFields.has(sectionKey)),
       fields: fieldsBySection.get(sectionKey) ?? [],
     }));
   }

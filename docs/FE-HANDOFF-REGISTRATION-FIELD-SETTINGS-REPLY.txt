@@ -1,0 +1,166 @@
+FE HANDOFF — SEPARATE FIELD SETTINGS FOR THE VENDOR REGISTRATION FORM (BE REPLY)
+================================================================================
+Date:     28-Sep-2026
+From:     ERP-Backend (branch development-anc)
+Status:   BE DONE (not yet deployed). DB migrations (applied on DEV and LIVE):
+          20260928120000_registration_form_visibility
+          20260928140000_tab_registration_settings
+
+----------------------------------------------------------------------
+"EDIT FIELDS" + "EDIT TABS" INSIDE PREVIEW — CONFIRMATIONS
+----------------------------------------------------------------------
+GET /companies/:companyId/vendor-form/preview   (permission: vendors:edit)
+  -> { company: { companyName }, form: { fields: [...] } }
+  Same field shape and order as the public GET /vendor-form/:token, values
+  empty. Uses company settings only (NOT the staff user's Tab Access).
+
+[YES] 1. PUT form-configurations/vendor with ONLY isRegistrationVisible does
+         not change Add Vendor visibility (visible stays as saved).
+[YES] 2. PATCH custom-fields/:fieldId with ONLY { isRegistrationVisible } is
+         accepted and changes nothing else.
+[YES] 3. GET form-configurations/vendor returns registrationVisible=false and
+         registrationConfigurable=false for fields inside a tab switched off
+         for registration (same as form-schema). A PUT for such a field is
+         ignored (saved value kept, no error).
+[YES] 4. PUT form-configurations/vendor response = same shape as GET
+         ({ entityType, sections }).
+
+PERMISSIONS: Option A. The writes keep the admin permissions:
+  PUT tabs/.../:tabKey/registration      -> tab_access:edit
+  PUT form-configurations/vendor         -> form_configurations:edit
+  PATCH custom-fields/:fieldId           -> custom_fields:edit
+  Hide "Edit tabs" / "Edit fields" for users without them.
+
+
+----------------------------------------------------------------------
+TAB CONFIGURATION — "REGISTRATION FORM" OPTION PER TAB (NEW)
+----------------------------------------------------------------------
+  Admin > Tab Configuration keeps the role list (Add Vendor) and gets a
+  second option per tab: "Registration Form" (company-level, no roles —
+  the vendor has no login).
+
+  GET /api/v1/companies/:companyId/entities/vendor/tabs
+    every tab now also has:
+      "registrationVisible": true,
+      "registrationConfigurable": true
+    Locked: general -> always on (holds Name + contact + address)
+            attachments -> always off (not on the public form)
+    Default for other tabs: on.
+
+  PUT /api/v1/companies/:companyId/entities/vendor/tabs/:tabKey/registration
+    Auth: tab_access:edit
+    Body: { "isRegistrationVisible": false }
+    Response: same as GET tabs.
+    Locked tab -> 400 TAB_REGISTRATION_NOT_CONFIGURABLE.
+    The existing PUT .../tabs/:tabKey/access (roles) is unchanged.
+
+  Effect of a tab switched off:
+    - all its fields (built-in and custom) are left out of the vendor link
+      and are not required on submit
+    - form-schema: those fields get registrationVisible=false and
+      registrationConfigurable=false (lock the field switch)
+    - form-schema resolvedSections[] now has "registrationVisible" per
+      section = tab on AND at least one field shown to the vendor.
+      Preview: hide sections with registrationVisible=false (this removes
+      empty headers such as ACCOUNTING).
+  The field-level switch (Form Configuration / Custom Fields) still
+  applies inside tabs that are on.
+
+
+----------------------------------------------------------------------
+RULES
+----------------------------------------------------------------------
+  Default (nothing saved): registrationVisible = visible (Add Vendor).
+  Existing companies see the same fields as before, EXCEPT staff-only
+  fields, which are now never on the link (see below).
+
+  registrationConfigurable = false (switch locked) when:
+    - staff-only: supplierCode, vendorCategory, isActive, internalNotes
+      -> registrationVisible = false
+    - protected: vendorName -> registrationVisible = true (always)
+    - the field is hidden on Add Vendor (visible = false)
+      -> registrationVisible = false. BE does NOT support "hidden on Add
+      Vendor but shown on registration". Showing it again on Add Vendor
+      restores the saved registration value.
+
+  Draft vendors (Send Vendor Registration) still get Name + Supplier type,
+  editable and required.
+
+
+----------------------------------------------------------------------
+3A/3B/3C. FORM CONFIGURATION — /companies/:companyId/form-configurations/vendor
+----------------------------------------------------------------------
+  GET: every field has "registrationVisible" and "registrationConfigurable".
+       "hasOverride" is true if either setting is saved.
+  PUT: per field { fieldKey, isVisible?, isRegistrationVisible? }
+       - at least one of the two is required; old body still works
+       - missing isRegistrationVisible -> saved value kept
+       - locked field (registrationConfigurable=false) -> IGNORED, no error
+       - isVisible on a protected field: equal to default -> ignored;
+         different -> 400 PROTECTED_FIELD_CANNOT_HIDE (unchanged)
+       Response = same shape as GET.
+  DELETE: resets both settings to default.
+
+
+----------------------------------------------------------------------
+3D. CUSTOM FIELDS — /companies/:companyId/custom-fields
+----------------------------------------------------------------------
+  GET list / GET one: "isRegistrationVisible" (saved) and
+                      "registrationVisible" (effective = saved AND NOT isHidden)
+  POST / PATCH: accept "isRegistrationVisible" (optional; POST default true).
+                isHidden=true -> registrationVisible=false; un-hiding restores it.
+
+
+----------------------------------------------------------------------
+3E. FORM SCHEMA — /companies/:companyId/entities/vendor/form-schema
+----------------------------------------------------------------------
+  builtInFields[]:          registrationVisible, registrationConfigurable
+  resolvedSections[].fields[]: registrationVisible (BUILT_IN and CUSTOM)
+  Preview = resolvedSections fields with registrationVisible=true.
+  (resolvedSections is still filtered by the staff user's Tab Access;
+   the vendor link is not.)
+
+
+----------------------------------------------------------------------
+3F. PUBLIC GET — /vendor-form/:token
+----------------------------------------------------------------------
+  Only registrationVisible fields. Settings AND values are read when the
+  link is opened (old links show the new list and current saved values).
+  Field object (old keys kept, new keys added):
+    {
+      "name": "phone", "key": "phone",
+      "label": "Tel 1",
+      "type": "phone", "fieldType": "phone",
+      "section": "contact", "sectionKey": "contact",
+      "required": false,
+      "readOnly": false, "editable": true,
+      "helpText": "",
+      "options": [ ... ],            // only when BE has options
+      "value": "+919876543210",      // "" when empty, never omitted
+      "filledBy": "INTERNAL" | null,
+      "source": "BUILTIN" | "CUSTOM"
+    }
+  Types: phone (Tel 1, Tel 2, Mobile phone, custom phone), dropdown (custom
+  dropdowns and Supplier type, with options), text, textarea, number,
+  decimal, date, email, checkbox.
+  Built-in selects without BE options (Business partner type, Shipping
+  type, Payment terms) are sent as "text" — FE catalog options apply.
+  Order: section order (general, contact, address, payment, bank,
+  paymentRun, accounting, remarks, custom), built-in before custom,
+  then sortOrder.
+
+
+----------------------------------------------------------------------
+3G. PUBLIC SUBMIT — /vendor-form/:token/submit
+----------------------------------------------------------------------
+  - Required = registrationVisible AND required AND not readOnly.
+    A key left out of the body uses the saved value.
+  - Keys that are not visible or are readOnly are IGNORED (not saved,
+    no error). Previously this returned 400.
+  - Phones (Tel 1, Tel 2, Mobile phone) stored as E.164, same as Add Vendor.
+  Errors (errors[].field = "fields.<name>"):
+    400 VENDOR_FORM_REQUIRED_FIELD  "<Label> is required"
+        (all missing fields listed; message "Please fill in all required
+         fields" when more than one)
+    400 VENDOR_FORM_INVALID_FIELD   "<Label> is not a valid phone number",
+        "Supplier type is not valid", name longer than 200 chars

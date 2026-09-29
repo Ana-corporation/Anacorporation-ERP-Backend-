@@ -150,6 +150,29 @@ export function mapSectionKeyToTabKey(
   return key;
 }
 
+/**
+ * Public vendor registration form, per tab. General holds Name (always shown).
+ * Attachments switches the vendor upload box. Only Vendor has a registration form.
+ */
+const VENDOR_REGISTRATION_LOCKED_TABS: Readonly<Record<string, boolean>> = {
+  general: true,
+};
+
+export function resolveTabRegistrationState(
+  entityCode: CustomFieldEntityType,
+  tabKey: string,
+  saved: boolean | undefined,
+): { registrationVisible: boolean; registrationConfigurable: boolean } {
+  if (entityCode !== 'vendor') {
+    return { registrationVisible: false, registrationConfigurable: false };
+  }
+  const locked = VENDOR_REGISTRATION_LOCKED_TABS[tabKey];
+  if (locked !== undefined) {
+    return { registrationVisible: locked, registrationConfigurable: false };
+  }
+  return { registrationVisible: saved ?? true, registrationConfigurable: true };
+}
+
 export function isSupportedTabEntity(entityType: string): entityType is CustomFieldEntityType {
   return CUSTOM_FIELD_MODULES.some((m) => m.entityType === entityType);
 }

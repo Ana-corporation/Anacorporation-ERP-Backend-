@@ -129,6 +129,31 @@ export class VendorsRepository {
     });
   }
 
+  /** Placeholder vendor for "Send Vendor Registration"; completed by the public vendor form. */
+  createDraft(
+    companyId: string,
+    email: string,
+    vendorCode: string,
+    createdBy: string,
+    client: DbClient = this.prisma,
+  ) {
+    return this.db(client).vendor.create({
+      data: {
+        companyId: parseBigIntId(companyId),
+        vendorCode,
+        supplierType: null,
+        name: email,
+        email,
+        isActive: false,
+        createdBy: parseBigIntId(createdBy),
+      },
+    });
+  }
+
+  hardDelete(id: string, client: DbClient = this.prisma) {
+    return this.db(client).vendor.delete({ where: { vendorId: parseBigIntId(id) } });
+  }
+
   update(
     id: string,
     dto: Omit<UpdateVendorDto, 'customFields' | 'attachments'>,

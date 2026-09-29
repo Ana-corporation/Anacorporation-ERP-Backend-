@@ -20,7 +20,7 @@ export class FormConfigurationRepository {
     companyId: string,
     entityType: CustomFieldEntityType,
     fieldKey: string,
-    isVisible: boolean,
+    values: { isVisible: boolean | null; isRegistrationVisible: boolean | null },
   ) {
     return this.prisma.companyFieldConfiguration.upsert({
       where: {
@@ -30,12 +30,12 @@ export class FormConfigurationRepository {
           fieldKey,
         },
       },
-      update: { isVisible },
+      update: values,
       create: {
         companyId: parseBigIntId(companyId),
         entityType,
         fieldKey,
-        isVisible,
+        ...values,
       },
     });
   }

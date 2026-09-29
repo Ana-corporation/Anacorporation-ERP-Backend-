@@ -62,6 +62,7 @@ model Company {
   customFieldValues      CustomFieldValue[]
   fieldConfigurations    CompanyFieldConfiguration[]
   tabAccess              CompanyTabAccess[]
+  tabRegistrationSettings CompanyTabRegistrationSetting[]
   importSessions         ImportSession[]
   vendorFormInvitations  VendorFormInvitation[]
 

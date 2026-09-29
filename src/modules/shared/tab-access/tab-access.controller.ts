@@ -4,7 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
-import { UpdateTabAccessDto } from './dto/tab-access.dto';
+import { UpdateTabAccessDto, UpdateTabRegistrationDto } from './dto/tab-access.dto';
 import { TabAccessService } from './tab-access.service';
 
 @ApiTags('Tab Access')
@@ -41,5 +41,21 @@ export class TabAccessController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.tabAccessService.updateTabAccess(companyId, entityType, tabKey, dto);
+  }
+
+  @Put(':tabKey/registration')
+  @RequirePermissions('tab_access:edit')
+  @ApiOperation({
+    summary: 'Show or hide a tab on the public vendor registration form (company-level, not per role).',
+  })
+  updateTabRegistration(
+    @Param('companyId') companyId: string,
+    @Param('entityType') entityType: string,
+    @Param('tabKey') tabKey: string,
+    @Body() dto: UpdateTabRegistrationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.tabAccessService.updateTabRegistration(companyId, entityType, tabKey, dto);
   }
 }

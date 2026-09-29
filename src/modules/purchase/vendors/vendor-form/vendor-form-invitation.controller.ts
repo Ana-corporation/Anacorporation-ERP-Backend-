@@ -38,3 +38,34 @@ export class VendorFormInvitationController {
     return this.vendorFormService.getEmailStatus(vendorId, companyId);
   }
 }
+
+@ApiTags('Vendors')
+@ApiBearerAuth()
+@Controller('companies/:companyId/vendor-form')
+export class VendorRegistrationInvitationController {
+  constructor(private readonly vendorFormService: VendorFormInvitationService) {}
+
+  @Post('invitations')
+  @RequirePermissions('vendors:create')
+  @ApiOperation({
+    summary: 'Send Vendor Registration: create a draft vendor and email the registration form',
+  })
+  createInvitation(
+    @Param('companyId') companyId: string,
+    @Body() dto: GenerateVendorEmailDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.vendorFormService.createRegistrationInvitation(companyId, dto, user.sub);
+  }
+
+  @Get('preview')
+  @RequirePermissions('vendors:edit')
+  @ApiOperation({
+    summary: 'Registration form preview: fields a new vendor link shows (ignores staff Tab Access)',
+  })
+  preview(@Param('companyId') companyId: string, @CurrentUser() user: AuthenticatedUser) {
+    assertCompanyAccess(companyId, user);
+    return this.vendorFormService.getRegistrationPreview(companyId);
+  }
+}

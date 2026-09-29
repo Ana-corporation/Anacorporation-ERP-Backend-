@@ -1,0 +1,321 @@
+FE HANDOFF — VENDOR REGISTRATION (BE REPLY)
+===========================================
+Date:     28-Sep-2026
+From:     ERP-Backend (branch development-anc)
+Re:       BE HANDOFF — VENDOR REGISTRATION (ALL BACKEND WORK), 27-Sep and 28-Sep
+Status:   BE DONE for sections 1–7 (not yet deployed)
+
+  28-Sep handoff mapping:
+    28-Sep section 1 (company name)     -> section 2 below
+    28-Sep section 2 (loads forever)    -> section 5 below
+    28-Sep section 3 (email template)   -> section 6 below
+    28-Sep section 4 (public GSTIN)     -> section 7 below (NEW)
+  Flow unchanged: Add Vendor -> save -> Email button ->
+  POST /companies/:companyId/vendors/:id/generate-email.
+  Section 1 (POST .../vendor-form/invitations) also exists; FE may ignore it.
+
+
+----------------------------------------------------------------------
+1. SEND VENDOR REGISTRATION (NEW API) — DONE
+----------------------------------------------------------------------
+  POST /api/v1/companies/:companyId/vendor-form/invitations
+  Auth: Bearer   Permission: vendors:create   Company access checked
+
+  Body:  { "toEmail": "mrkengineering2024@gmail.com", "maxSendCount": 3 }
+         maxSendCount optional, 1–10, default 3. Email is stored lower-case.
+
+  BE creates a DRAFT vendor, then sends the invitation:
+    name         = toEmail (placeholder)
+    email        = toEmail
+    supplierType = null
+    vendorCode   = DR001, DR002, ...   (placeholder — see section 3)
+    isActive     = false
+
+  Response: same shape as POST /vendors/:id/generate-email
+    {
+      "invitationId": "12",
+      "vendorId": "123",
+      "status": "SENT",
+      "sendCount": 1,
+      "maxSendCount": 3,
+      "formInvitation": { "status": "SENT", "sendCount": 1, "maxSendCount": 3, "submittedAt": null },
+      "recipientEmail": "mrkengineering2024@gmail.com",
+      "generatedAt": "...", "expiresAt": "...", "lastSentAt": "...", "nextReminderAt": "...",
+      "emailSent": true,
+      "emailStub": false,
+      "formUrl": "..."          // only when mail is not configured (emailStub: true)
+    }
+
+  Errors:
+    400  invalid email / maxSendCount out of range (Zod validation)
+    403  no vendors:create permission, or no access to the company
+    409  code VENDOR_REGISTRATION_PENDING
+         "A vendor registration is already pending for this email."
+         (an unexpired PENDING/SENT invitation to that email already exists in this company)
+    500  "Failed to send vendor form email" — the draft vendor is removed again,
+         so nothing is left in the vendor list.
+
+
+----------------------------------------------------------------------
+2. PUBLIC FORM — GET /api/v1/vendor-form/:token — DONE
+----------------------------------------------------------------------
+  New in the response:
+    "company": { "companyName": "Ana Machinery (P) Ltd" }
+    "vendor":  { ..., "isDraft": true | false }
+
+  Draft vendors:
+    vendor.vendorName = ""
+    Field "vendorName"     (Name)          editable: true, required: true, value: ""
+    Field "vendorCategory" (Supplier type) editable: true, required: true, value: ""
+    Field "supplierCode"   (Code)          value: ""  (still read-only)
+
+  Supplier type field now includes its options (all vendors):
+    "options": [
+      { "value": "RM Supplier",          "label": "RM Supplier" },
+      { "value": "Component Supplier",   "label": "Component Supplier" },
+      { "value": "Service Provider",     "label": "Service Provider" },
+      { "value": "Electrical Suppliers", "label": "Electrical Suppliers" }
+    ]
+  Normal (non-draft) vendors: unchanged — Supplier type stays read-only.
+
+
+----------------------------------------------------------------------
+3. PUBLIC FORM — POST /api/v1/vendor-form/:token/submit — DONE
+----------------------------------------------------------------------
+  Draft vendors must send both, using the field keys from GET:
+    { "fields": { "vendorName": "MRK Engineering", "vendorCategory": "Component Supplier", ... } }
+
+  Validation errors (400, errors[].field = the field key):
+    VENDOR_FORM_REQUIRED_FIELD  "Supplier Name is required" / "Supplier type is required"
+    VENDOR_FORM_INVALID_FIELD   "Supplier type is not valid" / name longer than 200 chars
+
+  On success BE:
+    - replaces the placeholder name with the submitted name
+    - sets supplierType
+    - replaces the DR### code with the real code for that type (RM### / CS### / SP### / ES###)
+
+  isActive DECISION: stays false after submit. An internal user reviews the
+  details and activates the vendor (Edit Vendor -> Active). FE may show the
+  vendor as "Submitted — pending activation".
+
+
+----------------------------------------------------------------------
+4. VENDOR LIST — GET /api/v1/companies/:companyId/vendors — NO CHANGE NEEDED
+----------------------------------------------------------------------
+  Draft vendors are normal vendor rows, so they already appear in the list:
+    vendorCode "DR001", name = email, supplierType null, isActive false,
+    formInvitation { status, sendCount, maxSendCount, submittedAt } as today.
+  Note: if the list is filtered with isActive=true, drafts are hidden
+  (they are inactive until activated).
+  Resend: POST /vendors/:id/generate-email works for drafts too; the email
+  still says "Dear Vendor" and the form still asks for Name + Supplier type.
+
+
+----------------------------------------------------------------------
+5. "LOADS FOREVER" ON swenter.com — CHECKED, BACKEND OK
+----------------------------------------------------------------------
+  Tested live on 27-Sep-2026:
+    - GET https://swenter.com/api/v1/vendor-form/<token> answers in ~1 s
+      (public route, no JWT guard; proxied by the frontend to Cloud Run).
+    - Direct Cloud Run URL answers in < 1 s with
+      Access-Control-Allow-Origin: https://swenter.com.
+    - Unknown token -> 404 VENDOR_FORM_INVALID "Invalid vendor form link".
+    - Rate limit (30 requests / minute per IP + token) returns 429 immediately.
+    - Email links use https://swenter.com/vendor-form/<token> on live.
+  Opening the live page with a test token showed the spinner for 1–2 s, then
+  "Invalid vendor form link" — the page does finish loading. The mobile
+  spinner was most likely a slow connection or an old link. The new FE
+  20-second timeout message covers the slow-network case.
+
+  Why real links showed "Invalid vendor form link":
+    - Links emailed from the DEV database (Erp_test_db) point to swenter.com,
+      but swenter.com only checks the live database. A backend running
+      against Erp_test_db must use FRONTEND_ORIGIN=http://localhost:3001.
+    - Resending cancels the previous link: older emails then show
+      "This vendor form link is no longer valid" (410 VENDOR_FORM_CANCELLED).
+
+
+----------------------------------------------------------------------
+6. EMAIL TEMPLATE — "VENDOR REGISTRATION" — DONE
+----------------------------------------------------------------------
+  Subject:   "Invitation to Complete Vendor Registration — <companyName>"
+             Reminders: "Reminder: Invitation to Complete Vendor Registration — <companyName>"
+  Brand:     "SWENTER ERP"
+  Values come from the inviting company record (no hard-coded ANA values):
+    vendorName    vendor name; "Vendor" for draft vendors
+    companyName   companies.name
+    companyEmail  companies.email   (omitted if empty)
+    companyPhone  companies.phone   (omitted if empty)
+    logoUrl       companies.logo_url — full URL used as is; "/assets/..." is
+                  prefixed with the frontend URL; logo row omitted if empty
+    formUrl       https://swenter.com/vendor-form/<token>
+  Added: plain copy link under the button, bgcolor on colour strips,
+  button padding on the <td>, outer spacing on the <td>, preheader text,
+  mobile styles. Plain-text version is sent with the HTML (multipart).
+
+  ACTION NEEDED (data): Ana Machinery's company record has no email, phone
+  or logo in either database. Until they are set, the email shows only the
+  company name (no contact line, no logo). Set them in Company settings,
+  e.g. logoUrl "/assets/logo/ana-logo.jpeg".
+
+
+----------------------------------------------------------------------
+7. PUBLIC GSTIN VERIFY — POST /api/v1/vendor-form/:token/gstin/verify — DONE
+----------------------------------------------------------------------
+  Public (no JWT). Token is checked exactly like GET /vendor-form/:token.
+  The company comes from the invitation, never from the request.
+
+  Body:     { "gstin": "33AAACA1234A1Z5" }     (trimmed, upper-cased, 15 chars)
+
+  Response: {
+              "gstin": "33AAACA1234A1Z5",
+              "verified": true,
+              "suggestedFields": {
+                "gstin", "legalName", "tradeName", "status", "address",
+                "city", "pincode", "state", "taxpayerType"
+              }
+            }
+  No "raw" and no "creditsRemaining" on this route.
+
+  Errors:
+    Token (same as GET):
+      404 VENDOR_FORM_INVALID
+      410 VENDOR_FORM_CANCELLED / VENDOR_FORM_EXPIRED / VENDOR_FORM_ALREADY_SUBMITTED
+    Rate limit:
+      429 VENDOR_FORM_GSTIN_RATE_LIMIT — 5 calls per link per 10 minutes
+          (counted per server instance)
+      429 from the general vendor-form limit (30 / minute per IP + token)
+    GSTIN:
+      400 validation (gstin not 15 chars) / GSTIN_INVALID_PATTERN / GSTIN_BAD_REQUEST
+      404 GSTIN_NOT_FOUND
+      403 GSTIN_NOT_ENABLED_FOR_COMPANY (company not in GSTIN_ENABLED_COMPANY_CODES)
+      402 GSTIN_CREDITS_EXHAUSTED
+      503 GSTIN_API_NOT_CONFIGURED / GSTIN_UNAUTHORIZED
+      502 GSTIN_RATE_LIMITED / GSTIN_UPSTREAM_TIMEOUT / GSTIN_NETWORK_ERROR / GSTIN_LOOKUP_FAILED
+  FE: on any error, let the vendor type the values manually.
+
+  Live needs GitHub secrets GSTIN_API_KEY (and optionally
+  GSTIN_ENABLED_COMPANY_CODES, default ANA_MACHINERY_P_LTD).
+
+
+----------------------------------------------------------------------
+BE FILES CHANGED
+----------------------------------------------------------------------
+  src/modules/purchase/vendors/vendor-code.util.ts            DR prefix, isDraftVendorCode, isSupplierType
+  src/modules/purchase/vendors/vendors.repository.ts          createDraft, hardDelete
+  src/modules/purchase/vendors/vendors.module.ts              new controller registered
+  src/modules/purchase/vendors/vendor-form/
+    vendor-form-invitation.controller.ts   POST companies/:companyId/vendor-form/invitations
+    vendor-form-invitation.service.ts      registration flow, draft GET/submit, company branding
+    vendor-form-invitation.repository.ts   company select, pending-email lookup
+    vendor-form-field.util.ts              draft field rules, supplier type options
+    vendor-form.constants.ts               new error codes
+    templates/vendor-form-email.template.ts  new design
+    vendor-form.controller.ts              POST :token/gstin/verify
+    dto/vendor-form.dto.ts                 VerifyVendorFormGstinDto
+  src/common/guards/vendor-form-gstin-rate-limit.guard.ts   5 / token / 10 min
+  .github/workflows/deploy-cloud-run.yml   GSTIN_API_KEY, GSTIN_ENABLED_COMPANY_CODES
+  Tests: vendor-form-invitation.service.spec.ts, vendor-form-email.template.spec.ts,
+         vendor-form-gstin-rate-limit.guard.spec.ts
+
+
+======================================================================
+29-Sep — ATTACHMENTS ON THE VENDOR LINK (BE REPLY)
+======================================================================
+Status: BE DONE (not yet deployed). No DB migration needed.
+Field names and codes are as requested, with the differences marked (DIFF).
+
+1. TAB SETTING
+   GET  .../entities/vendor/tabs  -> attachments:
+        registrationConfigurable: true, registrationVisible: true (default ON)
+   PUT  .../entities/vendor/tabs/attachments/registration
+        { isRegistrationVisible } -> allowed
+   form-schema: resolvedSections "attachments".registrationVisible follows
+        the tab (true when ON, even though the section has no fields).
+
+2. PUBLIC GET /vendor-form/:token  and  staff GET .../vendor-form/preview
+   "attachments": {
+     "enabled": true, "required": false, "maxFiles": 10, "maxBytes": 10485760,
+     "accept": [".pdf",".doc",".docx",".xls",".xlsx",".csv",
+                ".jpg",".jpeg",".png",".webp"],
+     "files": [ { fileAssetId, fileName, fileSize, mimeType, uploadedAt } ]
+   }
+   (DIFF) Tab OFF -> block is still sent, with "enabled": false, "files": [].
+   files = only files uploaded through THIS invitation. No storage keys, no URLs.
+   Preview always has "files": [].
+
+3. POST /api/v1/vendor-form/:token/attachments   (no auth, token only)
+   multipart, field "files" (repeatable) or "file".
+   Response: { "files": [ ...full list for this invitation... ] }
+   - Token checked first, same codes as GET (VENDOR_FORM_INVALID 404,
+     VENDOR_FORM_EXPIRED / VENDOR_FORM_ALREADY_SUBMITTED / VENDOR_FORM_CANCELLED 410).
+   - Real content is checked (PDF/PNG/JPEG/WEBP/DOC/XLS/DOCX/XLSX signatures;
+     CSV must be text). A renamed .exe -> VENDOR_FORM_ATTACHMENT_TYPE.
+   - One bad file rejects the whole request; nothing is stored.
+   Errors:
+     400 VENDOR_FORM_ATTACHMENT_TOO_LARGE  "<name> is larger than 10 MB"
+         (if the upload library stops it first: "File is larger than 10 MB")
+     400 VENDOR_FORM_ATTACHMENT_TYPE       "<name> — file type not allowed"
+     400 VENDOR_FORM_ATTACHMENT_LIMIT      "You can upload up to 10 files"
+     400 VENDOR_FORM_ATTACHMENT_EMPTY      (NEW) no file sent / "<name> is empty"
+     403 VENDOR_FORM_ATTACHMENTS_DISABLED
+     429 VENDOR_FORM_ATTACHMENT_RATE_LIMIT 20 upload+delete calls / link / 10 min
+     429 VENDOR_FORM_RATE_LIMIT            existing per-IP limit (30 / min)
+   IMPORTANT: Cloud Run rejects requests over 32 MB. Upload ONE file per request
+   (or keep one request under 30 MB total).
+
+4. DELETE /api/v1/vendor-form/:token/attachments/:fileAssetId
+   Response: { "files": [ ...remaining... ] }
+   Not uploaded through this link -> 404 VENDOR_FORM_ATTACHMENT_NOT_FOUND.
+   After submit -> 410 VENDOR_FORM_ALREADY_SUBMITTED.
+   Works even if admin later switches the Attachments tab off.
+
+5. SUBMIT + STAFF SIDE
+   - attachments.required is always false for now (company setting later).
+     When true and nothing uploaded: 400 VENDOR_FORM_REQUIRED_FIELD,
+     errors: [{ field: "attachments", message: "Please upload at least one document" }].
+   - Vendor files are saved on the vendor right away (metadata.attachments,
+     same list as staff uploads), so they show in the staff Attachments tab
+     and stay there after submit. Download/delete use the existing staff routes.
+   - Each vendor file has: "source": "VENDOR_LINK", "uploadedBy": "Vendor",
+     "invitationId", "uploadedAt" (plus the usual fileAssetId, fileName,
+     mimeType, fileSize, attachmentDate, status). Staff files have no "source".
+   - Staff Save sends the full attachments list back: keep these keys on each
+     row, or the "Uploaded by vendor" tag is lost.
+
+8. STORAGE
+   [YES] Same bucket and same StorageService as images / staff attachments:
+         erp-files-ana-machinery (dev and live env). Live reads it from the
+         GCS_BUCKET GitHub secret. No new bucket, no local disk.
+   [DIFF] Folder: <companyId>/<uuid>.<ext>, same as staff vendor attachments
+         (flat per company, no vendors/<id>/ sub-folder). The file is tied to
+         the vendor in file_assets (entity_type=vendor, entity_id=<vendorId>).
+   [YES] Private: objects are never made public; the link never returns a URL.
+         Download = existing GET .../vendors/:vendorId/attachments/:fileAssetId/url.
+   [YES] DELETE on the link removes the object from the bucket and marks the
+         file_assets row deleted.
+   [YES] Cloud Run: deploy sets GCS_BUCKET + GCS_CREDENTIALS_JSON and grants the
+         runtime service account storage.objectAdmin on the bucket. Same setup
+         as staff uploads, so if those work on live, vendor uploads work too.
+
+9. COMPANY LOGO (29-Sep follow-up)
+   GET /vendor-form/:token and GET .../vendor-form/preview:
+     "company": { "companyName": "...", "logoUrl": "/assets/logo/ana-logo.jpeg" }
+   - "/..." path -> as stored (FE serves it).
+   - Our private GCS bucket URL -> signed URL (valid 48 h, same as the link).
+   - Other https URL -> as stored.
+   - No logo / anything else -> "logoUrl": null (FE shows SWENTER).
+   DATA: Ana Machinery (company 28) logo_url set to /assets/logo/ana-logo.jpeg
+   in both DEV (Erp_test_db) and LIVE (Ana_corporation_db).
+
+Files:
+  vendor-form/vendor-form-attachments.util.ts        limits, content check, list/shape
+  vendor-form/vendor-form-attachment.guard.ts        per-token limit + token check before upload
+  vendor-form/vendor-form-upload-errors.interceptor.ts  upload-library errors -> codes
+  vendor-form/vendor-form.controller.ts              POST/DELETE :token/attachments
+  vendor-form/vendor-form-invitation.service.ts      GET/preview block, upload, delete, submit rule
+  vendor-form/vendor-form.constants.ts               new error codes
+  shared/tab-access/tab-registry.ts                  attachments switchable
+  shared/form-configuration/form-schema.service.ts   attachments section flag
+  Tests: vendor-form-invitation.service.spec.ts, vendor-form-attachments.util.spec.ts,
+         tab-access.service.spec.ts, form-schema.service.spec.ts

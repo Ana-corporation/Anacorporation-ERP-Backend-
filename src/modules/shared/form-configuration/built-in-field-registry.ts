@@ -222,3 +222,64 @@ export function fieldHasOverride(
   if (overrides.has(field.fieldKey)) return true;
   return (field.aliases ?? []).some((alias) => overrides.has(alias));
 }
+
+/** Staff-only Vendor fields: never on the public registration form, switch locked. */
+export const VENDOR_REGISTRATION_EXCLUDED_FIELD_KEYS: ReadonlySet<string> = new Set([
+  'supplierCode',
+  'vendorCode',
+  'vendorCategory',
+  'supplierType',
+  'isActive',
+  'internalNotes',
+]);
+
+function isRegistrationExcluded(field: BuiltInFieldDefinition): boolean {
+  if (field.entityType !== 'vendor') return false;
+  return [field.fieldKey, ...(field.aliases ?? [])].some((key) =>
+    VENDOR_REGISTRATION_EXCLUDED_FIELD_KEYS.has(key),
+  );
+}
+
+export function lookupOverride(
+  field: BuiltInFieldDefinition,
+  overrides: Map<string, boolean>,
+): boolean | undefined {
+  for (const key of [field.fieldKey, ...(field.aliases ?? [])]) {
+    if (overrides.has(key)) return overrides.get(key);
+  }
+  return undefined;
+}
+
+/**
+ * Registration visibility is a subset of Add form visibility: a field hidden on the Add form
+ * (or staff-only, or protected) cannot be switched for registration.
+ */
+export function isBuiltInRegistrationConfigurable(
+  field: BuiltInFieldDefinition,
+  visibilityOverrides: Map<string, boolean>,
+): boolean {
+  return (
+    field.configurable &&
+    !isRegistrationExcluded(field) &&
+    resolveBuiltInVisibility(field, visibilityOverrides)
+  );
+}
+
+/** Without a saved registration override the field follows its effective Add form visibility. */
+export function resolveBuiltInRegistrationVisibility(
+  field: BuiltInFieldDefinition,
+  visibilityOverrides: Map<string, boolean>,
+  registrationOverrides: Map<string, boolean>,
+): boolean {
+  if (isRegistrationExcluded(field)) return false;
+  const visible = resolveBuiltInVisibility(field, visibilityOverrides);
+  if (!visible || !field.configurable) return visible;
+  return lookupOverride(field, registrationOverrides) ?? true;
+}
+
+export function resolveCustomRegistrationVisibility(def: {
+  isHidden: boolean;
+  isRegistrationVisible: boolean;
+}): boolean {
+  return !def.isHidden && def.isRegistrationVisible;
+}

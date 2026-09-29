@@ -12,13 +12,17 @@ import {
   getBuiltInApiKey,
   getBuiltInField,
   getBuiltInFields,
+  isBuiltInRegistrationConfigurable,
   isSupportedFormConfigurationEntity,
+  lookupOverride,
+  resolveBuiltInRegistrationVisibility,
   resolveBuiltInVisibility,
   fieldHasOverride,
 } from './built-in-field-registry';
 import { UpdateFormConfigurationDto } from './dto/form-configuration.dto';
 import { FormConfigurationRepository } from './form-configuration.repository';
 import { resolveVendorSectionDefsForCompany } from './ana-vendor-section-labels';
+import { TabAccessService } from '../tab-access/tab-access.service';
 
 export interface BuiltInFieldConfigurationItem {
   fieldKey: string;
@@ -31,6 +35,13 @@ export interface BuiltInFieldConfigurationItem {
   configurable: boolean;
   source: 'BUILT_IN';
   hasOverride: boolean;
+  registrationVisible: boolean;
+  registrationConfigurable: boolean;
+}
+
+export interface FieldOverrideMaps {
+  visibility: Map<string, boolean>;
+  registration: Map<string, boolean>;
 }
 
 export interface FormConfigurationSection {
@@ -41,7 +52,10 @@ export interface FormConfigurationSection {
 
 @Injectable()
 export class FormConfigurationService {
-  constructor(private readonly repository: FormConfigurationRepository) {}
+  constructor(
+    private readonly repository: FormConfigurationRepository,
+    private readonly tabAccessService: TabAccessService,
+  ) {}
 
   assertSupportedEntity(entityType: string): CustomFieldEntityType {
     if (!isSupportedFormConfigurationEntity(entityType)) {
@@ -58,12 +72,17 @@ export class FormConfigurationService {
   async getConfiguration(companyId: string, entityType: string) {
     const resolvedEntity = this.assertSupportedEntity(entityType);
     const registry = getBuiltInFields(resolvedEntity);
-    const overrides = await this.loadOverrideMap(companyId, resolvedEntity);
+    const overrides = await this.loadFieldOverrides(companyId, resolvedEntity);
+    const isRegistrationTab = await this.tabAccessService.getRegistrationSectionFilter(
+      companyId,
+      resolvedEntity,
+    );
     const sections = this.groupBuiltInConfiguration(
       companyId,
       resolvedEntity,
       registry,
       overrides,
+      isRegistrationTab,
     );
 
     return serialize({
@@ -78,6 +97,11 @@ export class FormConfigurationService {
     dto: UpdateFormConfigurationDto,
   ) {
     const resolvedEntity = this.assertSupportedEntity(entityType);
+    const overrides = await this.loadFieldOverrides(companyId, resolvedEntity);
+    const isRegistrationTab = await this.tabAccessService.getRegistrationSectionFilter(
+      companyId,
+      resolvedEntity,
+    );
 
     for (const row of dto.fields) {
       const field = getBuiltInField(resolvedEntity, row.fieldKey);
@@ -90,7 +114,7 @@ export class FormConfigurationService {
         );
       }
 
-      if (!field.configurable) {
+      if (!field.configurable && row.isVisible !== undefined && row.isVisible !== field.defaultVisible) {
         throw new BusinessException(
           `${field.label} is a protected field and cannot be hidden.`,
           HttpStatus.BAD_REQUEST,
@@ -104,15 +128,31 @@ export class FormConfigurationService {
         );
       }
 
-      if (row.isVisible === field.defaultVisible) {
+      const visible = field.configurable
+        ? (row.isVisible ?? resolveBuiltInVisibility(field, overrides.visibility))
+        : field.defaultVisible;
+      const visibleOverride = visible === field.defaultVisible ? null : visible;
+
+      // Registration defaults to on for Add-visible fields, so only "off" is stored.
+      // Locked fields ignore the requested value and keep any saved one for when they unlock.
+      const nextVisibility = new Map<string, boolean>(
+        visibleOverride === null ? [] : [[field.fieldKey, visibleOverride]],
+      );
+      const registrationOff =
+        row.isRegistrationVisible !== undefined &&
+        isRegistrationTab(field.sectionKey) &&
+        isBuiltInRegistrationConfigurable(field, nextVisibility)
+          ? !row.isRegistrationVisible
+          : lookupOverride(field, overrides.registration) === false;
+      const registrationOverride = registrationOff ? false : null;
+
+      if (visibleOverride === null && registrationOverride === null) {
         await this.repository.deleteOverride(companyId, resolvedEntity, field.fieldKey);
       } else {
-        await this.repository.upsertOverride(
-          companyId,
-          resolvedEntity,
-          field.fieldKey,
-          row.isVisible,
-        );
+        await this.repository.upsertOverride(companyId, resolvedEntity, field.fieldKey, {
+          isVisible: visibleOverride,
+          isRegistrationVisible: registrationOverride,
+        });
       }
       for (const alias of field.aliases ?? []) {
         await this.repository.deleteOverride(companyId, resolvedEntity, alias);
@@ -128,16 +168,28 @@ export class FormConfigurationService {
     return this.getConfiguration(companyId, resolvedEntity);
   }
 
-  async loadOverrideMap(companyId: string, entityType: CustomFieldEntityType) {
+  async loadFieldOverrides(
+    companyId: string,
+    entityType: CustomFieldEntityType,
+  ): Promise<FieldOverrideMaps> {
     const rows = await this.repository.findOverrides(companyId, entityType);
-    return new Map(rows.map((row) => [row.fieldKey, row.isVisible]));
+    const visibility = new Map<string, boolean>();
+    const registration = new Map<string, boolean>();
+    for (const row of rows) {
+      if (typeof row.isVisible === 'boolean') visibility.set(row.fieldKey, row.isVisible);
+      if (typeof row.isRegistrationVisible === 'boolean') {
+        registration.set(row.fieldKey, row.isRegistrationVisible);
+      }
+    }
+    return { visibility, registration };
   }
 
-  toBuiltInSchemaField(
-    field: BuiltInFieldDefinition,
-    overrides: Map<string, boolean>,
-  ) {
-    const visible = resolveBuiltInVisibility(field, overrides);
+  async loadOverrideMap(companyId: string, entityType: CustomFieldEntityType) {
+    return (await this.loadFieldOverrides(companyId, entityType)).visibility;
+  }
+
+  toBuiltInSchemaField(field: BuiltInFieldDefinition, overrides: FieldOverrideMaps) {
+    const visible = resolveBuiltInVisibility(field, overrides.visibility);
     return {
       key: field.fieldKey,
       label: field.label,
@@ -148,7 +200,19 @@ export class FormConfigurationService {
       visible,
       required: field.required,
       configurable: field.configurable,
+      ...this.registrationState(field, overrides),
       storage: field.storage,
+    };
+  }
+
+  /** A tab switched off for registration hides and locks every field inside it. */
+  registrationState(field: BuiltInFieldDefinition, overrides: FieldOverrideMaps, tabOn = true) {
+    return {
+      registrationVisible:
+        tabOn &&
+        resolveBuiltInRegistrationVisibility(field, overrides.visibility, overrides.registration),
+      registrationConfigurable:
+        tabOn && isBuiltInRegistrationConfigurable(field, overrides.visibility),
     };
   }
 
@@ -156,7 +220,8 @@ export class FormConfigurationService {
     companyId: string,
     entityType: CustomFieldEntityType,
     registry: BuiltInFieldDefinition[],
-    overrides: Map<string, boolean>,
+    overrides: FieldOverrideMaps,
+    isRegistrationTab: (sectionKey: string) => boolean = () => true,
   ): FormConfigurationSection[] {
     const baseSectionDefs =
       CUSTOM_FIELD_MODULES.find((m) => m.entityType === entityType)?.sections ??
@@ -175,11 +240,14 @@ export class FormConfigurationService {
         sectionKey: field.sectionKey,
         fieldType: field.fieldType,
         apiKey: getBuiltInApiKey(field),
-        visible: resolveBuiltInVisibility(field, overrides),
+        visible: resolveBuiltInVisibility(field, overrides.visibility),
         required: field.required,
         configurable: field.configurable,
         source: 'BUILT_IN',
-        hasOverride: fieldHasOverride(field, overrides),
+        hasOverride:
+          fieldHasOverride(field, overrides.visibility) ||
+          fieldHasOverride(field, overrides.registration),
+        ...this.registrationState(field, overrides, isRegistrationTab(field.sectionKey)),
       });
       fieldsBySection.set(field.sectionKey, list);
     }

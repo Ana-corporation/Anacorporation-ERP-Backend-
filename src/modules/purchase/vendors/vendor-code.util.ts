@@ -21,7 +21,21 @@ export const SUPPLIER_TYPE_PREFIX: Record<SupplierType, string> = {
   'Electrical Suppliers': 'ES',
 };
 
-const CODE_RE = /^(RM|CS|SP|ES)(\d{3})$/;
+/**
+ * Placeholder prefix for vendors created by "Send Vendor Registration" before the
+ * vendor picks a supplier type. Replaced by the real prefix on form submit.
+ */
+export const DRAFT_VENDOR_CODE_PREFIX = 'DR';
+
+export function isSupplierType(value: unknown): value is SupplierType {
+  return typeof value === 'string' && (SUPPLIER_TYPES as readonly string[]).includes(value);
+}
+
+export function isDraftVendorCode(vendorCode: string | null | undefined): boolean {
+  return parseVendorSequence(vendorCode ?? '', DRAFT_VENDOR_CODE_PREFIX) !== null;
+}
+
+const CODE_RE = /^(RM|CS|SP|ES|DR)(\d{3})$/;
 
 export function parseVendorSequence(vendorCode: string, prefix: string): number | null {
   const m = vendorCode.trim().toUpperCase().match(CODE_RE);

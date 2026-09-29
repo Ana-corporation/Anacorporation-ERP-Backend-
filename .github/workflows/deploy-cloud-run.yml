@@ -91,6 +91,8 @@ jobs:
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           MAIL_FROM: ${{ secrets.MAIL_FROM }}
           SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          GSTIN_API_KEY: ${{ secrets.GSTIN_API_KEY }}
+          GSTIN_ENABLED_COMPANY_CODES: ${{ secrets.GSTIN_ENABLED_COMPANY_CODES }}
         run: |
           python3 - <<'PY'
           import json
@@ -178,6 +180,8 @@ jobs:
               "MAIL_PASSWORD",
               "MAIL_FROM",
               "SCHEDULER_SECRET",
+              "GSTIN_API_KEY",
+              "GSTIN_ENABLED_COMPANY_CODES",
           ):
               value = os.environ.get(key, "")
               if value:

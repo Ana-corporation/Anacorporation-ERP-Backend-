@@ -19,6 +19,8 @@ model CustomFieldDefinition {
   isActive      Boolean   @default(true) @map("is_active")
   isReadOnly    Boolean   @default(false) @map("is_read_only")
   isHidden      Boolean   @default(false) @map("is_hidden")
+  /// Public vendor registration form; ignored (off) while isHidden is true.
+  isRegistrationVisible Boolean @default(true) @map("is_registration_visible")
   isSearchable  Boolean   @default(false) @map("is_searchable")
   isFilterable  Boolean   @default(false) @map("is_filterable")
   isSortable    Boolean   @default(false) @map("is_sortable")

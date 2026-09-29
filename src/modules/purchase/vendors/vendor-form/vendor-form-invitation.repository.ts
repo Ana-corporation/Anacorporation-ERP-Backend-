@@ -11,6 +11,19 @@ export type VendorFormInvitationSummary = {
   submittedAt: Date | null;
 };
 
+export const INVITATION_COMPANY_SELECT = {
+  companyId: true,
+  name: true,
+  legalName: true,
+  email: true,
+  phone: true,
+  logoUrl: true,
+} satisfies Prisma.CompanySelect;
+
+export type InvitationCompany = Prisma.CompanyGetPayload<{
+  select: typeof INVITATION_COMPANY_SELECT;
+}>;
+
 type CreateInvitationParams = {
   vendorId: string;
   companyId: string;
@@ -76,7 +89,22 @@ export class VendorFormInvitationRepository {
       where: { tokenHash },
       include: {
         vendor: true,
+        company: { select: INVITATION_COMPANY_SELECT },
       },
+    });
+  }
+
+  /** Unexpired PENDING/SENT invitation to this email for a live vendor in the company. */
+  findOpenByRecipientEmail(companyId: string, recipientEmail: string, now: Date) {
+    return this.prisma.vendorFormInvitation.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        recipientEmail: { equals: recipientEmail, mode: 'insensitive' },
+        status: { in: [VendorFormInvitationStatus.PENDING, VendorFormInvitationStatus.SENT] },
+        expiresAt: { gt: now },
+        vendor: { deletedAt: null },
+      },
+      select: { id: true, vendorId: true },
     });
   }
 
@@ -181,7 +209,7 @@ export class VendorFormInvitationRepository {
         expiresAt: { gt: now },
         nextReminderAt: { lte: now },
       },
-      include: { vendor: true },
+      include: { vendor: true, company: { select: INVITATION_COMPANY_SELECT } },
     });
   }
 }

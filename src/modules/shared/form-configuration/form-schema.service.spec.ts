@@ -9,14 +9,18 @@ describe('FormSchemaService', () => {
   const companyId = '15';
 
   function makeService(
-    overrideRows: Array<{ fieldKey: string; isVisible: boolean }> = [],
+    overrideRows: Array<{
+      fieldKey: string;
+      isVisible: boolean | null;
+      isRegistrationVisible?: boolean | null;
+    }> = [],
     visibleTabKeys?: Set<string>,
+    customRegistrationVisible = true,
+    registrationHiddenSections: string[] = [],
   ) {
     const formConfigurationRepository = {
       findOverrides: jest.fn().mockResolvedValue(overrideRows),
     } as unknown as FormConfigurationRepository;
-
-    const formConfigurationService = new FormConfigurationService(formConfigurationRepository);
 
     const customFieldsRepository = {
       findDefinitionsByCompany: jest.fn().mockResolvedValue([
@@ -27,6 +31,7 @@ describe('FormSchemaService', () => {
           fieldType: 'text',
           sectionKey: 'custom',
           isHidden: false,
+          isRegistrationVisible: customRegistrationVisible,
           isRequired: false,
           isFilterable: false,
           isReadOnly: false,
@@ -41,6 +46,9 @@ describe('FormSchemaService', () => {
     } as unknown as CustomFieldsRepository;
 
     const tabAccessService = {
+      getRegistrationSectionFilter: jest
+        .fn()
+        .mockResolvedValue((sectionKey: string) => !registrationHiddenSections.includes(sectionKey)),
       getVisibleTabKeysForUser: jest.fn().mockResolvedValue(
         visibleTabKeys ??
           new Set([
@@ -63,6 +71,11 @@ describe('FormSchemaService', () => {
           ]),
       ),
     } as unknown as TabAccessService;
+
+    const formConfigurationService = new FormConfigurationService(
+      formConfigurationRepository,
+      tabAccessService,
+    );
 
     return new FormSchemaService(
       formConfigurationService,
@@ -111,6 +124,45 @@ describe('FormSchemaService', () => {
     expect(vendorName?.apiKey).toBe('name');
     const website = schema.builtInFields.find((f) => f.key === 'website');
     expect(website?.apiKey).toBe('metadata.website');
+  });
+
+  it('marks registrationVisible on builtInFields and resolvedSections for the registration preview', async () => {
+    const service = makeService(
+      [{ fieldKey: 'bankName', isVisible: null, isRegistrationVisible: false }],
+      undefined,
+      false,
+    );
+    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as {
+      builtInFields: Array<{ key: string; registrationVisible: boolean; registrationConfigurable: boolean }>;
+      resolvedSections: Array<{ fields: Array<{ key: string; registrationVisible: boolean }> }>;
+    };
+
+    const builtIn = Object.fromEntries(schema.builtInFields.map((f) => [f.key, f]));
+    expect(builtIn.bankName).toMatchObject({ registrationVisible: false, registrationConfigurable: true });
+    expect(builtIn.bankIban).toMatchObject({ registrationVisible: true });
+    expect(builtIn.supplierCode).toMatchObject({ registrationVisible: false, registrationConfigurable: false });
+
+    const resolved = Object.fromEntries(
+      schema.resolvedSections.flatMap((s) => s.fields).map((f) => [f.key, f]),
+    );
+    expect(resolved.bankName.registrationVisible).toBe(false);
+    expect(resolved.preferred_courier.registrationVisible).toBe(false);
+  });
+
+  it('a tab switched off for registration hides its section and fields in the preview', async () => {
+    const service = makeService([], undefined, true, ['accounting', 'attachments']);
+    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as {
+      builtInFields: Array<{ key: string; registrationVisible: boolean; registrationConfigurable: boolean }>;
+      resolvedSections: Array<{ sectionKey: string; registrationVisible: boolean }>;
+    };
+
+    const sections = Object.fromEntries(schema.resolvedSections.map((s) => [s.sectionKey, s]));
+    expect(sections.accounting.registrationVisible).toBe(false);
+    expect(sections.bank.registrationVisible).toBe(true);
+    expect(sections.attachments.registrationVisible).toBe(false);
+
+    const glAccount = schema.builtInFields.find((f) => f.key === 'glAccount');
+    expect(glAccount).toMatchObject({ registrationVisible: false, registrationConfigurable: false });
   });
 
   it('omits general/contact/address from form-schema when general tab hidden for user', async () => {
