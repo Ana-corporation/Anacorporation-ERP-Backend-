@@ -6,6 +6,7 @@ import { DepartmentsModule } from './departments/departments.module';
 import { DesignationsModule } from './designations/designations.module';
 import { WarehousesModule } from './warehouses/warehouses.module';
 import { StorageBinsModule } from './storage-bins/storage-bins.module';
+import { StoreCategoriesModule } from './store-categories/store-categories.module';
 import { EmployeesModule } from './employees/employees.module';
 import { CompanyAuditModule } from './company-audit/company-audit.module';
 
@@ -17,6 +18,7 @@ import { CompanyAuditModule } from './company-audit/company-audit.module';
     DesignationsModule,
     WarehousesModule,
     StorageBinsModule,
+    StoreCategoriesModule,
     EmployeesModule,
     CompanySecurityPoliciesModule,
     CompanyAuditModule,
@@ -28,6 +30,7 @@ import { CompanyAuditModule } from './company-audit/company-audit.module';
     DesignationsModule,
     WarehousesModule,
     StorageBinsModule,
+    StoreCategoriesModule,
     EmployeesModule,
     CompanySecurityPoliciesModule,
     CompanyAuditModule,

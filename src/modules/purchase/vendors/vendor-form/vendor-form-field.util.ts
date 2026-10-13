@@ -4,6 +4,7 @@ import {
   resolveBuiltInRegistrationVisibility,
 } from '@/modules/shared/form-configuration/built-in-field-registry';
 import { BuiltInFieldDefinition } from '@/modules/shared/form-configuration/built-in-field-registry.types';
+import { fieldOrderKey } from '@/modules/shared/form-configuration/field-order.util';
 import { VENDOR_SECTIONS } from '@/modules/shared/custom-fields/custom-fields.constants';
 import { SUPPLIER_TYPES } from '../vendor-code.util';
 import {
@@ -24,6 +25,8 @@ export type VendorFormFieldDefinition = {
   editable: boolean;
   source: 'BUILTIN' | 'CUSTOM';
   sortOrder: number;
+  /** Company field order inside the section (Form Configuration). */
+  displayOrder?: number;
   helpText: string;
   options?: VendorFormFieldOption[];
 };
@@ -202,17 +205,32 @@ export function filterRegistrationBuiltInFields(
 
 const SECTION_ORDER = new Map(VENDOR_SECTIONS.map((section, index) => [section.key, index]));
 
-/** Add Vendor order: section order, then built-in before custom, then sortOrder. */
+/** Section order, then the company field order; without one, built-in before custom, then sortOrder. */
 export function sortVendorFormFields(
   fieldDefs: VendorFormFieldDefinition[],
 ): VendorFormFieldDefinition[] {
   const sectionIndex = (key: string) => SECTION_ORDER.get(key) ?? SECTION_ORDER.size;
+  const position = (field: VendorFormFieldDefinition) =>
+    field.displayOrder ?? Number.MAX_SAFE_INTEGER;
   return [...fieldDefs].sort(
     (a, b) =>
       sectionIndex(a.sectionKey) - sectionIndex(b.sectionKey) ||
+      position(a) - position(b) ||
       Number(a.source === 'CUSTOM') - Number(b.source === 'CUSTOM') ||
       a.sortOrder - b.sortOrder,
   );
+}
+
+export function withDisplayOrders(
+  fieldDefs: VendorFormFieldDefinition[],
+  displayOrders: Map<string, number>,
+): VendorFormFieldDefinition[] {
+  return fieldDefs.map((field) => ({
+    ...field,
+    displayOrder: displayOrders.get(
+      fieldOrderKey(field.source === 'BUILTIN' ? 'BUILT_IN' : 'CUSTOM', field.key),
+    ),
+  }));
 }
 
 export function splitSubmittedFields(
@@ -283,6 +301,7 @@ export function toPublicFormFields(
       readOnly: !field.editable,
       source: field.source,
       helpText: field.helpText,
+      ...(field.displayOrder !== undefined ? { displayOrder: field.displayOrder } : {}),
       ...(field.options ? { options: field.options } : {}),
       value: entry.value ?? '',
       filledBy: entry.filledBy,

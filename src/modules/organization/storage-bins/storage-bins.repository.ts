@@ -50,14 +50,59 @@ export class StorageBinsRepository {
     });
   }
 
+  /** Includes deleted bins: the (warehouse_id, bin_code) unique index covers them too. */
   findByCode(warehouseId: string, binCode: string) {
     return this.prisma.storageBin.findFirst({
       where: {
         warehouseId: parseBigIntId(warehouseId),
         binCode,
-        deletedAt: null,
       },
+      select: { storageBinId: true, deletedAt: true },
     });
+  }
+
+  transaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) {
+    return this.prisma.$transaction((tx) => fn(tx as unknown as Prisma.TransactionClient));
+  }
+
+  /** skipDuplicates also covers codes inserted concurrently by another request. */
+  createMany(
+    db: Prisma.TransactionClient,
+    companyId: bigint,
+    warehouseId: bigint,
+    bins: { binCode: string; binName?: string; isActive?: boolean }[],
+    skipDuplicates: boolean,
+    createdBy?: string,
+  ) {
+    return db.storageBin.createManyAndReturn({
+      data: bins.map((bin) => ({
+        companyId,
+        warehouseId,
+        binCode: bin.binCode,
+        binName: bin.binName?.trim() || null,
+        isActive: bin.isActive ?? true,
+        createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
+      })),
+      skipDuplicates,
+    });
+  }
+
+  /** Existing codes in the location, deleted ones included (they can't be reused either). */
+  findCodes(db: Prisma.TransactionClient, warehouseId: bigint, binCodes: string[]) {
+    return db.storageBin.findMany({
+      where: { warehouseId, binCode: { in: binCodes } },
+      select: { binCode: true, deletedAt: true },
+    });
+  }
+
+  async isReferenced(id: string) {
+    const storageBinId = parseBigIntId(id);
+    const [balances, ledger, lines] = await Promise.all([
+      this.prisma.stockBalance.count({ where: { storageBinId } }),
+      this.prisma.stockLedgerEntry.count({ where: { storageBinId } }),
+      this.prisma.inventoryDocumentLine.count({ where: { storageBinId, document: { deletedAt: null } } }),
+    ]);
+    return balances + ledger + lines > 0;
   }
 
   create(companyId: string, warehouseId: string, dto: CreateStorageBinDto, createdBy?: string) {

@@ -2,10 +2,9 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
-import { CreateWarehouseDto, UpdateWarehouseDto } from './dto/warehouse.dto';
+import { CreateWarehouseDto, UpdateWarehouseDto, WarehouseListQueryDto } from './dto/warehouse.dto';
 import { WarehousesService } from './warehouses.service';
 
 @ApiTags('Warehouses')
@@ -18,7 +17,7 @@ export class WarehousesController {
   @RequirePermissions('warehouses:view')
   findAll(
     @Param('companyId') companyId: string,
-    @Query() query: PaginationQueryDto,
+    @Query() query: WarehouseListQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     assertCompanyAccess(companyId, user);

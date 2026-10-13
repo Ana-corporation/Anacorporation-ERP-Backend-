@@ -5,7 +5,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
-import { CreateStorageBinDto, UpdateStorageBinDto } from './dto/storage-bin.dto';
+import { BulkCreateStorageBinsDto, CreateStorageBinDto, UpdateStorageBinDto } from './dto/storage-bin.dto';
 import { StorageBinsService } from './storage-bins.service';
 
 @ApiTags('Storage Bins')
@@ -46,6 +46,18 @@ export class StorageBinsController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.storageBinsService.create(companyId, dto, user.sub);
+  }
+
+  @Post('bulk')
+  @RequirePermissions('warehouses:create')
+  @ApiOperation({ summary: 'Create up to 500 bins in one location (one transaction)' })
+  bulkCreate(
+    @Param('companyId') companyId: string,
+    @Body() dto: BulkCreateStorageBinsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.storageBinsService.bulkCreate(companyId, dto, user.sub);
   }
 
   @Patch(':id')

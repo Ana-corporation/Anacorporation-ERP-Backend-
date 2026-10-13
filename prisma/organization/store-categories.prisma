@@ -1,0 +1,26 @@
+// organization | store categories (company-defined store types + code prefix)
+
+/// Per-company store types (e.g. Raw Material Store / RMS). Locations with a category get codes
+/// <codePrefix>-NNN. Unique (company, lower(name)) and (company, code_prefix) among non-deleted
+/// rows are partial indexes in the migration (not expressible in Prisma).
+model StoreCategory {
+  storeCategoryId BigInt    @id @default(autoincrement()) @map("store_category_id")
+  companyId       BigInt    @map("company_id")
+  name            String    @db.VarChar(100)
+  codePrefix      String    @map("code_prefix") @db.VarChar(6)
+  description     String?   @db.VarChar(255)
+  sortOrder       Int       @default(0) @map("sort_order")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdBy       BigInt?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedBy       BigInt?   @map("updated_by")
+  updatedAt       DateTime? @map("updated_at")
+  deletedBy       BigInt?   @map("deleted_by")
+  deletedAt       DateTime? @map("deleted_at")
+
+  company    Company     @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  warehouses Warehouse[]
+
+  @@index([companyId])
+  @@map("store_categories")
+}

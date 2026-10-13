@@ -1,0 +1,16 @@
+// shared | per-company running numbers for backend-generated codes
+
+/// One row per company + scope + prefix, e.g. (28, WAREHOUSE, RMS) → last_number 3 → next RMS-004.
+/// Incremented under a row lock, so concurrent creates never get the same number. Never decremented.
+model CompanyCodeSequence {
+  companyId  BigInt   @map("company_id")
+  scope      String   @db.VarChar(40)
+  prefix     String   @db.VarChar(10)
+  lastNumber Int      @default(0) @map("last_number")
+  updatedAt  DateTime @default(now()) @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@id([companyId, scope, prefix])
+  @@map("company_code_sequences")
+}

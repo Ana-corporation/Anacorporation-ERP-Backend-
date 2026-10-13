@@ -30,7 +30,10 @@ import {
   UpdateCustomFieldDefinitionDto,
 } from './dto/custom-field-definition.dto';
 import { CustomFieldsRepository } from './custom-fields.repository';
-import { resolveCustomRegistrationVisibility } from '../form-configuration/built-in-field-registry';
+import {
+  getBuiltInFields,
+  resolveCustomRegistrationVisibility,
+} from '../form-configuration/built-in-field-registry';
 import {
   assertDropdownHasOptions,
   assertValidationRulesShape,
@@ -167,7 +170,16 @@ export class CustomFieldsDefinitionsService {
         defaultValue: dto.defaultValue,
         validation: dto.validation,
         options: dto.options,
-        sortOrder: dto.sortOrder,
+        sortOrder:
+          dto.sortOrder ||
+          (await this.repository.nextSortOrder(
+            companyId,
+            entityType,
+            sectionKey,
+            getBuiltInFields(entityType)
+              .filter((field) => field.sectionKey === sectionKey)
+              .map((field) => field.fieldKey),
+          )),
         placeholder: dto.placeholder,
         helpText: dto.helpText,
         description: dto.description,

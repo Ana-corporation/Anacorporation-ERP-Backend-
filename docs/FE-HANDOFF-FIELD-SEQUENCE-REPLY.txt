@@ -1,0 +1,73 @@
+BE REPLY - FORM FIELD SEQUENCE (DISPLAY ORDER)
+==============================================
+Date:    29-Sep-2026
+From:    ERP-Backend (branch development-anc)
+Replies: BE HANDOFF - FORM FIELD SEQUENCE (DISPLAY ORDER)
+
+1. FINAL ROUTE
+--------------
+PUT /api/v1/companies/:companyId/form-configurations/:entityType/order
+Permission: form_configurations:edit (403 without it). Same company guard as the other routes.
+Body: exactly as in your handoff.
+{ "sections": [ { "sectionKey": "address", "fields": [
+    { "fieldKey": "city",    "source": "BUILT_IN", "displayOrder": 1 },
+    { "fieldKey": "courier", "source": "CUSTOM",   "displayOrder": 2 } ... ] } ] }
+- Send only the sections that changed, each with ALL of its fields (hidden ones too).
+- Response 200: same shape as GET form-configurations.
+- All rows are saved in one transaction and written to the audit log.
+
+2. ERROR CODES (all 400, response.code; errors[].field has the path)
+-------------------------------------------------------------------
+FORM_CONFIG_INVALID_SECTION     unknown sectionKey, or the same section sent twice
+                                field: sections[i].sectionKey
+FORM_CONFIG_INVALID_FIELD       fieldKey not in that section of this entity, a custom field of
+                                another company, or the same fieldKey sent twice
+                                field: sections[i].fields[j].fieldKey
+FORM_CONFIG_DUPLICATE_ORDER     the same displayOrder used twice in a section
+                                field: sections[i].fields[j].displayOrder
+FORM_CONFIG_INCOMPLETE_SECTION  the section list does not contain all of its fields
+                                field: sections[i].fields (message lists the missing keys)
+displayOrder < 1, > 9999, not an integer, or a wrong source -> normal 400 validation error.
+Unsupported entityType -> ENTITY_TYPE_NOT_SUPPORTED (as today).
+
+3. RESET TO ERP DEFAULT (DELETE form-configurations/:entityType)
+----------------------------------------------------------------
+- Clears built-in visibility AND built-in order for this company + entity.
+- Custom fields: sort_order is LEFT AS IS (not reset).
+  Result: built-ins go back to the ERP default order; custom fields follow them in their
+  saved sort_order.
+
+4. WHAT CHANGED IN THE READ APIS
+--------------------------------
+Every field now has "displayOrder" (1..n inside its section) and fields come back sorted by it:
+- GET form-configurations/:entityType
+  * Now ALSO returns CUSTOM fields: source "CUSTOM", fieldId, visible = not hidden,
+    configurable false, hasOverride false.
+  * The visibility PUT ignores custom fieldKeys (show/hide a custom field on the custom field itself).
+- GET entities/:entityType/form-schema -> resolvedSections[].fields[]
+- GET /vendor-form/:token and .../vendor-form/preview -> form.fields[]
+Hidden fields keep their position; they are simply not shown (same as today).
+Visibility never changes the order and order never changes visibility.
+
+5. DEFAULT ORDER / NEW COMPANIES
+--------------------------------
+No rows needed. Default = built-ins in ERP registry order, then custom fields by sort_order.
+Once a section is saved, built-in and custom fields share one number space.
+A built-in field added in a later release goes to the end of a saved section.
+A NEW custom field (sortOrder omitted or 0) goes to the end of its section automatically.
+
+6. ANA MACHINERY SEED (company 28) - DONE on DEV + LIVE
+-------------------------------------------------------
+LIVE matched every key:
+  contact   : contactPersonName1, mobile1, contactPersonName2, mobile2, then the rest
+  bank      : bankBeneficiaryName, bankAccountNumber, bankName, bankBranch, bankIfsc, then the rest
+  paymentRun: houseBankBeneficiaryName, houseBankAccountNumber, houseBank, houseBankBranch,
+              houseBankIfsc, houseBankSwift, then the rest
+DEV test data uses other custom names (contactPersonSName1, mobil1, contactPersonSName2, mobil2)
+and has no custom bank beneficiary / account number / IFSC fields, so DEV has those fields first
+and the bank tabs keep their normal order.
+You can remove the Ana order code from the FE once this is deployed.
+
+7. CACHE
+--------
+The backend does not cache the form schema, so there is nothing to clear.

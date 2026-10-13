@@ -4,6 +4,8 @@ import { FormConfigurationService } from './form-configuration.service';
 import { FormConfigurationRepository } from './form-configuration.repository';
 import { getBuiltInField } from './built-in-field-registry';
 import { TabAccessService } from '../tab-access/tab-access.service';
+import { CustomFieldsRepository } from '../custom-fields/custom-fields.repository';
+import { AuditService } from '@/infrastructure/audit/audit.service';
 
 describe('FormConfigurationService', () => {
   const companyId = '15';
@@ -11,12 +13,15 @@ describe('FormConfigurationService', () => {
   function makeService(
     overrides: Partial<FormConfigurationRepository> = {},
     registrationHiddenSections: string[] = [],
+    customDefs: Array<Record<string, unknown>> = [],
   ) {
     const repository = {
       findOverrides: jest.fn().mockResolvedValue([]),
       upsertOverride: jest.fn(),
       deleteOverride: jest.fn(),
+      clearVisibilityOverride: jest.fn(),
       deleteAllOverrides: jest.fn(),
+      saveFieldOrder: jest.fn(),
       ...overrides,
     } as unknown as FormConfigurationRepository;
     const tabAccessService = {
@@ -24,8 +29,21 @@ describe('FormConfigurationService', () => {
         .fn()
         .mockResolvedValue((sectionKey: string) => !registrationHiddenSections.includes(sectionKey)),
     } as unknown as TabAccessService;
+    const customFieldsRepository = {
+      findDefinitionsByCompany: jest.fn().mockResolvedValue(customDefs),
+    } as unknown as CustomFieldsRepository;
+    const auditService = { log: jest.fn() } as unknown as AuditService;
 
-    return { service: new FormConfigurationService(repository, tabAccessService), repository };
+    return {
+      service: new FormConfigurationService(
+        repository,
+        tabAccessService,
+        customFieldsRepository,
+        auditService,
+      ),
+      repository,
+      auditService,
+    };
   }
 
   it('returns ERP defaults when no overrides exist', async () => {
@@ -58,7 +76,7 @@ describe('FormConfigurationService', () => {
     await service.updateConfiguration(companyId, 'vendor', {
       fields: [{ fieldKey: 'website', isVisible: true }],
     });
-    expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'website');
+    expect(repository.clearVisibilityOverride).toHaveBeenCalledWith(companyId, 'vendor', 'website');
     expect(repository.upsertOverride).not.toHaveBeenCalled();
   });
 
@@ -134,8 +152,12 @@ describe('FormConfigurationService', () => {
         ],
       });
       expect(repository.upsertOverride).not.toHaveBeenCalled();
-      expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'internalNotes');
-      expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'vendorName');
+      expect(repository.clearVisibilityOverride).toHaveBeenCalledWith(
+        companyId,
+        'vendor',
+        'internalNotes',
+      );
+      expect(repository.clearVisibilityOverride).toHaveBeenCalledWith(companyId, 'vendor', 'vendorName');
     });
 
     it('locks fields inside a tab switched off for registration and ignores writes to them', async () => {
@@ -179,7 +201,7 @@ describe('FormConfigurationService', () => {
       await service.updateConfiguration(companyId, 'vendor', {
         fields: [{ fieldKey: 'bankName', isRegistrationVisible: true }],
       });
-      expect(repository.deleteOverride).toHaveBeenCalledWith(companyId, 'vendor', 'bankName');
+      expect(repository.clearVisibilityOverride).toHaveBeenCalledWith(companyId, 'vendor', 'bankName');
       expect(repository.upsertOverride).not.toHaveBeenCalled();
     });
   });
@@ -411,6 +433,175 @@ describe('FormConfigurationService', () => {
     await service.resetConfiguration(companyId, 'item');
     expect(repository.deleteAllOverrides).toHaveBeenCalledWith(companyId, 'item');
     expect(repository.deleteAllOverrides).not.toHaveBeenCalledWith(companyId, 'vendor');
+  });
+
+  describe('field display order', () => {
+    const address = ['address', 'city', 'country'];
+    const courier = {
+      fieldId: 99n,
+      fieldName: 'courier',
+      displayName: 'Courier',
+      fieldType: 'text',
+      sectionKey: 'address',
+      isHidden: false,
+      isRegistrationVisible: true,
+      isRequired: false,
+      sortOrder: 0,
+    };
+    const orderOf = (result: { sections: { sectionKey: string; fields: { fieldKey: string }[] }[] }, key: string) =>
+      result.sections.find((s) => s.sectionKey === key)?.fields.map((f) => f.fieldKey);
+    const expectCode = async (promise: Promise<unknown>, code: string, field: string) => {
+      await expect(promise).rejects.toBeInstanceOf(BusinessException);
+      await promise.catch((err: BusinessException) => {
+        expect(err.getResponse()).toMatchObject({ code, errors: [expect.objectContaining({ field })] });
+      });
+    };
+
+    it('lists custom fields after built-ins by default with displayOrder 1..n', async () => {
+      const { service } = makeService({}, [], [courier]);
+      const result = await service.getConfiguration(companyId, 'vendor');
+      const section = result.sections.find((s: { sectionKey: string }) => s.sectionKey === 'address')!;
+      expect(section.fields.map((f: { fieldKey: string }) => f.fieldKey)).toEqual([...address, 'courier']);
+      expect(section.fields.map((f: { displayOrder: number }) => f.displayOrder)).toEqual([1, 2, 3, 4]);
+      expect(section.fields[3]).toMatchObject({ source: 'CUSTOM', fieldId: '99', configurable: false });
+    });
+
+    it('applies the saved order, including hidden fields and custom fields between built-ins', async () => {
+      const { service } = makeService(
+        {
+          findOverrides: jest.fn().mockResolvedValue([
+            { fieldKey: 'country', isVisible: false, isRegistrationVisible: null, displayOrder: 1 },
+            { fieldKey: 'address', isVisible: null, isRegistrationVisible: null, displayOrder: 3 },
+            { fieldKey: 'city', isVisible: null, isRegistrationVisible: null, displayOrder: 4 },
+          ]),
+        },
+        [],
+        [{ ...courier, sortOrder: 2 }],
+      );
+      const result = await service.getConfiguration(companyId, 'vendor');
+      expect(orderOf(result, 'address')).toEqual(['country', 'courier', 'address', 'city']);
+      expect(orderOf(result, 'contact')?.[0]).toBe('email');
+    });
+
+    it('saves a full section and writes built-in and custom positions', async () => {
+      const { service, repository, auditService } = makeService({}, [], [courier]);
+      await service.updateFieldOrder(
+        companyId,
+        'vendor',
+        {
+          sections: [
+            {
+              sectionKey: 'address',
+              fields: [
+                { fieldKey: 'courier', source: 'CUSTOM', displayOrder: 1 },
+                { fieldKey: 'country', source: 'BUILT_IN', displayOrder: 2 },
+                { fieldKey: 'address', source: 'BUILT_IN', displayOrder: 3 },
+                { fieldKey: 'city', source: 'BUILT_IN', displayOrder: 4 },
+              ],
+            },
+          ],
+        },
+        '7',
+      );
+      expect(repository.saveFieldOrder).toHaveBeenCalledWith(
+        companyId,
+        'vendor',
+        [
+          { fieldKey: 'country', displayOrder: 2 },
+          { fieldKey: 'address', displayOrder: 3 },
+          { fieldKey: 'city', displayOrder: 4 },
+        ],
+        [{ fieldId: 99n, sortOrder: 1 }],
+      );
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({ companyId, performedBy: '7', entityName: 'FormFieldOrder' }),
+      );
+    });
+
+    const orderDto = (fields: Array<{ fieldKey: string; source: 'BUILT_IN' | 'CUSTOM'; displayOrder: number }>, sectionKey = 'address') => ({
+      sections: [{ sectionKey, fields }],
+    });
+    const builtIn = (fieldKey: string, displayOrder: number) => ({
+      fieldKey,
+      source: 'BUILT_IN' as const,
+      displayOrder,
+    });
+
+    it('rejects a duplicate displayOrder', async () => {
+      const { service, repository } = makeService();
+      await expectCode(
+        service.updateFieldOrder(
+          companyId,
+          'vendor',
+          orderDto([builtIn('address', 1), builtIn('city', 1), builtIn('country', 2)]),
+          '7',
+        ),
+        'FORM_CONFIG_DUPLICATE_ORDER',
+        'sections[0].fields[1].displayOrder',
+      );
+      expect(repository.saveFieldOrder).not.toHaveBeenCalled();
+    });
+
+    it('rejects a section with a missing field', async () => {
+      const { service } = makeService({}, [], [courier]);
+      await expectCode(
+        service.updateFieldOrder(
+          companyId,
+          'vendor',
+          orderDto([builtIn('address', 1), builtIn('city', 2), builtIn('country', 3)]),
+          '7',
+        ),
+        'FORM_CONFIG_INCOMPLETE_SECTION',
+        'sections[0].fields',
+      );
+    });
+
+    it('rejects a custom field that is not in this company or section', async () => {
+      const { service } = makeService();
+      await expectCode(
+        service.updateFieldOrder(
+          companyId,
+          'vendor',
+          orderDto([
+            builtIn('address', 1),
+            builtIn('city', 2),
+            builtIn('country', 3),
+            { fieldKey: 'courier', source: 'CUSTOM', displayOrder: 4 },
+          ]),
+          '7',
+        ),
+        'FORM_CONFIG_INVALID_FIELD',
+        'sections[0].fields[3].fieldKey',
+      );
+    });
+
+    it('rejects a built-in from another section and an unknown section', async () => {
+      const { service } = makeService();
+      await expectCode(
+        service.updateFieldOrder(
+          companyId,
+          'vendor',
+          orderDto([builtIn('address', 1), builtIn('email', 2)]),
+          '7',
+        ),
+        'FORM_CONFIG_INVALID_FIELD',
+        'sections[0].fields[1].fieldKey',
+      );
+      await expectCode(
+        service.updateFieldOrder(companyId, 'vendor', orderDto([], 'nope'), '7'),
+        'FORM_CONFIG_INVALID_SECTION',
+        'sections[0].sectionKey',
+      );
+    });
+
+    it('visibility PUT skips custom field keys', async () => {
+      const { service, repository } = makeService({}, [], [courier]);
+      await service.updateConfiguration(companyId, 'vendor', {
+        fields: [{ fieldKey: 'courier', isVisible: false }],
+      });
+      expect(repository.upsertOverride).not.toHaveBeenCalled();
+      expect(repository.clearVisibilityOverride).not.toHaveBeenCalled();
+    });
   });
 
   it('rejects unsupported entity type', async () => {

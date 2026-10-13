@@ -1,0 +1,153 @@
+================================================================================
+FE HANDOFF — TURN OFF AUTO-REFRESH (POLLING) TO CUT API CALLS / CLOUD COST
+Date:       10-Oct-2026
+From:       ERP-Backend
+Audience:   ERP-Frontend
+Backend:    no change needed
+================================================================================
+
+
+1) PROBLEM
+--------------------------------------------------------------------------------
+
+  src/hooks/use-auto-refresh.ts reloads the page data:
+    - every 10 s (default) while the tab is visible
+    - every time the window gets focus (also when clicking DevTools and back)
+
+  21 screens use it. One open tab = ~360 API calls / hour on a 10 s screen.
+  Every call hits Cloud Run + Cloud SQL (load, slowness, data transfer).
+
+  Note: this fix cuts load, not the fixed cloud cost. The bill is mainly the backend
+  Cloud Run setup (always-on instance) + Cloud SQL running 24/7 — fixed separately on BE.
+
+  It is the ONLY automatic repeated call in the FE (checked: no other setInterval,
+  no SWR / React Query, no WebSocket; /auth/refresh only runs on a 401).
+
+
+2) NEW RULE
+--------------------------------------------------------------------------------
+
+  Load data when:
+    a) the page opens                                   (already done)
+    b) after a save / delete                            (requestDataRefresh())
+    c) the user clicks a Refresh button                 (new, on lists)
+    d) the tab comes back after being away >= 60 s      (throttled focus)
+
+  No timer polling by default.
+
+
+3) CHANGE THE HOOK  (src/hooks/use-auto-refresh.ts)
+--------------------------------------------------------------------------------
+
+  - intervalMs default 0 = no polling. Only poll when a screen passes intervalMs > 0.
+  - Focus / visibility refresh only if the last load was >= 60 s ago.
+  - DATA_REFRESH_EVENT and FORM_SCHEMA_INVALIDATE_EVENT still refresh at once.
+  - Still skip while the tab is hidden.
+
+  Sketch:
+
+    export type AutoRefreshOptions = {
+      /** Poll interval in ms. 0 / omitted = no polling. */
+      intervalMs?: number;
+      /** Min gap before a focus / tab-visible refresh. Default 60000. */
+      focusMinGapMs?: number;
+      enabled?: boolean;
+    };
+
+    export function useAutoRefresh(refresh, options: AutoRefreshOptions = {}) {
+      const { intervalMs = 0, focusMinGapMs = 60_000, enabled = true } = options;
+      const refreshRef = useRef(refresh);
+      refreshRef.current = refresh;
+
+      useEffect(() => {
+        if (!enabled) return undefined;
+        let cancelled = false;
+        let inFlight = false;
+        let lastRun = Date.now();                  // page just loaded its data
+
+        const run = async (force: boolean) => {
+          if (cancelled || inFlight || document.visibilityState === 'hidden') return;
+          if (!force && Date.now() - lastRun < focusMinGapMs) return;
+          inFlight = true;
+          lastRun = Date.now();
+          try { await refreshRef.current(); } finally { inFlight = false; }
+        };
+
+        const onFocus = () => void run(false);
+        const onSaved = () => void run(true);
+        const id = intervalMs > 0 ? window.setInterval(() => void run(true), intervalMs) : undefined;
+
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onFocus);
+        window.addEventListener(DATA_REFRESH_EVENT, onSaved);
+        window.addEventListener(FORM_SCHEMA_INVALIDATE_EVENT, onSaved);
+        return () => {
+          cancelled = true;
+          if (id) window.clearInterval(id);
+          window.removeEventListener('focus', onFocus);
+          document.removeEventListener('visibilitychange', onFocus);
+          window.removeEventListener(DATA_REFRESH_EVENT, onSaved);
+          window.removeEventListener(FORM_SCHEMA_INVALIDATE_EVENT, onSaved);
+        };
+      }, [enabled, intervalMs, focusMinGapMs]);
+    }
+
+
+4) SCREENS — WHAT TO DO
+--------------------------------------------------------------------------------
+
+  Remove "intervalMs" from every call (hook default becomes no polling).
+  Add a Refresh icon button on the lists marked [R].
+
+  Screen (file in src/sections)                              today    new
+  ---------------------------------------------------------  -------  ----------------
+  item/item-list-view                                    [R] 10 s     off
+  vendor/vendor-list-view                                [R] 10 s     off
+  admin/company/company-list-view                        [R] 10 s     off
+  inventory/stock/current-stock-view                     [R] 30 s     off
+  inventory/stock/stock-ledger-view                      [R] 30 s     off
+  inventory/stock/inventory-doc-list-view                [R] 30 s     off
+  inventory/setup/inventory-setup-view                       10 s     off
+  settings/modules/company-module-settings-view              10 s     off
+  admin/modules/modules-view                                 10 s     off
+  admin/plans/plans-view                                     10 s     off
+  admin/platform/platform-subscriptions-view                 10 s     off
+  admin/platform/platform-dashboard-view                     10 s     off (or 5 min)
+  admin/custom-fields/custom-fields-view                     10 s     off
+  admin/form-configuration/entity-form-configuration         10 s     off
+  admin/company/company-detail-view                          10 s     off
+  admin/company/users-tab                                    10 s     off
+  admin/company/company-admins-tab                           10 s     off
+  admin/company/module-access-tab                            10 s     off
+  admin/company/subscription-tab                             10 s     off
+  admin/company/data-access-policies-tab                     10 s     off
+  admin/company/activity-audit-tab                       [R] 10 s     off
+
+  If a screen really needs live data later, pass intervalMs: 300000 (5 min) at most.
+
+
+5) AFTER EVERY SAVE / DELETE
+--------------------------------------------------------------------------------
+
+  Call requestDataRefresh() (src/lib/data-refresh.ts) after a successful create / edit /
+  delete / post / import, so other open screens reload once. Today only a few places
+  call it — add it to every save path that used to rely on polling (items, vendors,
+  inventory setup, stock documents, company admin tabs, modules, plans).
+
+
+6) HOW TO CHECK
+--------------------------------------------------------------------------------
+
+  DevTools → Network → Fetch/XHR, open any of the screens above:
+    [ ] Leave the tab idle 2 minutes      → 0 new requests
+    [ ] Click DevTools and back            → 0 new requests
+    [ ] Switch to another tab > 60 s, back → 1 reload
+    [ ] Save something                     → list reloads once
+    [ ] Refresh button                     → 1 reload
+
+  Expected: ~360 calls / hour per idle tab → about 0.
+
+
+================================================================================
+END
+================================================================================

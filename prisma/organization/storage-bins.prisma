@@ -15,8 +15,11 @@ model StorageBin {
   deletedAt    DateTime? @map("deleted_at")
   rowVersion   Int       @default(1) @map("row_version")
 
-  company   Company   @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
-  warehouse Warehouse @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
+  company                Company                 @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  warehouse              Warehouse               @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
+  inventoryDocumentLines InventoryDocumentLine[]
+  stockBalances          StockBalance[]
+  stockLedgerEntries     StockLedgerEntry[]
 
   @@unique([warehouseId, binCode])
   @@index([companyId])

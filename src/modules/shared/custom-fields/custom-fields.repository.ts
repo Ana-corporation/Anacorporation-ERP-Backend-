@@ -41,6 +41,29 @@ export class CustomFieldsRepository {
     });
   }
 
+  /** Next position after every custom and ordered built-in field of the section. */
+  async nextSortOrder(
+    companyId: string,
+    entityType: CustomFieldEntityType,
+    sectionKey: string,
+    builtInFieldKeys: string[],
+  ): Promise<number> {
+    const company = parseBigIntId(companyId);
+    const sectionWhere =
+      sectionKey === 'custom' ? { OR: [{ sectionKey: null }, { sectionKey }] } : { sectionKey };
+    const [custom, builtIn] = await Promise.all([
+      this.prisma.customFieldDefinition.aggregate({
+        where: { companyId: company, entityType, deletedAt: null, ...sectionWhere },
+        _max: { sortOrder: true },
+      }),
+      this.prisma.companyFieldConfiguration.aggregate({
+        where: { companyId: company, entityType, fieldKey: { in: builtInFieldKeys } },
+        _max: { displayOrder: true },
+      }),
+    ]);
+    return Math.max(custom._max.sortOrder ?? 0, builtIn._max.displayOrder ?? 0) + 1;
+  }
+
   findDefinitionById(fieldId: string, companyId: string) {
     return this.prisma.customFieldDefinition.findFirst({
       where: {

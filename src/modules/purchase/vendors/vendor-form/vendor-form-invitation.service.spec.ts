@@ -62,6 +62,7 @@ function customDef(overrides: Record<string, unknown> = {}) {
 type SetupOptions = {
   visibility?: Map<string, boolean>;
   registration?: Map<string, boolean>;
+  order?: Map<string, number>;
   customDefs?: ReturnType<typeof customDef>[];
   customValues?: Record<string, unknown>;
   registrationHiddenSections?: string[];
@@ -144,6 +145,7 @@ function setup(options: SetupOptions = {}) {
       loadFieldOverrides: jest.fn().mockResolvedValue({
         visibility: options.visibility ?? new Map(),
         registration: options.registration ?? new Map(),
+        order: options.order ?? new Map(),
       }),
     } as never,
     { findDefinitionsByCompany: jest.fn().mockResolvedValue(options.customDefs ?? []) } as never,
@@ -461,6 +463,27 @@ describe('VendorFormInvitationService — registration form field settings', () 
     expect(order.indexOf('vendorName')).toBeLessThan(order.indexOf('msmeType'));
     expect(order.indexOf('msmeType')).toBeLessThan(order.indexOf('gstin'));
     expect(order.indexOf('gstin')).toBeLessThan(order.indexOf('email'));
+  });
+
+  it('follows the saved field order and sends displayOrder', async () => {
+    const { service, repository } = setup({
+      order: new Map([
+        ['city', 1],
+        ['address', 3],
+        ['country', 4],
+      ]),
+      customDefs: [customDef({ fieldName: 'courier', sectionKey: 'address', sortOrder: 2 })],
+    });
+    repository.findByTokenHash.mockResolvedValue(invitationFor(normalVendor()));
+
+    const { form } = (await service.getFormByToken(TOKEN)) as PublicForm;
+    const address = form.fields.filter((f) => f.section === 'address');
+    expect(address.map((f) => [f.name, f.displayOrder])).toEqual([
+      ['city', 1],
+      ['courier', 2],
+      ['address', 3],
+      ['country', 4],
+    ]);
   });
 
   it('reads the setting when the link is opened: fields switched off are gone, others stay', async () => {

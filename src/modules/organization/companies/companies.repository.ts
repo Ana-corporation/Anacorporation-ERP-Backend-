@@ -7,6 +7,7 @@ import { buildListWhere, resolveOrderBy, ListFilterOptions } from '@/common/util
 import { CreateCompanyDto, UpdateCompanyDto } from './dto/company.dto';
 import { NotFoundException } from '@/common/exceptions/business.exception';
 import { parseAutoCompanySequence } from './company-code.util';
+import { DEFAULT_STORE_CATEGORY } from '../store-categories/store-categories.constants';
 
 const COMPANIES_LIST_FILTER: ListFilterOptions = {
   contains: { name: 'name', code: 'companyCode', email: 'email' },
@@ -113,6 +114,12 @@ export class CompaniesRepository {
           ? parseBigIntId(dto.defaultCurrencyId, 'defaultCurrencyId')
           : undefined,
         createdBy: createdBy ? parseBigIntId(createdBy, 'createdBy') : undefined,
+        storeCategories: {
+          create: {
+            ...DEFAULT_STORE_CATEGORY,
+            createdBy: createdBy ? parseBigIntId(createdBy, 'createdBy') : undefined,
+          },
+        },
       },
       include: companySummaryInclude,
     });

@@ -1,6 +1,6 @@
 // shared | company_field_configurations
-// Company-level visibility overrides for developer-defined built-in form fields.
-// NULL in either flag = no override for that flag (the row may carry only one of them).
+// Company-level overrides for developer-defined built-in form fields.
+// NULL in any column = no override for it (a row may carry only order, or only one flag).
 
 model CompanyFieldConfiguration {
   configurationId       BigInt   @id @default(autoincrement()) @map("configuration_id")
@@ -10,8 +10,10 @@ model CompanyFieldConfiguration {
   isVisible             Boolean? @map("is_visible")
   /// Public vendor registration form; NULL follows the effective Add form visibility.
   isRegistrationVisible Boolean? @map("is_registration_visible")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  /// Position inside the section, same number space as custom_field_definitions.sort_order.
+  displayOrder          Int?     @map("display_order")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
 
   company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
 

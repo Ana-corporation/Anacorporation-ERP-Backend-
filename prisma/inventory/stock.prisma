@@ -1,0 +1,63 @@
+// inventory | stock_balances + stock_ledger_entries
+// Written only by StockPostingService. No API creates, edits or deletes these rows.
+
+model StockBalance {
+  stockBalanceId BigInt    @id @default(autoincrement()) @map("stock_balance_id")
+  companyId      BigInt    @map("company_id")
+  itemId         BigInt    @map("item_id")
+  branchId       BigInt?   @map("branch_id")
+  warehouseId    BigInt    @map("warehouse_id")
+  storageBinId   BigInt?   @map("storage_bin_id")
+  /// storage_bin_id or 0, so locations without bins still get one unique row
+  binKey         BigInt    @default(0) @map("bin_key")
+  quantity       Decimal   @default(0) @db.Decimal(18, 6)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime? @map("updated_at")
+
+  company    Company     @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  item       Item        @relation(fields: [itemId], references: [itemId], onDelete: NoAction)
+  branch     Branch?     @relation(fields: [branchId], references: [branchId], onDelete: NoAction)
+  warehouse  Warehouse   @relation(fields: [warehouseId], references: [warehouseId], onDelete: NoAction)
+  storageBin StorageBin? @relation(fields: [storageBinId], references: [storageBinId], onDelete: NoAction)
+
+  @@unique([companyId, itemId, warehouseId, binKey])
+  @@index([companyId, warehouseId])
+  @@map("stock_balances")
+}
+
+model StockLedgerEntry {
+  entryId         BigInt            @id @default(autoincrement()) @map("entry_id")
+  companyId       BigInt            @map("company_id")
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  movementType    StockMovementType @map("movement_type")
+  /// Source document kind (INVENTORY_DOCUMENT today; GRN, PRODUCTION … later)
+  sourceType      String            @map("source_type") @db.VarChar(40)
+  sourceLineId    BigInt            @map("source_line_id")
+  documentId      BigInt?           @map("document_id")
+  documentNumber  String            @map("document_number") @db.VarChar(30)
+  itemId          BigInt            @map("item_id")
+  branchId        BigInt?           @map("branch_id")
+  warehouseId     BigInt            @map("warehouse_id")
+  storageBinId    BigInt?           @map("storage_bin_id")
+  qtyIn           Decimal           @default(0) @map("qty_in") @db.Decimal(18, 6)
+  qtyOut          Decimal           @default(0) @map("qty_out") @db.Decimal(18, 6)
+  uom             String?           @db.VarChar(40)
+  /// Valuation is optional today; kept so costing can be added without touching old rows
+  unitCost        Decimal?          @map("unit_cost") @db.Decimal(18, 6)
+  totalValue      Decimal?          @map("total_value") @db.Decimal(18, 6)
+  createdBy       BigInt?           @map("created_by")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  company    Company            @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  document   InventoryDocument? @relation(fields: [documentId], references: [documentId], onDelete: NoAction)
+  item       Item               @relation(fields: [itemId], references: [itemId], onDelete: NoAction)
+  branch     Branch?            @relation(fields: [branchId], references: [branchId], onDelete: NoAction)
+  warehouse  Warehouse          @relation(fields: [warehouseId], references: [warehouseId], onDelete: NoAction)
+  storageBin StorageBin?        @relation(fields: [storageBinId], references: [storageBinId], onDelete: NoAction)
+
+  @@unique([sourceType, sourceLineId, movementType])
+  @@index([companyId, itemId, transactionDate])
+  @@index([companyId, warehouseId, transactionDate])
+  @@index([companyId, documentNumber])
+  @@map("stock_ledger_entries")
+}

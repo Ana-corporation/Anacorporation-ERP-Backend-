@@ -22,6 +22,11 @@ STATUS
 CREATE
 --------------------------------------------------------------------------------
 
+  UPDATE 09-Oct-2026: WAREHOUSE codes changed. They are now RMS-001 style, always generated
+  from locationType; an explicit warehouseCode is ignored. See
+  FE-HANDOFF-INVENTORY.txt section 3. Branch / Department / Designation
+  are unchanged.
+
   POST /companies/{companyId}/branches
   POST /companies/{companyId}/departments
   POST /companies/{companyId}/designations

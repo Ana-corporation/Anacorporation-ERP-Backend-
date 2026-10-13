@@ -270,6 +270,12 @@ export class ItemsService {
   ) {
     await this.assertItemExists(id, companyId);
     await this.dataAccessPoliciesService.assertWarehouseScope(actorId, companyId, warehouseId);
+    if (await this.repository.hasStockInWarehouse(id, warehouseId)) {
+      throw new ConflictException(
+        'This item still has stock in this location; issue or adjust it to zero first',
+        'ITEM_WAREHOUSE_HAS_STOCK',
+      );
+    }
 
     const { count } = await this.repository.deleteWarehouseStock(id, warehouseId);
     if (count === 0) throw new NotFoundException('Item warehouse stock');

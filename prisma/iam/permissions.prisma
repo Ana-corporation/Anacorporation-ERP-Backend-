@@ -8,8 +8,8 @@ model Permission {
   action         PermissionAction
   createdAt      DateTime         @default(now()) @map("created_at")
 
-  module          Module           @relation(fields: [moduleId], references: [moduleId], onDelete: Cascade)
-  rolePermissions RolePermission[]
+  module                   Module                    @relation(fields: [moduleId], references: [moduleId], onDelete: Cascade)
+  rolePermissions          RolePermission[]
   permissionSetPermissions PermissionSetPermission[]
 
   @@unique([moduleId, permissionCode])

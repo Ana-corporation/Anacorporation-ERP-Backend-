@@ -131,6 +131,7 @@ export const UpdateItemSchema = z.object({
 export const UpsertItemWarehouseStockSchema = z.object({
   warehouseId: z.string().regex(/^\d+$/, 'Invalid warehouseId'),
   isLocked: z.boolean().optional(),
+  /** Ignored: on-hand stock changes only through posted inventory documents. */
   qtyOnHand: optionalDecimal,
   qtyCommitted: optionalDecimal,
   qtyOrdered: optionalDecimal,

@@ -258,7 +258,7 @@ VERDICT
 
   Department login / shared department password  — will not be added
   Second JWT / auth module
-  Moving bins / inventory sites  — see FE-HANDOFF-INVENTORY-SITES-LOCATIONS-BINS.txt
+  Moving bins / inventory sites  — see FE-HANDOFF-INVENTORY.txt
 
 
 ================================================================================

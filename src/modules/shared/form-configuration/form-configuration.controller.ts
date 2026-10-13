@@ -4,7 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
-import { UpdateFormConfigurationDto } from './dto/form-configuration.dto';
+import { UpdateFieldOrderDto, UpdateFormConfigurationDto } from './dto/form-configuration.dto';
 import { FormConfigurationService } from './form-configuration.service';
 
 @ApiTags('Form Configuration')
@@ -36,6 +36,19 @@ export class FormConfigurationController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.formConfigurationService.updateConfiguration(companyId, entityType, dto);
+  }
+
+  @Put(':entityType/order')
+  @RequirePermissions('form_configurations:edit')
+  @ApiOperation({ summary: 'Save the field order of one or more sections (full list per section)' })
+  updateFieldOrder(
+    @Param('companyId') companyId: string,
+    @Param('entityType') entityType: string,
+    @Body() dto: UpdateFieldOrderDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.formConfigurationService.updateFieldOrder(companyId, entityType, dto, user.sub);
   }
 
   @Delete(':entityType')

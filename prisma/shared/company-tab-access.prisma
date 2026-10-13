@@ -2,15 +2,15 @@
 // Company-level role visibility for form tabs (section keys). Separate from RBAC permissions.
 
 model CompanyTabAccess {
-  accessId    BigInt   @id @default(autoincrement()) @map("access_id")
-  companyId   BigInt   @map("company_id")
-  moduleCode  String   @map("module_code") @db.VarChar(40)
-  entityType  String   @map("entity_type") @db.VarChar(40)
-  tabKey      String   @map("tab_key") @db.VarChar(80)
-  roleId      BigInt   @map("role_id")
-  isVisible   Boolean  @map("is_visible")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  accessId   BigInt   @id @default(autoincrement()) @map("access_id")
+  companyId  BigInt   @map("company_id")
+  moduleCode String   @map("module_code") @db.VarChar(40)
+  entityType String   @map("entity_type") @db.VarChar(40)
+  tabKey     String   @map("tab_key") @db.VarChar(80)
+  roleId     BigInt   @map("role_id")
+  isVisible  Boolean  @map("is_visible")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   role    Role    @relation(fields: [roleId], references: [roleId], onDelete: Cascade)

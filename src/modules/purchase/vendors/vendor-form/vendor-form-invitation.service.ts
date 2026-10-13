@@ -55,7 +55,9 @@ import {
   toPublicFormFields,
   VENDOR_NAME_FIELD_KEY,
   VendorFormFieldDefinition,
+  withDisplayOrders,
 } from './vendor-form-field.util';
+import { computeDisplayOrders } from '@/modules/shared/form-configuration/field-order.util';
 import {
   generateVendorFormToken,
   hashVendorFormToken,
@@ -968,8 +970,9 @@ export class VendorFormInvitationService {
     isDraft = false,
   ): Promise<{ fieldDefs: VendorFormFieldDefinition[]; attachmentsEnabled: boolean }> {
     const overrides = await this.formConfigurationService.loadFieldOverrides(companyId, 'vendor');
+    const registry = getBuiltInFields('vendor');
     const builtIn = filterRegistrationBuiltInFields(
-      getBuiltInFields('vendor'),
+      registry,
       overrides.visibility,
       overrides.registration,
     );
@@ -987,11 +990,15 @@ export class VendorFormInvitationService {
       companyId,
       'vendor',
     );
-    const all = sortVendorFormFields(
-      [...builtIn, ...custom].filter((field) => isRegistrationTab(field.sectionKey)),
-    );
+    const displayOrders = computeDisplayOrders({
+      builtIns: registry,
+      customs: definitions,
+      savedBuiltInOrder: overrides.order,
+    });
+    const shown = [...builtIn, ...custom].filter((field) => isRegistrationTab(field.sectionKey));
+    const fieldDefs = isDraft ? applyDraftVendorFieldRules(shown) : shown;
     return {
-      fieldDefs: isDraft ? applyDraftVendorFieldRules(all) : all,
+      fieldDefs: sortVendorFormFields(withDisplayOrders(fieldDefs, displayOrders)),
       attachmentsEnabled: isRegistrationTab('attachments'),
     };
   }

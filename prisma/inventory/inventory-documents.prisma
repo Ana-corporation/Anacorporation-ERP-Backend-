@@ -1,0 +1,77 @@
+// inventory | inventory_documents + inventory_document_lines
+// Opening Stock, Material Issue and Stock Adjustment. DRAFT never touches stock;
+// POSTED documents are locked and their movements live in stock_ledger_entries.
+
+model InventoryDocument {
+  documentId     BigInt                  @id @default(autoincrement()) @map("document_id")
+  companyId      BigInt                  @map("company_id")
+  documentType   InventoryDocumentType   @map("document_type")
+  documentNumber String                  @map("document_number") @db.VarChar(30)
+  documentDate   DateTime                @map("document_date") @db.Date
+  status         InventoryDocumentStatus @default(DRAFT)
+  remarks        String?                 @db.Text
+
+  /// Material Issue
+  requestedBy  String? @map("requested_by") @db.VarChar(150)
+  issuedBy     String? @map("issued_by") @db.VarChar(150)
+  departmentId BigInt? @map("department_id")
+  purpose      String? @db.VarChar(255)
+
+  /// Stock Adjustment
+  reason String? @db.VarChar(255)
+
+  postedAt   DateTime? @map("posted_at")
+  postedBy   BigInt?   @map("posted_by")
+  createdBy  BigInt?   @map("created_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedBy  BigInt?   @map("updated_by")
+  updatedAt  DateTime? @map("updated_at")
+  deletedBy  BigInt?   @map("deleted_by")
+  deletedAt  DateTime? @map("deleted_at")
+  rowVersion Int       @default(1) @map("row_version")
+
+  company       Company                 @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  department    Department?             @relation(fields: [departmentId], references: [departmentId], onDelete: NoAction)
+  lines         InventoryDocumentLine[]
+  ledgerEntries StockLedgerEntry[]
+
+  @@unique([companyId, documentType, documentNumber])
+  @@index([companyId, documentType, status])
+  @@index([companyId, documentDate])
+  @@map("inventory_documents")
+}
+
+model InventoryDocumentLine {
+  lineId       BigInt  @id @default(autoincrement()) @map("line_id")
+  documentId   BigInt  @map("document_id")
+  companyId    BigInt  @map("company_id")
+  lineNo       Int     @map("line_no")
+  itemId       BigInt  @map("item_id")
+  /// Site (= Branch master)
+  branchId     BigInt? @map("branch_id")
+  warehouseId  BigInt  @map("warehouse_id")
+  storageBinId BigInt? @map("storage_bin_id")
+  /// Inventory UoM copied from Item Master
+  uom          String? @db.VarChar(40)
+
+  /// Opening quantity / issue quantity
+  quantity  Decimal? @db.Decimal(18, 6)
+  unitPrice Decimal? @map("unit_price") @db.Decimal(18, 6)
+
+  /// Stock Adjustment: system quantity and difference are re-read from stock when posted
+  systemQuantity   Decimal? @map("system_quantity") @db.Decimal(18, 6)
+  physicalQuantity Decimal? @map("physical_quantity") @db.Decimal(18, 6)
+  difference       Decimal? @db.Decimal(18, 6)
+
+  remarks String? @db.VarChar(255)
+
+  document   InventoryDocument @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  item       Item              @relation(fields: [itemId], references: [itemId], onDelete: NoAction)
+  branch     Branch?           @relation(fields: [branchId], references: [branchId], onDelete: NoAction)
+  warehouse  Warehouse         @relation(fields: [warehouseId], references: [warehouseId], onDelete: NoAction)
+  storageBin StorageBin?       @relation(fields: [storageBinId], references: [storageBinId], onDelete: NoAction)
+
+  @@unique([documentId, lineNo])
+  @@index([companyId, itemId])
+  @@map("inventory_document_lines")
+}

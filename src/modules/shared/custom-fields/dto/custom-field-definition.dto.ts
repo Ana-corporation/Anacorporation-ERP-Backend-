@@ -38,7 +38,8 @@ export const CreateCustomFieldDefinitionSchema = z.object({
   defaultValue: z.unknown().optional(),
   validation: validationSchema,
   options: z.array(fieldOptionSchema).optional(),
-  sortOrder: z.number().int().min(0).max(9999).optional().default(0),
+  /** Omitted or 0 = after every field already in the section. */
+  sortOrder: z.number().int().min(0).max(9999).optional(),
   placeholder: z.string().trim().max(255).optional().nullable(),
   helpText: z.string().trim().max(500).optional().nullable(),
   description: z.string().trim().max(1000).optional().nullable(),

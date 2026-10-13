@@ -419,7 +419,6 @@ export class ItemsRepository {
         itemId: itemKey,
         warehouseId: warehouseKey,
         isLocked: dto.isLocked ?? false,
-        qtyOnHand: dto.qtyOnHand ?? 0,
         qtyCommitted: dto.qtyCommitted ?? 0,
         qtyOrdered: dto.qtyOrdered ?? 0,
         requiredQty: dto.requiredQty ?? null,
@@ -432,7 +431,6 @@ export class ItemsRepository {
       },
       update: {
         ...(dto.isLocked !== undefined ? { isLocked: dto.isLocked } : {}),
-        ...(dto.qtyOnHand !== undefined ? { qtyOnHand: dto.qtyOnHand } : {}),
         ...(dto.qtyCommitted !== undefined ? { qtyCommitted: dto.qtyCommitted } : {}),
         ...(dto.qtyOrdered !== undefined ? { qtyOrdered: dto.qtyOrdered } : {}),
         ...(dto.requiredQty !== undefined ? { requiredQty: dto.requiredQty } : {}),
@@ -456,6 +454,18 @@ export class ItemsRepository {
         },
       },
     });
+  }
+
+  async hasStockInWarehouse(itemId: string, warehouseId: string) {
+    const row = await this.prisma.stockBalance.findFirst({
+      where: {
+        itemId: parseBigIntId(itemId),
+        warehouseId: parseBigIntId(warehouseId, 'warehouseId'),
+        quantity: { not: 0 },
+      },
+      select: { stockBalanceId: true },
+    });
+    return Boolean(row);
   }
 
   deleteWarehouseStock(itemId: string, warehouseId: string) {

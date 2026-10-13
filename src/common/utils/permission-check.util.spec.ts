@@ -245,6 +245,27 @@ describe('permission-check.util', () => {
       expect(checkPermissionCode(user, 'items:view')).toBe(true);
     });
 
+    it('inventory: staff with view-only cannot post; legacy supply-chain:* covers inventory codes', () => {
+      const storeStaff = makeUser({
+        permissions: ['inventory_stock:view', 'material_issues:view', 'material_issues:create'],
+        modules: [{ ...supplyChainModule, permissions: ['view', 'create'] }],
+        subscriptionStatus: 'active',
+      });
+      expect(checkPermissionCode(storeStaff, 'inventory_stock:view')).toBe(true);
+      expect(checkPermissionCode(storeStaff, 'material_issues:create')).toBe(true);
+      expect(checkPermissionCode(storeStaff, 'material_issues:approve')).toBe(false);
+      expect(checkPermissionCode(storeStaff, 'stock_adjustments:view')).toBe(false);
+
+      const legacy = makeUser({
+        permissions: ['supply-chain:approve'],
+        modules: [supplyChainModule],
+        subscriptionStatus: 'active',
+      });
+      for (const code of ['opening_stock:approve', 'material_issues:approve', 'stock_adjustments:approve']) {
+        expect(checkPermissionCode(legacy, code)).toBe(true);
+      }
+    });
+
     it('maps legacy vendors:read / products:read to resource codes', () => {
       const user = makeUser({
         permissions: ['vendors:view', 'items:view'],

@@ -12,6 +12,7 @@ import { CustomFieldsValidationService } from '../custom-fields/custom-fields-va
 import { TabAccessService } from '../tab-access/tab-access.service';
 import { mapSectionKeyToTabKey } from '../tab-access/tab-registry';
 import { getBuiltInFields, resolveCustomRegistrationVisibility } from './built-in-field-registry';
+import { computeDisplayOrders, fieldOrderKey } from './field-order.util';
 import { FormConfigurationService } from './form-configuration.service';
 import { resolveVendorSectionDefsForCompany } from './ana-vendor-section-labels';
 
@@ -92,11 +93,17 @@ export class FormSchemaService {
       isSectionVisible(f.sectionKey ?? 'custom'),
     );
 
+    const displayOrders = computeDisplayOrders({
+      builtIns: registry,
+      customs: definitions,
+      savedBuiltInOrder: overrides.order,
+    });
     const resolvedSections = this.buildResolvedSections(
       visibleSectionDefs,
       visibleBuiltInFields,
       visibleCustomFields,
       isRegistrationTab,
+      displayOrders,
     );
 
     return serialize({
@@ -128,16 +135,23 @@ export class FormSchemaService {
       }
     >,
     isRegistrationTab: (sectionKey: string) => boolean,
+    displayOrders: Map<string, number>,
   ) {
     const sectionOrder = sectionDefs.map((s) => s.key);
-    const fieldsBySection = new Map<string, unknown[]>();
+    const fieldsBySection = new Map<
+      string,
+      Array<Record<string, unknown> & { displayOrder: number }>
+    >();
     const sectionsWithRegistrationFields = new Set<string>();
 
     for (const field of builtInFields) {
       if (!field.visible) continue;
       const list = fieldsBySection.get(field.sectionKey) ?? [];
       const { storage, ...publicField } = field;
-      list.push(publicField);
+      list.push({
+        ...publicField,
+        displayOrder: displayOrders.get(fieldOrderKey('BUILT_IN', field.key)) ?? 0,
+      });
       fieldsBySection.set(field.sectionKey, list);
       if (field.registrationVisible) sectionsWithRegistrationFields.add(field.sectionKey);
     }
@@ -166,6 +180,7 @@ export class FormSchemaService {
         isFilterable: field.isFilterable,
         isReadOnly: field.isReadOnly,
         registrationVisible: field.registrationVisible,
+        displayOrder: displayOrders.get(fieldOrderKey('CUSTOM', field.key)) ?? 0,
       });
       fieldsBySection.set(sectionKey, list);
     }
@@ -179,7 +194,9 @@ export class FormSchemaService {
       registrationVisible:
         isRegistrationTab(sectionKey) &&
         (sectionKey === 'attachments' || sectionsWithRegistrationFields.has(sectionKey)),
-      fields: fieldsBySection.get(sectionKey) ?? [],
+      fields: (fieldsBySection.get(sectionKey) ?? []).sort(
+        (a, b) => a.displayOrder - b.displayOrder,
+      ),
     }));
   }
 }

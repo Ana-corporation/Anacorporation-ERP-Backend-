@@ -20,6 +20,12 @@ const PRODUCT_PERMISSIONS = PRODUCT_MODULES.flatMap((mod) =>
 export const SUPPLY_CHAIN_RESOURCES = [
   { resource: 'vendors', displayName: 'Vendors' },
   { resource: 'items', displayName: 'Items' },
+  /** Current Stock + Stock Ledger (read-only; only :view is used) */
+  { resource: 'inventory_stock', displayName: 'Inventory Stock' },
+  /** Inventory documents: :approve = Post */
+  { resource: 'opening_stock', displayName: 'Opening Stock' },
+  { resource: 'material_issues', displayName: 'Material Issues' },
+  { resource: 'stock_adjustments', displayName: 'Stock Adjustments' },
 ] as const;
 
 export type SupplyChainResource = (typeof SUPPLY_CHAIN_RESOURCES)[number]['resource'];
@@ -35,12 +41,12 @@ export const SUPPLY_CHAIN_RESOURCE_PERMISSIONS = SUPPLY_CHAIN_RESOURCES.flatMap(
   })),
 );
 
-/** Expand legacy `supply-chain:{action}` → vendors + items resource codes. */
+/** Expand legacy `supply-chain:{action}` → every Supply Chain resource code. */
 export function expandSupplyChainModulePermission(code: string): string[] {
   const match = /^supply-chain:(view|create|edit|delete|approve)$/.exec(code);
   if (!match) return [code];
   const action = match[1];
-  return [`vendors:${action}`, `items:${action}`];
+  return SUPPLY_CHAIN_RESOURCES.map((r) => `${r.resource}:${action}`);
 }
 
 const ADMIN_PERMISSIONS = [

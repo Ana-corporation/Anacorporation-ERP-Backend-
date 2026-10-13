@@ -4,6 +4,14 @@ import { FormConfigurationRepository } from './form-configuration.repository';
 import { CustomFieldsRepository } from '../custom-fields/custom-fields.repository';
 import { CustomFieldsValidationService } from '../custom-fields/custom-fields-validation.service';
 import { TabAccessService } from '../tab-access/tab-access.service';
+import { AuditService } from '@/infrastructure/audit/audit.service';
+
+type ResolvedSections = {
+  resolvedSections: Array<{
+    sectionKey: string;
+    fields: Array<{ key: string; displayOrder: number }>;
+  }>;
+};
 
 describe('FormSchemaService', () => {
   const companyId = '15';
@@ -13,6 +21,7 @@ describe('FormSchemaService', () => {
       fieldKey: string;
       isVisible: boolean | null;
       isRegistrationVisible?: boolean | null;
+      displayOrder?: number | null;
     }> = [],
     visibleTabKeys?: Set<string>,
     customRegistrationVisible = true,
@@ -75,6 +84,8 @@ describe('FormSchemaService', () => {
     const formConfigurationService = new FormConfigurationService(
       formConfigurationRepository,
       tabAccessService,
+      customFieldsRepository,
+      { log: jest.fn() } as unknown as AuditService,
     );
 
     return new FormSchemaService(
@@ -87,9 +98,7 @@ describe('FormSchemaService', () => {
 
   it('hides website in resolvedSections when company override is false', async () => {
     const service = makeService([{ fieldKey: 'website', isVisible: false }]);
-    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as {
-      resolvedSections: Array<{ fields: Array<{ key: string }> }>;
-    };
+    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as unknown as ResolvedSections;
 
     const allKeys = schema.resolvedSections.flatMap((s) => s.fields.map((f) => f.key));
     expect(allKeys).not.toContain('website');
@@ -98,11 +107,25 @@ describe('FormSchemaService', () => {
 
   it('includes custom fields in resolvedSections alongside built-in', async () => {
     const service = makeService();
-    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as {
-      resolvedSections: Array<{ fields: Array<{ key: string }> }>;
-    };
+    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as unknown as ResolvedSections;
     const allKeys = schema.resolvedSections.flatMap((s) => s.fields.map((f) => f.key));
     expect(allKeys).toContain('preferred_courier');
+  });
+
+  it('sorts resolvedSections by the saved displayOrder', async () => {
+    const service = makeService([
+      { fieldKey: 'city', isVisible: null, displayOrder: 1 },
+      { fieldKey: 'country', isVisible: false, displayOrder: 2 },
+      { fieldKey: 'address', isVisible: null, displayOrder: 3 },
+    ]);
+    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as unknown as ResolvedSections;
+    const address = schema.resolvedSections.find((s) => s.sectionKey === 'address');
+    expect(address?.fields.map((f) => [f.key, f.displayOrder])).toEqual([
+      ['city', 1],
+      ['address', 3],
+    ]);
+    const custom = schema.resolvedSections.find((s) => s.sectionKey === 'custom');
+    expect(custom?.fields[0]).toMatchObject({ key: 'preferred_courier', displayOrder: 1 });
   });
 
   it('returns legacy fields[] as custom-only', async () => {
@@ -132,7 +155,7 @@ describe('FormSchemaService', () => {
       undefined,
       false,
     );
-    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as {
+    const schema = (await service.resolveFormSchema(companyId, 'vendor')) as unknown as {
       builtInFields: Array<{ key: string; registrationVisible: boolean; registrationConfigurable: boolean }>;
       resolvedSections: Array<{ fields: Array<{ key: string; registrationVisible: boolean }> }>;
     };

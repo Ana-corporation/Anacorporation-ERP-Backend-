@@ -12,7 +12,6 @@
     "**/*spec.ts",
     "src/modules/crm/**",
     "src/modules/inventory/items/**",
-    "src/modules/inventory/stock/**",
     "src/modules/manufacturing/**",
     "src/modules/assets/**",
     "src/modules/sales/**",

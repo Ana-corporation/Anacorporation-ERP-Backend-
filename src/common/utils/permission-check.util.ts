@@ -1,4 +1,4 @@
-import { PERMISSIONS } from '@/common/constants/permissions.constant';
+import { PERMISSIONS, SUPPLY_CHAIN_RESOURCES } from '@/common/constants/permissions.constant';
 import { ENTITLEMENT_ERROR_CODES } from '@/common/constants/entitlement.constants';
 import {
   ADMIN_MODULE_CODES,
@@ -69,10 +69,9 @@ const PERMISSION_CODE_ALIASES: Record<string, string[]> = {
   'user_audit:view': ['platform_companies:view', 'companies:view', 'user_audit:view'],
   // Legacy module-level supply-chain:* still satisfies resource checks until roles migrate
   ...Object.fromEntries(
-    PHASE1_PERMISSION_ACTIONS.flatMap((action) => [
-      [`vendors:${action}`, [`supply-chain:${action}`]],
-      [`items:${action}`, [`supply-chain:${action}`]],
-    ]),
+    PHASE1_PERMISSION_ACTIONS.flatMap((action) =>
+      SUPPLY_CHAIN_RESOURCES.map((r) => [`${r.resource}:${action}`, [`supply-chain:${action}`]]),
+    ),
   ),
 };
 
