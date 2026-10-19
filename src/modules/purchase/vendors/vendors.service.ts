@@ -120,31 +120,39 @@ export class VendorsService {
       metadata: this.mergeMetadata(undefined, rest.metadata, attachments),
     };
 
-    const vendor = await this.prisma.$transaction(async (tx) => {
-      const client = tx as unknown as Prisma.TransactionClient;
-      const vendorCode = await this.repository.nextVendorCode(companyId, prefix, client);
+    let vendor;
+    try {
+      vendor = await this.prisma.$transaction(async (tx) => {
+        const client = tx as unknown as Prisma.TransactionClient;
+        const vendorCode = await this.repository.nextVendorCode(companyId, prefix, client);
 
-      if (await this.repository.findByCode(companyId, vendorCode, client)) {
+        if (await this.repository.findByCode(companyId, vendorCode, client)) {
+          throw new ConflictException('Vendor code already exists');
+        }
+
+        const created = await this.repository.create(
+          companyId,
+          vendorDto,
+          vendorCode,
+          actorId,
+          client,
+        );
+        await this.customFieldsValuesService.persistCustomFields(
+          companyId,
+          'vendor',
+          created.vendorId.toString(),
+          customFields,
+          'create',
+          client,
+        );
+        return created;
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
         throw new ConflictException('Vendor code already exists');
       }
-
-      const created = await this.repository.create(
-        companyId,
-        vendorDto,
-        vendorCode,
-        actorId,
-        client,
-      );
-      await this.customFieldsValuesService.persistCustomFields(
-        companyId,
-        'vendor',
-        created.vendorId.toString(),
-        customFields,
-        'create',
-        client,
-      );
-      return created;
-    });
+      throw error;
+    }
 
     await this.auditService.log({
       companyId,
@@ -384,6 +392,15 @@ export class VendorsService {
           : null,
       };
     });
+  }
+
+  private isUniqueConstraintError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === 'P2002'
+    );
   }
 
   private async assertVendorExists(id: string, companyId: string) {
