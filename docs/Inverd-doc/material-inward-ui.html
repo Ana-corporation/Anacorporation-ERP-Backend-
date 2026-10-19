@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Material Inward — Sample UI</title>
+<style>
+  :root {
+    --ink: #1b2430;
+    --muted: #5e6c7b;
+    --paper: #f3efe6;
+    --card: #fffcf7;
+    --line: #e4dccb;
+    --teal: #0f6e68;
+    --teal-d: #0c3f3c;
+    --navy: #173044;
+    --amber: #8a5a00;
+    --amber-bg: #fff4d6;
+    --red: #9f1239;
+    --red-bg: #fde8ee;
+    --green: #166534;
+    --green-bg: #e7f6ec;
+    --blue: #1d4e89;
+    --blue-bg: #e7f0fa;
+    --violet: #6b21a8;
+    --violet-bg: #f3e8ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    color: var(--ink);
+    background: var(--paper);
+    font: 14px/1.45 "Segoe UI", Calibri, sans-serif;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .shell { display: grid; grid-template-columns: 228px 1fr; height: 100%; }
+  aside {
+    background: var(--navy); color: #d7e4ee; display: flex; flex-direction: column;
+    padding: 16px 12px; overflow: auto;
+  }
+  .brand { color: #fff; font-weight: 700; letter-spacing: .04em; font-size: 13px; text-transform: uppercase; padding: 0 8px 12px; }
+  .brand small { display: block; text-transform: none; letter-spacing: 0; color: #8fbfba; font-weight: 500; margin-top: 3px; }
+  .navbtn {
+    display: block; width: 100%; text-align: left; background: transparent; color: #d7e4ee;
+    border: 0; border-radius: 8px; padding: 8px 10px; margin: 2px 0; cursor: pointer;
+  }
+  .navbtn b { display: block; font-size: 13.5px; }
+  .navbtn span { color: #8eacb8; font-size: 11.5px; }
+  .navbtn.on { background: rgba(255,255,255,.1); color: #fff; }
+  .navbtn.on span { color: #c9e4e1; }
+  aside .foot { margin-top: auto; padding: 12px 8px 0; color: #8eacb8; font-size: 12px; }
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .top {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 10px 18px; background: #fff; border-bottom: 1px solid var(--line);
+  }
+  #crumb { font-weight: 650; }
+  .who { color: var(--muted); font-size: 12.5px; }
+  .tabs { display: flex; gap: 6px; padding: 10px 18px 0; flex-wrap: wrap; }
+  .tabs button {
+    border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 10px; cursor: pointer;
+  }
+  .tabs button.on, .filters .btn.on { background: var(--teal-d); color: #fff; border-color: var(--teal-d); }
+  .stage { overflow: auto; padding: 14px 18px 28px; }
+  .screen { display: none; }
+  .screen.on { display: block; }
+  .pagehead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -.02em; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 3px 0 0; font-size: 13px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 7px 12px; cursor: pointer;
+  }
+  .btn.pri { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .btn.danger { background: var(--red-bg); color: var(--red); border-color: #f3c3d0; }
+  .btn.warn { background: var(--amber-bg); color: var(--amber); border-color: #f0ddb0; }
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 12px; }
+  .kpi, .card, .band {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+  }
+  .kpi b { display: block; font-size: 26px; letter-spacing: -.03em; }
+  .kpi span, .muted { color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: 1.3fr .7fr; gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .gridform { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+  .fld { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .fld input, .fld select, .fld textarea {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; color: var(--ink);
+  }
+  .fld input[readonly], .ro { background: #f7f4ee; }
+  table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+  th { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: #4d5d6d; background: #faf7f1; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 650; }
+  .c-entry { background: var(--blue-bg); color: var(--blue); }
+  .c-qc { background: var(--violet-bg); color: var(--violet); }
+  .c-buy { background: var(--amber-bg); color: var(--amber); }
+  .c-store { background: var(--green-bg); color: var(--green); }
+  .c-fin { background: var(--red-bg); color: var(--red); }
+  .c-hold { background: #ece7f8; color: #5b21b6; }
+  .c-ok { background: var(--green-bg); color: var(--green); }
+  .c-bad { background: var(--red-bg); color: var(--red); }
+  .c-warn { background: var(--amber-bg); color: var(--amber); }
+  .linkish { background: none; border: 0; color: var(--teal); cursor: pointer; padding: 0; font-weight: 650; }
+  .band { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+  .band div b { display: block; font-size: 14px; }
+  .files { display: flex; gap: 8px; flex-wrap: wrap; }
+  .file { background: #fff; border: 1px dashed #cfc6b4; border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+  .timeline { list-style: none; margin: 0; padding: 0; }
+  .timeline li { padding: 0 0 10px 14px; border-left: 2px solid #d9d0c2; margin-left: 6px; }
+  .timeline time { display: block; color: var(--muted); font-size: 12px; }
+  .tree, .tree ul { list-style: none; margin: 0; padding-left: 16px; }
+  .tree { padding-left: 0; }
+  .tree li { margin: 6px 0; padding-left: 10px; border-left: 2px solid #d9d0c2; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .loc { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; }
+  .toast {
+    position: fixed; right: 16px; bottom: 16px; background: var(--navy); color: #fff;
+    padding: 12px 14px; border-radius: 10px; max-width: 420px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,.2);
+  }
+  .toast.show { display: block; }
+  .filters { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .note { background: var(--amber-bg); border: 1px solid #f0ddb0; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+  @media (max-width: 980px) {
+    .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100%; }
+    aside { flex-direction: row; align-items: center; gap: 6px; overflow: auto; }
+    .brand, aside .foot { display: none; }
+    .navbtn { width: auto; white-space: nowrap; }
+    .navbtn span { display: none; }
+    .kpis, .grid2, .grid3, .gridform, .split { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand">Material Inward<small>Sample UI · 8 modules</small></div>
+    <button class="navbtn" data-module="work" data-screen="dashboard"><b>1. My Work</b><span>Dashboard</span></button>
+    <button class="navbtn" data-module="receiving" data-screen="queue"><b>2. Receiving</b><span>Queue, GRN, short &amp; excess</span></button>
+    <button class="navbtn" data-module="quality" data-screen="queue"><b>3. Quality</b><span>Queue and inspection</span></button>
+    <button class="navbtn" data-module="supplier" data-screen="queue"><b>4. Supplier resolution</b><span>Case, split, return</span></button>
+    <button class="navbtn" data-module="putaway" data-screen="queue"><b>5. Put-away</b><span>Queue and bin confirm</span></button>
+    <button class="navbtn" data-module="stock" data-screen="balance"><b>6. Stock and trace</b><span>Balance, ledger, chain</span></button>
+    <button class="navbtn" data-module="finance" data-screen="match"><b>7. Invoice match</b><span>GRN not invoiced, variance</span></button>
+    <button class="navbtn" data-module="setup" data-screen="item"><b>8. Setup and control</b><span>Item, location, QC, rules</span></button>
+    <div class="foot">Sample data is PO-2026-00125. Buttons name the API they would call.</div>
+  </aside>
+  <div class="main">
+    <div class="top">
+      <div id="crumb">My Work / Dashboard</div>
+      <div class="who">Singapore plant · roles separated</div>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div class="stage">
+
+      <section class="screen" data-module="work" data-screen="dashboard">
+        <div class="pagehead">
+          <div><h1>My Work</h1><p class="sub">Each person sees only the tasks their role can act on. QC tasks appear here for the QC role after receiving submit.</p></div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><span class="chip c-entry">ENTRY</span><b>3</b><span>deliveries to finish</span></div>
+          <div class="kpi"><span class="chip c-qc">QC</span><b>8</b><span>inspections pending</span></div>
+          <div class="kpi"><span class="chip c-buy">BUYER</span><b>3</b><span>cases · 2 overdue</span></div>
+          <div class="kpi"><span class="chip c-store">STORE</span><b>11</b><span>put-away tasks</span></div>
+          <div class="kpi"><span class="chip c-fin">FINANCE</span><b>5</b><span>invoices to match</span></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>Task</th><th>Role</th><th>Document</th><th>Waiting</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>Finish delivery DO-7781</td><td><span class="chip c-entry">Entry</span></td><td>GRN draft</td><td>20 min</td><td><button class="linkish" data-module="receiving" data-screen="entry">Open</button></td></tr>
+              <tr><td>Inspect O-Ring OR-220</td><td><span class="chip c-qc">QC</span></td><td>QC-000421</td><td>2 h</td><td><button class="linkish" data-module="quality" data-screen="inspect">Open</button></td></tr>
+              <tr><td>Supplier reply on 8 rejected</td><td><span class="chip c-buy">Buyer</span></td><td>CASE-000031</td><td>1 day</td><td><button class="linkish" data-module="supplier" data-screen="case">Open</button></td></tr>
+              <tr><td>Put away accepted 92</td><td><span class="chip c-store">Store</span></td><td>PAW-000512</td><td>today</td><td><button class="linkish" data-module="putaway" data-screen="confirm">Open</button></td></tr>
+              <tr><td>Match supplier invoice</td><td><span class="chip c-fin">Finance</span></td><td>INV-778</td><td>today</td><td><button class="linkish" data-module="finance" data-screen="match">Open</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="screen" data-module="receiving" data-screen="queue">
+        <div class="pagehead">
+          <div><h1>Receiving queue</h1><p class="sub">Entry checker. Material POs with an outstanding quantity, plus drafts.</p></div>
+          <div class="actions"><button class="btn pri" data-module="receiving" data-screen="entry">New receipt</button></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>PO</th><th>Supplier</th><th>Item</th><th class="num">Outstanding</th><th>Delivery</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>PO-2026-00125</td><td>Apex Seals</td><td>OR-220 O-Ring</td><td class="num">100 PCS</td><td>Expected 30 Sep</td><td><span class="chip c-warn">Open</span></td><td><button class="linkish" data-module="receiving" data-screen="entry">Receive</button></td></tr>
+              <tr><td>PO-2026-00118</td><td>North Hose</td><td>HS-14 Hose</td><td class="num">40 M</td><td>DO-7710 draft</td><td><span class="chip c-entry">Draft</span></td><td><button class="linkish" data-action="Open draft GRN · GET /grn/{id}">Continue</button></td></tr>
+              <tr><td>PO-2026-00109</td><td>Apex Seals</td><td>OR-110 O-Ring</td><td class="num">6 PCS</td><td>Short from yesterday</td><td><span class="chip c-buy">Buyer review</span></td><td><button class="linkish" data-module="receiving" data-screen="excess">Review</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="screen" data-module="receiving" data-screen="entry">
+        <div class="pagehead">
+          <div><h1>Goods receipt</h1><p class="sub">Draft. Submit posts QC hold and notifies QC only.</p></div>
+          <div class="actions">
+            <button class="btn" data-action="Save draft · POST /grn · no stock posted">Save draft</button>
+            <button class="btn pri" data-action="Submit · POST /grn/{id}/submit · stock +QC_HOLD · task to QC only">Submit to QC</button>
+          </div>
+        </div>
+        <div class="gridform">
+          <label class="fld">PO number<input readonly value="PO-2026-00125" /></label>
+          <label class="fld">Supplier<input readonly value="Apex Seals" /></label>
+          <label class="fld">PO date<input readonly value="12 Sep 2026" /></label>
+          <label class="fld">Supplier DO<input value="DO-7781" /></label>
+          <label class="fld">Delivery date<input value="2026-09-30" /></label>
+          <label class="fld">Warehouse<input readonly value="Singapore Warehouse" /></label>
+          <label class="fld">Packaging
+            <select><option>Good</option><option>Damaged</option><option>Opened</option><option>Wet</option></select>
+          </label>
+          <label class="fld">Receipt type<input readonly value="Normal" /></label>
+          <label class="fld">Remarks<input value="Seal intact" /></label>
+        </div>
+        <div class="card">
+          <h2>Lines from the PO</h2>
+          <table>
+            <thead><tr><th>Item</th><th class="num">Ordered</th><th class="num">Already received</th><th class="num">Outstanding</th><th class="num">This receipt</th><th>UOM</th><th>Batch / serial</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>OR-220 O-Ring<br><span class="muted">Batch controlled · QC required</span></td>
+                <td class="num">100</td><td class="num">0</td><td class="num">100</td>
+                <td class="num"><input value="100" style="width:72px" /></td>
+                <td>PCS</td>
+                <td>L2609 · supplier lot AX-99<br><span class="muted">Qty 100 · expiry not required</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="files" style="margin-top:10px">
+            <div class="file">DO-7781.pdf</div>
+            <div class="file">packing-list.jpg</div>
+            <button class="btn" data-action="Attach file · POST /attachments · doc type GRN">Add photo or DO</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="receiving" data-screen="detail">
+        <div class="pagehead">
+          <div><h1>GRN-000421</h1><p class="sub">Posted receipt. Quantities stay side by side. This document is reversed, never deleted.</p></div>
+          <div class="actions">
+            <button class="btn" data-module="stock" data-screen="chain">Document chain</button>
+            <button class="btn danger" data-action="Reverse · POST /grn/{id}/reverse · opposite ledger rows">Reverse</button>
+          </div>
+        </div>
+        <div class="band">
+          <div>Status<b><span class="chip c-hold">QC pending</span></b></div>
+          <div>PO<b>PO-2026-00125</b></div>
+          <div>Supplier<b>Apex Seals</b></div>
+          <div>DO<b>DO-7781</b></div>
+          <div>Received<b>100 PCS</b></div>
+          <div>Accepted<b>0</b></div>
+          <div>Rejected<b>0</b></div>
+          <div>Stock<b>100 QC hold at dock</b></div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <h2>Line</h2>
+            <table>
+              <thead><tr><th>Item</th><th class="num">Received</th><th class="num">Accepted</th><th class="num">Rejected</th><th class="num">Put away</th><th>Batch</th></tr></thead>
+              <tbody><tr><td>OR-220</td><td class="num">100</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td>L2609</td></tr></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Activity</h2>
+            <ul class="timeline">
+              <li><time>30 Sep 09:20</time>GRN created by John</li>
+              <li><time>30 Sep 09:21</time>Submitted. QC notified. Stock posted to QC hold.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="receiving" data-screen="excess">
+        <div class="pagehead">
+          <div><h1>Short and excess</h1><p class="sub">Buyer decisions. Entry checker can record the count. Buyer decides the commercial outcome.</p></div>
+        </div>
+        <div class="split">
+          <div class="card">
+            <h2>Excess · PO-2026-00140</h2>
+            <p>Ordered 100 · received 110 · tolerance 2% · allowed 102 · extra 8 waiting.</p>
+            <p><span class="chip c-warn">Pending approval</span></p>
+            <div class="actions">
+              <button class="btn pri" data-action="Approve excess 8 · POST /grn/{id}/excess-decision · then QC hold for the extra">Approve extra</button>
+              <button class="btn" data-action="Reject excess · extra 8 is not posted to stock">Reject extra</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Short · PO-2026-00109</h2>
+            <p>Ordered 100 · received 95 · outstanding 5. The 5 stays open until the buyer chooses.</p>
+            <div class="actions">
+              <button class="btn" data-action="Leave PO open · outstanding stays 5">Supplier will deliver balance</button>
+              <button class="btn warn" data-action="Short close · POST /purchase-orders/{lineId}/short-close · short_closed_qty = 5">Close short</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="quality" data-screen="queue">
+        <div class="pagehead">
+          <div><h1>QC queue</h1><p class="sub">Material on QC hold. It is physically here and unavailable to issue.</p></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>QC</th><th>GRN</th><th>Item</th><th class="num">Qty</th><th>Waiting</th><th>Assigned</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>QC-000421</td><td>GRN-000421</td><td>OR-220 O-Ring</td><td class="num">100</td><td>2 h</td><td>Mary</td><td><button class="linkish" data-module="quality" data-screen="inspect">Inspect</button></td></tr>
+              <tr><td>QC-000418</td><td>GRN-000418</td><td>HS-14 Hose</td><td class="num">40</td><td>5 h</td><td>Unassigned</td><td><button class="linkish" data-action="Start QC · POST /qc/{id}/start">Start</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="screen" data-module="quality" data-screen="inspect">
+        <div class="pagehead">
+          <div><h1>Inspection QC-000421</h1><p class="sub">Sample 10 of 100. The decision still covers the full received quantity.</p></div>
+          <div class="actions">
+            <button class="btn pri" data-action="Complete QC · POST /qc/{id}/complete · 8 move to quarantine · put-away task for 92 · supplier case for 8">Complete inspection</button>
+          </div>
+        </div>
+        <div class="band">
+          <div>Item<b>OR-220 O-Ring</b></div>
+          <div>GRN<b>GRN-000421</b></div>
+          <div>Received<b>100</b></div>
+          <div>Sample<b>10</b></div>
+          <div>Inspector<b>Mary</b></div>
+          <div>Template<b>ORING-VISUAL</b></div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <h2>Checklist</h2>
+            <table>
+              <thead><tr><th>Check</th><th>Spec</th><th>Actual</th><th>Result</th></tr></thead>
+              <tbody>
+                <tr><td>Diameter</td><td>20 ± 0.2</td><td><input value="20.05" style="width:80px" /></td><td><span class="chip c-ok">Pass</span></td></tr>
+                <tr><td>Thickness</td><td>3.5 ± 0.1</td><td><input value="3.48" style="width:80px" /></td><td><span class="chip c-ok">Pass</span></td></tr>
+                <tr><td>Material</td><td>NBR</td><td><input value="NBR" style="width:80px" /></td><td><span class="chip c-ok">Pass</span></td></tr>
+                <tr><td>Hardness</td><td>70 Shore</td><td><input value="69" style="width:80px" /></td><td><span class="chip c-ok">Pass</span></td></tr>
+                <tr><td>Visual</td><td>No cuts</td><td><input value="8 pcs cut" style="width:110px" /></td><td><span class="chip c-bad">Fail</span></td></tr>
+              </tbody>
+            </table>
+            <div class="files" style="margin-top:10px"><div class="file">damage-photo.jpg</div><div class="file">qc-report.pdf</div></div>
+          </div>
+          <div class="card">
+            <h2>Decision</h2>
+            <div class="gridform" style="grid-template-columns:1fr 1fr">
+              <label class="fld">Result
+                <select><option>Partial accept</option><option>Accept</option><option>Reject</option><option>Conditional accept</option></select>
+              </label>
+              <label class="fld">Inspected qty<input value="100" /></label>
+              <label class="fld">Accepted<input value="92" /></label>
+              <label class="fld">Rejected<input value="8" /></label>
+              <label class="fld">Conditional<input value="0" /></label>
+              <label class="fld">Reason
+                <select><option>Damaged</option><option>Wrong item</option><option>Wrong specification</option><option>Quality failure</option><option>Expired</option><option>Other</option></select>
+              </label>
+            </div>
+            <label class="fld">Remarks<textarea rows="3">Cuts on 8 pieces. Rest of the lot is acceptable.</textarea></label>
+            <p class="sub">92 stay on QC hold for put-away. 8 move to quarantine and open a supplier case linked to this GRN.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="supplier" data-screen="queue">
+        <div class="pagehead">
+          <div><h1>Supplier cases</h1><p class="sub">Buyer queue. QC has already rejected the quantity. This screen decides what happens commercially.</p></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>Case</th><th>Supplier</th><th>GRN</th><th class="num">Rejected</th><th class="num">Remaining</th><th>Age</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>CASE-000031</td><td>Apex Seals</td><td>GRN-000421</td><td class="num">8</td><td class="num">8</td><td>1 day</td><td><button class="linkish" data-module="supplier" data-screen="case">Open</button></td></tr>
+              <tr><td>CASE-000028</td><td>North Hose</td><td>GRN-000390</td><td class="num">20</td><td class="num">8</td><td><span class="chip c-bad">Overdue</span></td><td><button class="linkish" data-action="Open case · GET /supplier-cases/{id}">Open</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="screen" data-module="supplier" data-screen="case">
+        <div class="pagehead">
+          <div><h1>CASE-000031</h1><p class="sub">Rejected 8 from GRN-000421 · reason Damaged · PO-2026-00125</p></div>
+          <div class="actions"><button class="btn" data-action="Save split · POST /supplier-cases/{id}/lines">Save split</button></div>
+        </div>
+        <div class="note">One rejection can have several outcomes. Replacement 5 + return 2 + credit 1 = 8. Remaining replacement is tracked on its own row.</div>
+        <div class="card">
+          <table>
+            <thead><tr><th>Outcome</th><th class="num">Qty</th><th class="num">Done</th><th class="num">Remaining</th><th>Next step</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>Replacement</td><td class="num">5</td><td class="num">0</td><td class="num">5</td><td>Linked GRN, then QC again</td><td><button class="linkish" data-action="Create replacement GRN · POST /grn receiptType REPLACEMENT · parent GRN-000421">Receive replacement</button></td></tr>
+              <tr><td>Return to supplier</td><td class="num">2</td><td class="num">0</td><td class="num">2</td><td>Own return document</td><td><button class="linkish" data-module="supplier" data-screen="return">Create return</button></td></tr>
+              <tr><td>Credit note</td><td class="num">1</td><td class="num">0</td><td class="num">1</td><td>Finance. Stock stays until scrap or return</td><td><button class="linkish" data-action="Record credit · no stock move until scrap or return">Record credit</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="screen" data-module="supplier" data-screen="return">
+        <div class="pagehead">
+          <div><h1>Supplier return</h1><p class="sub">RET draft from CASE-000031. Posting writes a stock-out. The original GRN quantity stays 100.</p></div>
+          <div class="actions"><button class="btn pri" data-action="Post return · POST /returns/{id}/post · ledger −2 quarantine">Post return</button></div>
+        </div>
+        <div class="gridform">
+          <label class="fld">Return no<input readonly value="Assigned on post" /></label>
+          <label class="fld">Case<input readonly value="CASE-000031" /></label>
+          <label class="fld">GRN<input readonly value="GRN-000421" /></label>
+          <label class="fld">Supplier<input readonly value="Apex Seals" /></label>
+          <label class="fld">Return date<input value="2026-10-01" /></label>
+          <label class="fld">From location<input readonly value="Quarantine bin" /></label>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>Item</th><th>Batch</th><th class="num">Qty out</th><th>UOM</th><th>Status leaving</th></tr></thead>
+            <tbody><tr><td>OR-220</td><td>L2609</td><td class="num">2</td><td>PCS</td><td><span class="chip c-bad">Quarantine</span></td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="screen" data-module="putaway" data-screen="queue">
+        <div class="pagehead">
+          <div><h1>Put-away queue</h1><p class="sub">Accepted quantity still on QC hold at the receiving dock.</p></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>Task</th><th>Item</th><th class="num">Qty</th><th>Batch</th><th>Suggested bin</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>PAW-000512</td><td>OR-220 O-Ring</td><td class="num">92</td><td>L2609</td><td class="loc">SG / Hose / R03 / S02 / B05</td><td><button class="linkish" data-module="putaway" data-screen="confirm">Confirm</button></td></tr>
+              <tr><td>PAW-000509</td><td>HS-14 Hose</td><td class="num">40</td><td>—</td><td class="loc">SG / Hose / R01 / S01 / B02</td><td><button class="linkish" data-action="Open put-away · GET /putaway/{id}">Confirm</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="screen" data-module="putaway" data-screen="confirm">
+        <div class="pagehead">
+          <div><h1>Confirm put-away</h1><p class="sub">PAW-000512 · scan item, then bin, then confirm. Storekeeper can change the suggested bin.</p></div>
+          <div class="actions"><button class="btn pri" data-action="Confirm bin · POST /putaway/{id}/confirm · −92 QC hold dock · +92 available at B05">Confirm put-away</button></div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <div class="gridform" style="grid-template-columns:1fr 1fr">
+              <label class="fld">Scan item<input value="OR-220" /></label>
+              <label class="fld">Batch<input readonly value="L2609" /></label>
+              <label class="fld">Quantity<input value="92" /></label>
+              <label class="fld">From<input readonly value="Receiving dock · QC hold" /></label>
+              <label class="fld">Suggested bin<input readonly value="B05 · Hose zone · Rack R03 · Shelf S02" /></label>
+              <label class="fld">Confirm bin<input value="B05" /></label>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Why this bin</h2>
+            <p>Item rule for OR-220 in Singapore prefers Hose zone, rack R03, bin B05.</p>
+            <p class="sub">After confirm, available stock becomes 92. The rejected 8 stay in quarantine and are not on this task.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="stock" data-screen="balance">
+        <div class="pagehead">
+          <div><h1>Stock balance</h1><p class="sub">Same item, separate rows by location and status. Available to issue is only Available.</p></div>
+        </div>
+        <div class="filters" id="balFilters">
+          <button class="btn on" data-bal="all">All</button>
+          <button class="btn" data-bal="QC_HOLD">QC hold</button>
+          <button class="btn" data-bal="AVAILABLE">Available</button>
+          <button class="btn" data-bal="QUARANTINE">Quarantine</button>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>Item</th><th>Warehouse</th><th>Location</th><th>Batch</th><th>Owner</th><th>Status</th><th class="num">On hand</th></tr></thead>
+            <tbody id="balBody">
+              <tr data-status="AVAILABLE"><td>OR-220</td><td>Singapore</td><td class="loc">Hose / R03 / S02 / B05</td><td>L2609</td><td>Company</td><td><span class="chip c-ok">Available</span></td><td class="num">92</td></tr>
+              <tr data-status="QUARANTINE"><td>OR-220</td><td>Singapore</td><td class="loc">Quarantine</td><td>L2609</td><td>Company</td><td><span class="chip c-bad">Quarantine</span></td><td class="num">8</td></tr>
+              <tr data-status="QC_HOLD"><td>HS-14</td><td>Singapore</td><td class="loc">Receiving dock</td><td>—</td><td>Company</td><td><span class="chip c-hold">QC hold</span></td><td class="num">40</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="screen" data-module="stock" data-screen="ledger">
+        <div class="pagehead">
+          <div><h1>Inventory ledger</h1><p class="sub">OR-220 · every movement points at a document. Rows are added. They are not edited.</p></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>When</th><th>Type</th><th>Document</th><th>Location</th><th>Status</th><th class="num">In</th><th class="num">Out</th><th class="num">Balance</th></tr></thead>
+            <tbody>
+              <tr><td>30 Sep 09:21</td><td>Goods receipt</td><td>GRN-000421</td><td>Dock</td><td>QC hold</td><td class="num">100</td><td class="num"></td><td class="num">100</td></tr>
+              <tr><td>30 Sep 11:10</td><td>QC move</td><td>QC-000421</td><td>Dock → quarantine</td><td>Quarantine</td><td class="num">8</td><td class="num">8</td><td class="num">100</td></tr>
+              <tr><td>30 Sep 15:00</td><td>Put-away</td><td>PAW-000512</td><td>Dock → B05</td><td>Available</td><td class="num">92</td><td class="num">92</td><td class="num">100</td></tr>
+              <tr><td>01 Oct 10:00</td><td>Supplier return</td><td>RET-000014</td><td>Quarantine</td><td>Quarantine</td><td class="num"></td><td class="num">2</td><td class="num">98</td></tr>
+            </tbody>
+          </table>
+          <p class="sub">After the return, physical stock is 98: available 92 in B05 and quarantine 6 still waiting on replacement and credit.</p>
+        </div>
+      </section>
+
+      <section class="screen" data-module="stock" data-screen="chain">
+        <div class="pagehead">
+          <div><h1>Document chain</h1><p class="sub">PO-2026-00125 · walk forward or back from any document.</p></div>
+        </div>
+        <div class="card">
+          <ul class="tree">
+            <li><b>PO-2026-00125</b> · Apex Seals · OR-220 · order 100
+              <ul>
+                <li><button class="linkish" data-module="receiving" data-screen="detail">GRN-000421</button> · received 100 · accepted 92 · rejected 8
+                  <ul>
+                    <li><button class="linkish" data-module="quality" data-screen="inspect">QC-000421</button> · partial accept · damaged</li>
+                    <li><button class="linkish" data-module="supplier" data-screen="case">CASE-000031</button> · replace 5 · return 2 · credit 1
+                      <ul>
+                        <li><button class="linkish" data-module="supplier" data-screen="return">RET-000014</button> · −2 quarantine</li>
+                        <li>GRN-000488 · replacement 5 · linked back to this case · QC again</li>
+                      </ul>
+                    </li>
+                    <li><button class="linkish" data-module="putaway" data-screen="confirm">PAW-000512</button> · 92 → bin B05</li>
+                  </ul>
+                </li>
+                <li><button class="linkish" data-module="finance" data-screen="match">Supplier invoice INV-778</button> · price and quantity variance</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="screen" data-module="finance" data-screen="match">
+        <div class="pagehead">
+          <div><h1>Invoice match</h1><p class="sub">Policy for this company: match on accepted quantity. Price tolerance is configurable.</p></div>
+          <div class="actions"><button class="btn pri" data-action="Save match · POST /invoice-match · no stock movement">Save match</button></div>
+        </div>
+        <div class="split">
+          <div class="card">
+            <h2>GRN accepted, invoice still open</h2>
+            <table>
+              <thead><tr><th>GRN</th><th>Item</th><th class="num">Accepted</th><th class="num">Matched</th><th class="num">Open</th></tr></thead>
+              <tbody>
+                <tr><td>GRN-000421</td><td>OR-220</td><td class="num">92</td><td class="num">0</td><td class="num">92</td></tr>
+                <tr><td>GRN-000400</td><td>HS-14</td><td class="num">40</td><td class="num">40</td><td class="num">0</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>INV-778 · Apex Seals</h2>
+            <table>
+              <thead><tr><th></th><th class="num">PO</th><th class="num">Invoice</th><th>Difference</th></tr></thead>
+              <tbody>
+                <tr><td>Quantity</td><td class="num">97 basis*</td><td class="num">100</td><td><span class="chip c-bad">Qty +3</span></td></tr>
+                <tr><td>Price</td><td class="num">100</td><td class="num">105</td><td><span class="chip c-warn">Price +5</span></td></tr>
+                <tr><td>Tax %</td><td class="num">8</td><td class="num">8</td><td><span class="chip c-ok">Matched</span></td></tr>
+              </tbody>
+            </table>
+            <p class="sub">*Accepted 92 on the original GRN plus 5 on the replacement, once that replacement is accepted. Until then the open match quantity is 92.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="setup" data-screen="item">
+        <div class="pagehead">
+          <div><h1>Item control</h1><p class="sub">OR-220 O-Ring. These flags decide which fields receiving and QC must fill.</p></div>
+          <div class="actions"><button class="btn pri" data-action="Save item · PUT /masters/items/{id}">Save</button></div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <div class="gridform" style="grid-template-columns:1fr 1fr">
+              <label class="fld">Item code<input readonly value="OR-220" /></label>
+              <label class="fld">Name<input value="O-Ring" /></label>
+              <label class="fld">QC required<select><option>Yes</option><option>No</option></select></label>
+              <label class="fld">QC template<select><option>ORING-VISUAL</option></select></label>
+              <label class="fld">Batch controlled<select><option>Yes</option><option>No</option></select></label>
+              <label class="fld">Serial controlled<select><option>No</option><option>Yes</option></select></label>
+              <label class="fld">Expiry controlled<select><option>No</option><option>Yes</option></select></label>
+              <label class="fld">Owner<select><option>Company</option><option>Supplier</option><option>Customer</option><option>Consignment</option></select></label>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Units</h2>
+            <p>Purchase UOM <b>BOX</b> · inventory UOM <b>PCS</b></p>
+            <p>1 BOX = 12 PCS · decimals 0 · rounding half up</p>
+            <p class="sub">A receipt entered as 2 BOX keeps both 2 BOX and 24 PCS on the GRN line.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="setup" data-screen="location">
+        <div class="pagehead">
+          <div><h1>Warehouse locations</h1><p class="sub">Singapore Warehouse. Zone, rack, shelf, and bin are one location tree.</p></div>
+          <div class="actions"><button class="btn" data-action="Add bin · POST /masters/locations">Add location</button></div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <ul class="tree">
+              <li><b>Singapore Warehouse</b>
+                <ul>
+                  <li>Receiving dock <span class="chip c-hold">Dock</span></li>
+                  <li>Quarantine <span class="chip c-bad">Quarantine</span></li>
+                  <li>Hose zone
+                    <ul>
+                      <li>Rack R03
+                        <ul>
+                          <li>Shelf S02
+                            <ul><li><b>Bin B05</b> · preferred for OR-220</li></ul>
+                          </li>
+                        </ul>
+                      </li>
+                      <li>Rack R01 · Shelf S01 · Bin B02</li>
+                    </ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </div>
+          <div class="card">
+            <h2>Bin B05</h2>
+            <div class="gridform" style="grid-template-columns:1fr 1fr">
+              <label class="fld">Code<input value="B05" /></label>
+              <label class="fld">Barcode<input value="LOC-SG-B05" /></label>
+              <label class="fld">Capacity<input value="500" /></label>
+              <label class="fld">Type<input readonly value="BIN" /></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="setup" data-screen="template">
+        <div class="pagehead">
+          <div><h1>QC template</h1><p class="sub">ORING-VISUAL · sample rule fixed 10, or percent. Full inspection is a template choice, not the default.</p></div>
+          <div class="actions"><button class="btn pri" data-action="Save template · POST /masters/qc-templates">Save template</button></div>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <div class="gridform">
+            <label class="fld">Code<input value="ORING-VISUAL" /></label>
+            <label class="fld">Sample rule<select><option>Fixed quantity</option><option>Percent</option><option>Full</option><option>None</option></select></label>
+            <label class="fld">Sample value<input value="10" /></label>
+          </div>
+        </div>
+        <div class="split">
+          <div class="card">
+            <h2>Checklist lines</h2>
+            <table>
+              <thead><tr><th>#</th><th>Check</th><th>Spec</th><th>Type</th><th>Required</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>Diameter</td><td>20 ± 0.2</td><td>Number</td><td>Yes</td></tr>
+                <tr><td>2</td><td>Thickness</td><td>3.5 ± 0.1</td><td>Number</td><td>Yes</td></tr>
+                <tr><td>3</td><td>Material</td><td>NBR</td><td>Text</td><td>Yes</td></tr>
+                <tr><td>4</td><td>Hardness</td><td>70 Shore</td><td>Number</td><td>Yes</td></tr>
+                <tr><td>5</td><td>Visual condition</td><td>No cuts</td><td>Pass / fail</td><td>Yes</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Rejection reasons</h2>
+            <table>
+              <thead><tr><th>Reason</th><th>Photo</th></tr></thead>
+              <tbody>
+                <tr><td>Damaged</td><td>Required</td></tr>
+                <tr><td>Wrong item</td><td>Optional</td></tr>
+                <tr><td>Wrong specification</td><td>Optional</td></tr>
+                <tr><td>Wrong size</td><td>Optional</td></tr>
+                <tr><td>Quality failure</td><td>Required</td></tr>
+                <tr><td>Expired</td><td>Optional</td></tr>
+                <tr><td>Packaging damage</td><td>Required</td></tr>
+                <tr><td>Documentation issue</td><td>Optional</td></tr>
+                <tr><td>Quantity issue</td><td>Optional</td></tr>
+                <tr><td>Other</td><td>Optional</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-module="setup" data-screen="rules">
+        <div class="pagehead">
+          <div><h1>Rules and periods</h1><p class="sub">Tolerances, who gets notified, which quantity finance may match, and whether September is open.</p></div>
+          <div class="actions"><button class="btn pri" data-action="Save rules · PUT /config/tolerances · /config/notify-rules · /config/match-policy">Save</button></div>
+        </div>
+        <div class="grid3">
+          <div class="card">
+            <h2>Over-receipt</h2>
+            <label class="fld">Company tolerance %<input value="2" /></label>
+            <p class="sub">Item or supplier rules override this when they exist.</p>
+          </div>
+          <div class="card">
+            <h2>Notifications</h2>
+            <p>QC pending 4 hours → QC supervisor</p>
+            <p>Supplier reply 48 hours → buyer</p>
+            <p>Replacement overdue 72 hours → purchase manager</p>
+            <p class="sub">Receiving submit notifies QC only.</p>
+          </div>
+          <div class="card">
+            <h2>Invoice quantity basis</h2>
+            <label class="fld">Match on
+              <select><option>Accepted quantity</option><option>Received quantity</option><option>Put-away quantity</option></select>
+            </label>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <h2>Inventory periods</h2>
+          <table>
+            <thead><tr><th>Period</th><th>Inventory</th><th>Closed by</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>September 2026</td><td><span class="chip c-bad">Closed</span></td><td>Finance · 05 Oct</td><td><button class="linkish" data-action="Closed period · posting needs POST_CLOSED permission">Exception only</button></td></tr>
+              <tr><td>October 2026</td><td><span class="chip c-ok">Open</span></td><td></td><td><button class="linkish" data-action="Close period · PUT /config/periods/{id}/close">Close</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+  const NAV = {
+    work: { label: "My Work", screens: [["dashboard", "Dashboard"]] },
+    receiving: { label: "Receiving", screens: [["queue", "Queue"], ["entry", "GRN entry"], ["detail", "GRN detail"], ["excess", "Short & excess"]] },
+    quality: { label: "Quality", screens: [["queue", "QC queue"], ["inspect", "Inspection"]] },
+    supplier: { label: "Supplier resolution", screens: [["queue", "Cases"], ["case", "Case split"], ["return", "Return"]] },
+    putaway: { label: "Put-away", screens: [["queue", "Queue"], ["confirm", "Confirm bin"]] },
+    stock: { label: "Stock and trace", screens: [["balance", "Balance"], ["ledger", "Ledger"], ["chain", "Document chain"]] },
+    finance: { label: "Invoice match", screens: [["match", "Match"]] },
+    setup: { label: "Setup and control", screens: [["item", "Item"], ["location", "Locations"], ["template", "QC template"], ["rules", "Rules & periods"]] }
+  };
+
+  function show(mod, screen) {
+    document.querySelectorAll(".screen").forEach(s => {
+      s.classList.toggle("on", s.dataset.module === mod && s.dataset.screen === screen);
+    });
+    document.querySelectorAll(".navbtn").forEach(b => b.classList.toggle("on", b.dataset.module === mod));
+    const meta = NAV[mod];
+    const tabs = document.getElementById("tabs");
+    tabs.innerHTML = meta.screens.map(([id, label]) =>
+      `<button type="button" data-module="${mod}" data-screen="${id}" class="${id === screen ? "on" : ""}">${label}</button>`
+    ).join("");
+    const current = meta.screens.find(([id]) => id === screen);
+    document.getElementById("crumb").textContent = meta.label + " / " + (current ? current[1] : "");
+    document.querySelector(".stage").scrollTop = 0;
+  }
+
+  function toast(text) {
+    const el = document.getElementById("toast");
+    el.textContent = text;
+    el.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.remove("show"), 2800);
+  }
+
+  document.body.addEventListener("click", (e) => {
+    const go = e.target.closest("button[data-module][data-screen]");
+    if (go) {
+      show(go.dataset.module, go.dataset.screen);
+      return;
+    }
+    const act = e.target.closest("[data-action]");
+    if (act) toast(act.dataset.action);
+    const bal = e.target.closest("[data-bal]");
+    if (bal) {
+      document.querySelectorAll("#balFilters .btn").forEach(b => b.classList.toggle("on", b === bal));
+      const key = bal.dataset.bal;
+      document.querySelectorAll("#balBody tr").forEach(row => {
+        row.style.display = key === "all" || row.dataset.status === key ? "" : "none";
+      });
+    }
+  });
+
+  show("work", "dashboard");
+</script>
+</body>
+</html>
