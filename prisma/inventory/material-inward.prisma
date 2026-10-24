@@ -1,0 +1,524 @@
+// inventory | material inward (GRN → QC → supplier case → put-away → ledger → invoice)
+// Supplier, item, and warehouse reuse vendors, items, and warehouses.
+
+model MiPurchaseOrder {
+  id         BigInt   @id @default(autoincrement()) @map("id")
+  companyId  BigInt   @map("company_id")
+  poNo       String   @map("po_no") @db.VarChar(30)
+  poType     String   @default("MATERIAL") @map("po_type") @db.VarChar(20)
+  poDate     DateTime @map("po_date") @db.Date
+  supplierId BigInt   @map("supplier_id")
+  buyerId    BigInt?  @map("buyer_id")
+  status     String   @default("OPEN") @db.VarChar(20)
+  remarks    String?  @db.VarChar(1000)
+  createdBy  BigInt?  @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedBy  BigInt?  @map("updated_by")
+  updatedAt  DateTime? @map("updated_at")
+  rowVersion Int      @default(1) @map("row_version")
+
+  lines MiPurchaseOrderLine[]
+  grns  MiGrnHeader[]
+
+  @@unique([companyId, poNo])
+  @@index([companyId, status])
+  @@map("mi_purchase_orders")
+}
+
+model MiPurchaseOrderLine {
+  id               BigInt   @id @default(autoincrement()) @map("id")
+  companyId        BigInt   @map("company_id")
+  poId             BigInt   @map("po_id")
+  lineNo           Int      @map("line_no")
+  itemId           BigInt   @map("item_id")
+  warehouseId      BigInt   @map("warehouse_id")
+  orderQty         Decimal  @map("order_qty") @db.Decimal(18, 4)
+  uomCode          String   @default("PCS") @map("uom_code") @db.VarChar(10)
+  unitPrice        Decimal  @default(0) @map("unit_price") @db.Decimal(18, 4)
+  taxPct           Decimal  @default(0) @map("tax_pct") @db.Decimal(8, 3)
+  receivedQty      Decimal  @default(0) @map("received_qty") @db.Decimal(18, 4)
+  acceptedQty      Decimal  @default(0) @map("accepted_qty") @db.Decimal(18, 4)
+  rejectedOpenQty  Decimal  @default(0) @map("rejected_open_qty") @db.Decimal(18, 4)
+  returnedQty      Decimal  @default(0) @map("returned_qty") @db.Decimal(18, 4)
+  invoicedQty      Decimal  @default(0) @map("invoiced_qty") @db.Decimal(18, 4)
+  shortClosedQty   Decimal  @default(0) @map("short_closed_qty") @db.Decimal(18, 4)
+  outstandingQty   Decimal  @map("outstanding_qty") @db.Decimal(18, 4)
+  qcRequired       Boolean  @default(true) @map("qc_required")
+  batchControlled  Boolean  @default(false) @map("batch_controlled")
+  serialControlled Boolean  @default(false) @map("serial_controlled")
+  lineStatus       String   @default("OPEN") @map("line_status") @db.VarChar(20)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime? @map("updated_at")
+
+  po   MiPurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  grnLines MiGrnLine[]
+
+  @@unique([poId, lineNo])
+  @@index([poId, itemId])
+  @@map("mi_purchase_order_lines")
+}
+
+model MiStorageLocation {
+  id               BigInt   @id @default(autoincrement()) @map("id")
+  companyId        BigInt   @map("company_id")
+  warehouseId      BigInt   @map("warehouse_id")
+  parentLocationId BigInt?  @map("parent_location_id")
+  locationType     String   @map("location_type") @db.VarChar(20)
+  locationCode     String   @map("location_code") @db.VarChar(30)
+  locationName     String   @map("location_name") @db.VarChar(120)
+  isReceivingDock  Boolean  @default(false) @map("is_receiving_dock")
+  isQuarantine     Boolean  @default(false) @map("is_quarantine")
+  isScrap          Boolean  @default(false) @map("is_scrap")
+  barcode          String?  @db.VarChar(80)
+  status           String   @default("ACTIVE") @db.VarChar(20)
+  createdBy        BigInt?  @map("created_by")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([companyId, warehouseId, locationCode])
+  @@index([companyId, warehouseId])
+  @@map("mi_storage_locations")
+}
+
+model MiGrnHeader {
+  id                  BigInt    @id @default(autoincrement()) @map("id")
+  companyId           BigInt    @map("company_id")
+  grnNo               String    @map("grn_no") @db.VarChar(30)
+  receiptType         String    @default("NORMAL") @map("receipt_type") @db.VarChar(20)
+  poId                BigInt    @map("po_id")
+  supplierId          BigInt    @map("supplier_id")
+  supplierDoNo        String?   @map("supplier_do_no") @db.VarChar(40)
+  deliveryDate        DateTime? @map("delivery_date") @db.Date
+  warehouseId         BigInt    @map("warehouse_id")
+  status              String    @default("DRAFT") @db.VarChar(30)
+  packagingCondition  String?   @map("packaging_condition") @db.VarChar(20)
+  remarks             String?   @db.VarChar(1000)
+  parentGrnId         BigInt?   @map("parent_grn_id")
+  supplierCaseId      BigInt?   @map("supplier_case_id")
+  supplierCaseLineId  BigInt?   @map("supplier_case_line_id")
+  reversalOfGrnId     BigInt?   @map("reversal_of_grn_id")
+  receivedBy          BigInt?   @map("received_by")
+  submittedAt         DateTime? @map("submitted_at")
+  createdBy           BigInt?   @map("created_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedBy           BigInt?   @map("updated_by")
+  updatedAt           DateTime? @map("updated_at")
+  rowVersion          Int       @default(1) @map("row_version")
+
+  po    MiPurchaseOrder @relation(fields: [poId], references: [id])
+  lines MiGrnLine[]
+
+  @@unique([companyId, grnNo])
+  @@index([poId, status])
+  @@index([companyId, status])
+  @@map("mi_grn_headers")
+}
+
+model MiGrnLine {
+  id                        BigInt   @id @default(autoincrement()) @map("id")
+  companyId                 BigInt   @map("company_id")
+  grnId                     BigInt   @map("grn_id")
+  lineNo                    Int      @map("line_no")
+  poLineId                  BigInt   @map("po_line_id")
+  itemId                    BigInt   @map("item_id")
+  orderQtySnapshot          Decimal  @map("order_qty_snapshot") @db.Decimal(18, 4)
+  prevReceivedQtySnapshot   Decimal  @map("prev_received_qty_snapshot") @db.Decimal(18, 4)
+  outstandingQtySnapshot    Decimal  @map("outstanding_qty_snapshot") @db.Decimal(18, 4)
+  receivedQty               Decimal  @map("received_qty") @db.Decimal(18, 4)
+  uomCode                   String   @map("uom_code") @db.VarChar(10)
+  receivedQtyInv            Decimal  @default(0) @map("received_qty_inv") @db.Decimal(18, 4)
+  excessQty                 Decimal  @default(0) @map("excess_qty") @db.Decimal(18, 4)
+  shortQty                  Decimal  @default(0) @map("short_qty") @db.Decimal(18, 4)
+  excessStatus              String   @default("NONE") @map("excess_status") @db.VarChar(20)
+  inspectedQty              Decimal  @default(0) @map("inspected_qty") @db.Decimal(18, 4)
+  acceptedQty               Decimal  @default(0) @map("accepted_qty") @db.Decimal(18, 4)
+  rejectedQty               Decimal  @default(0) @map("rejected_qty") @db.Decimal(18, 4)
+  conditionalQty            Decimal  @default(0) @map("conditional_qty") @db.Decimal(18, 4)
+  putawayQty                Decimal  @default(0) @map("putaway_qty") @db.Decimal(18, 4)
+  returnedQty               Decimal  @default(0) @map("returned_qty") @db.Decimal(18, 4)
+  remarks                   String?  @db.VarChar(500)
+
+  grn     MiGrnHeader         @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  poLine  MiPurchaseOrderLine @relation(fields: [poLineId], references: [id])
+  batches MiGrnBatch[]
+  serials MiGrnSerial[]
+
+  @@index([poLineId])
+  @@index([grnId])
+  @@map("mi_grn_lines")
+}
+
+model MiGrnBatch {
+  id              BigInt    @id @default(autoincrement()) @map("id")
+  grnLineId       BigInt    @map("grn_line_id")
+  batchNo         String    @map("batch_no") @db.VarChar(40)
+  supplierBatchNo String?   @map("supplier_batch_no") @db.VarChar(40)
+  mfgDate         DateTime? @map("mfg_date") @db.Date
+  expiryDate      DateTime? @map("expiry_date") @db.Date
+  qtyInv          Decimal   @map("qty_inv") @db.Decimal(18, 4)
+  acceptedQty     Decimal   @default(0) @map("accepted_qty") @db.Decimal(18, 4)
+  rejectedQty     Decimal   @default(0) @map("rejected_qty") @db.Decimal(18, 4)
+
+  line MiGrnLine @relation(fields: [grnLineId], references: [id], onDelete: Cascade)
+
+  @@index([grnLineId])
+  @@map("mi_grn_batches")
+}
+
+model MiGrnSerial {
+  id         BigInt  @id @default(autoincrement()) @map("id")
+  companyId  BigInt  @map("company_id")
+  grnLineId  BigInt  @map("grn_line_id")
+  grnBatchId BigInt? @map("grn_batch_id")
+  itemId     BigInt  @map("item_id")
+  serialNo   String  @map("serial_no") @db.VarChar(60)
+  status     String  @default("RECEIVED") @db.VarChar(20)
+
+  line MiGrnLine @relation(fields: [grnLineId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, itemId, serialNo])
+  @@index([grnLineId])
+  @@map("mi_grn_serials")
+}
+
+model MiQcInspection {
+  id              BigInt    @id @default(autoincrement()) @map("id")
+  companyId       BigInt    @map("company_id")
+  qcNo            String    @map("qc_no") @db.VarChar(30)
+  grnId           BigInt    @map("grn_id")
+  parentQcId      BigInt?   @map("parent_qc_id")
+  status          String    @default("PENDING") @db.VarChar(20)
+  assignedTo      BigInt?   @map("assigned_to")
+  inspectorId     BigInt?   @map("inspector_id")
+  inspectionDate  DateTime? @map("inspection_date") @db.Date
+  sampleQty       Decimal   @default(0) @map("sample_qty") @db.Decimal(18, 4)
+  overallResult   String?   @map("overall_result") @db.VarChar(30)
+  createdBy       BigInt?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime? @map("updated_at")
+
+  lines MiQcInspectionLine[]
+
+  @@unique([companyId, qcNo])
+  @@index([grnId])
+  @@index([companyId, status])
+  @@map("mi_qc_inspections")
+}
+
+model MiQcInspectionLine {
+  id                BigInt   @id @default(autoincrement()) @map("id")
+  qcId              BigInt   @map("qc_id")
+  grnLineId         BigInt   @map("grn_line_id")
+  inspectQty        Decimal  @map("inspect_qty") @db.Decimal(18, 4)
+  acceptedQty       Decimal  @default(0) @map("accepted_qty") @db.Decimal(18, 4)
+  rejectedQty       Decimal  @default(0) @map("rejected_qty") @db.Decimal(18, 4)
+  conditionalQty    Decimal  @default(0) @map("conditional_qty") @db.Decimal(18, 4)
+  rejectionReasonCode String? @map("rejection_reason_code") @db.VarChar(30)
+  remarks           String?  @db.VarChar(1000)
+
+  qc     MiQcInspection   @relation(fields: [qcId], references: [id], onDelete: Cascade)
+  checks MiQcCheckResult[]
+
+  @@index([qcId])
+  @@index([grnLineId])
+  @@map("mi_qc_inspection_lines")
+}
+
+model MiQcCheckResult {
+  id             BigInt  @id @default(autoincrement()) @map("id")
+  qcLineId       BigInt  @map("qc_line_id")
+  checkCode      String  @map("check_code") @db.VarChar(30)
+  actualValue    String? @map("actual_value") @db.VarChar(200)
+  result         String  @db.VarChar(10)
+
+  line MiQcInspectionLine @relation(fields: [qcLineId], references: [id], onDelete: Cascade)
+
+  @@index([qcLineId])
+  @@map("mi_qc_check_results")
+}
+
+model MiSupplierCase {
+  id         BigInt    @id @default(autoincrement()) @map("id")
+  companyId  BigInt    @map("company_id")
+  caseNo     String    @map("case_no") @db.VarChar(30)
+  grnId      BigInt    @map("grn_id")
+  qcId       BigInt    @map("qc_id")
+  poId       BigInt    @map("po_id")
+  supplierId BigInt    @map("supplier_id")
+  buyerId    BigInt?   @map("buyer_id")
+  status     String    @default("OPEN") @db.VarChar(20)
+  dueAt      DateTime? @map("due_at")
+  createdBy  BigInt?   @map("created_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime? @map("updated_at")
+
+  lines MiSupplierCaseLine[]
+
+  @@unique([companyId, caseNo])
+  @@index([companyId, status])
+  @@map("mi_supplier_cases")
+}
+
+model MiSupplierCaseLine {
+  id                  BigInt   @id @default(autoincrement()) @map("id")
+  caseId              BigInt   @map("case_id")
+  grnLineId           BigInt   @map("grn_line_id")
+  qcLineId            BigInt?  @map("qc_line_id")
+  rejectionReasonCode String?  @map("rejection_reason_code") @db.VarChar(30)
+  rejectedQty         Decimal  @map("rejected_qty") @db.Decimal(18, 4)
+  resolutionType      String   @map("resolution_type") @db.VarChar(30)
+  resolutionQty       Decimal  @map("resolution_qty") @db.Decimal(18, 4)
+  resolvedQty         Decimal  @default(0) @map("resolved_qty") @db.Decimal(18, 4)
+  remainingQty        Decimal  @map("remaining_qty") @db.Decimal(18, 4)
+  status              String   @default("OPEN") @db.VarChar(20)
+  remarks             String?  @db.VarChar(1000)
+
+  supplierCase MiSupplierCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("mi_supplier_case_lines")
+}
+
+model MiReturnHeader {
+  id          BigInt    @id @default(autoincrement()) @map("id")
+  companyId   BigInt    @map("company_id")
+  returnNo    String    @map("return_no") @db.VarChar(30)
+  caseId      BigInt    @map("case_id")
+  caseLineId  BigInt    @map("case_line_id")
+  grnId       BigInt    @map("grn_id")
+  supplierId  BigInt    @map("supplier_id")
+  status      String    @default("DRAFT") @db.VarChar(20)
+  returnDate  DateTime? @map("return_date") @db.Date
+  createdBy   BigInt?   @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  postedAt    DateTime? @map("posted_at")
+
+  lines MiReturnLine[]
+
+  @@unique([companyId, returnNo])
+  @@index([companyId, status])
+  @@map("mi_return_headers")
+}
+
+model MiReturnLine {
+  id         BigInt  @id @default(autoincrement()) @map("id")
+  returnId   BigInt  @map("return_id")
+  itemId     BigInt  @map("item_id")
+  grnLineId  BigInt  @map("grn_line_id")
+  locationId BigInt  @map("location_id")
+  qty        Decimal @db.Decimal(18, 4)
+  uomCode    String  @map("uom_code") @db.VarChar(10)
+
+  header MiReturnHeader @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId])
+  @@map("mi_return_lines")
+}
+
+model MiPutawayTask {
+  id          BigInt   @id @default(autoincrement()) @map("id")
+  companyId   BigInt   @map("company_id")
+  taskNo      String   @map("task_no") @db.VarChar(30)
+  grnId       BigInt   @map("grn_id")
+  qcId        BigInt?  @map("qc_id")
+  warehouseId BigInt   @map("warehouse_id")
+  source      String   @db.VarChar(20)
+  status      String   @default("PENDING") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime? @map("updated_at")
+
+  lines MiPutawayLine[]
+
+  @@unique([companyId, taskNo])
+  @@index([companyId, status])
+  @@map("mi_putaway_tasks")
+}
+
+model MiPutawayLine {
+  id                   BigInt    @id @default(autoincrement()) @map("id")
+  taskId               BigInt    @map("task_id")
+  grnLineId            BigInt    @map("grn_line_id")
+  itemId               BigInt    @map("item_id")
+  qty                  Decimal   @db.Decimal(18, 4)
+  fromLocationId       BigInt    @map("from_location_id")
+  suggestedLocationId  BigInt?   @map("suggested_location_id")
+  confirmedLocationId  BigInt?   @map("confirmed_location_id")
+  putawayBy            BigInt?   @map("putaway_by")
+  putawayAt            DateTime? @map("putaway_at")
+
+  task MiPutawayTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("mi_putaway_lines")
+}
+
+model MiInvLedger {
+  id           BigInt   @id @default(autoincrement()) @map("id")
+  companyId    BigInt   @map("company_id")
+  txnNo        String   @map("txn_no") @db.VarChar(30)
+  txnType      String   @map("txn_type") @db.VarChar(30)
+  docType      String   @map("doc_type") @db.VarChar(20)
+  docId        BigInt   @map("doc_id")
+  docLineId    BigInt?  @map("doc_line_id")
+  itemId       BigInt   @map("item_id")
+  warehouseId  BigInt   @map("warehouse_id")
+  locationId   BigInt   @map("location_id")
+  batchNo      String   @default("") @map("batch_no") @db.VarChar(40)
+  serialNo     String   @default("") @map("serial_no") @db.VarChar(60)
+  stockStatus  String   @map("stock_status") @db.VarChar(20)
+  qtyIn        Decimal  @default(0) @map("qty_in") @db.Decimal(18, 4)
+  qtyOut       Decimal  @default(0) @map("qty_out") @db.Decimal(18, 4)
+  uomCode      String   @map("uom_code") @db.VarChar(10)
+  txnDate      DateTime @map("txn_date") @db.Date
+  refDocType   String?  @map("ref_doc_type") @db.VarChar(20)
+  refDocId     BigInt?  @map("ref_doc_id")
+  reversalOfId BigInt?  @map("reversal_of_id")
+  createdBy    BigInt?  @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([itemId, warehouseId, txnDate])
+  @@index([companyId, docType, docId])
+  @@map("mi_inv_ledger")
+}
+
+model MiInvBalance {
+  id          BigInt   @id @default(autoincrement()) @map("id")
+  companyId   BigInt   @map("company_id")
+  itemId      BigInt   @map("item_id")
+  warehouseId BigInt   @map("warehouse_id")
+  locationId  BigInt   @map("location_id")
+  batchNo     String   @default("") @map("batch_no") @db.VarChar(40)
+  serialNo    String   @default("") @map("serial_no") @db.VarChar(60)
+  stockStatus String   @map("stock_status") @db.VarChar(20)
+  onHandQty   Decimal  @default(0) @map("on_hand_qty") @db.Decimal(18, 4)
+  uomCode     String   @map("uom_code") @db.VarChar(10)
+  updatedAt   DateTime? @map("updated_at")
+
+  @@unique([companyId, itemId, warehouseId, locationId, batchNo, serialNo, stockStatus])
+  @@index([companyId, itemId, stockStatus])
+  @@map("mi_inv_balances")
+}
+
+model MiApInvoice {
+  id           BigInt   @id @default(autoincrement()) @map("id")
+  companyId    BigInt   @map("company_id")
+  invoiceNo    String   @map("invoice_no") @db.VarChar(40)
+  invoiceDate  DateTime @map("invoice_date") @db.Date
+  supplierId   BigInt   @map("supplier_id")
+  poId         BigInt?  @map("po_id")
+  currencyCode String   @default("SGD") @map("currency_code") @db.VarChar(3)
+  totalAmount  Decimal  @default(0) @map("total_amount") @db.Decimal(18, 4)
+  taxAmount    Decimal  @default(0) @map("tax_amount") @db.Decimal(18, 4)
+  status       String   @default("MATCHED") @db.VarChar(20)
+  createdBy    BigInt?  @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  lines MiApInvoiceLine[]
+
+  @@unique([companyId, supplierId, invoiceNo])
+  @@map("mi_ap_invoices")
+}
+
+model MiApInvoiceLine {
+  id        BigInt  @id @default(autoincrement()) @map("id")
+  invoiceId BigInt  @map("invoice_id")
+  itemId    BigInt  @map("item_id")
+  poLineId  BigInt? @map("po_line_id")
+  grnLineId BigInt? @map("grn_line_id")
+  qty       Decimal @db.Decimal(18, 4)
+  unitPrice Decimal @map("unit_price") @db.Decimal(18, 4)
+  taxPct    Decimal @default(0) @map("tax_pct") @db.Decimal(8, 3)
+
+  invoice MiApInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  matches MiApMatch[]
+
+  @@index([invoiceId])
+  @@map("mi_ap_invoice_lines")
+}
+
+model MiApMatch {
+  id            BigInt  @id @default(autoincrement()) @map("id")
+  companyId     BigInt  @map("company_id")
+  invoiceLineId BigInt  @map("invoice_line_id")
+  poLineId      BigInt? @map("po_line_id")
+  grnLineId     BigInt? @map("grn_line_id")
+  matchedQty    Decimal @map("matched_qty") @db.Decimal(18, 4)
+  poPrice       Decimal @default(0) @map("po_price") @db.Decimal(18, 4)
+  invoicePrice  Decimal @default(0) @map("invoice_price") @db.Decimal(18, 4)
+  priceVariance Decimal @default(0) @map("price_variance") @db.Decimal(18, 4)
+  qtyVariance   Decimal @default(0) @map("qty_variance") @db.Decimal(18, 4)
+  matchStatus   String  @map("match_status") @db.VarChar(20)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  invoiceLine MiApInvoiceLine @relation(fields: [invoiceLineId], references: [id], onDelete: Cascade)
+
+  @@index([grnLineId])
+  @@map("mi_ap_matches")
+}
+
+model MiTask {
+  id         BigInt    @id @default(autoincrement()) @map("id")
+  companyId  BigInt    @map("company_id")
+  taskType   String    @map("task_type") @db.VarChar(30)
+  roleCode   String    @map("role_code") @db.VarChar(30)
+  docType    String    @map("doc_type") @db.VarChar(20)
+  docId      BigInt    @map("doc_id")
+  title      String    @db.VarChar(200)
+  dueAt      DateTime? @map("due_at")
+  status     String    @default("OPEN") @db.VarChar(20)
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([companyId, roleCode, status])
+  @@map("mi_tasks")
+}
+
+model MiActivity {
+  id         BigInt   @id @default(autoincrement()) @map("id")
+  companyId  BigInt   @map("company_id")
+  docType    String   @map("doc_type") @db.VarChar(20)
+  docId      BigInt   @map("doc_id")
+  eventTime  DateTime @default(now()) @map("event_time")
+  actorId    BigInt?  @map("actor_id")
+  eventText  String   @map("event_text") @db.VarChar(500)
+
+  @@index([companyId, docType, docId])
+  @@map("mi_activities")
+}
+
+model MiStatusLog {
+  id         BigInt   @id @default(autoincrement()) @map("id")
+  companyId  BigInt   @map("company_id")
+  docType    String   @map("doc_type") @db.VarChar(20)
+  docId      BigInt   @map("doc_id")
+  fromStatus String?  @map("from_status") @db.VarChar(30)
+  toStatus   String   @map("to_status") @db.VarChar(30)
+  actorId    BigInt?  @map("actor_id")
+  eventTime  DateTime @default(now()) @map("event_time")
+  remarks    String?  @db.VarChar(500)
+
+  @@index([companyId, docType, docId])
+  @@map("mi_status_logs")
+}
+
+model MiRejectionReason {
+  id          BigInt  @id @default(autoincrement()) @map("id")
+  companyId   BigInt  @map("company_id")
+  reasonCode  String  @map("reason_code") @db.VarChar(30)
+  reasonName  String  @map("reason_name") @db.VarChar(120)
+  active      Boolean @default(true)
+
+  @@unique([companyId, reasonCode])
+  @@map("mi_rejection_reasons")
+}
+
+model MiResolutionType {
+  id             BigInt  @id @default(autoincrement()) @map("id")
+  companyId      BigInt  @map("company_id")
+  resolutionCode String  @map("resolution_code") @db.VarChar(30)
+  resolutionName String  @map("resolution_name") @db.VarChar(120)
+  affectsStock   Boolean @default(false) @map("affects_stock")
+  requiresQc     Boolean @default(false) @map("requires_qc")
+  active         Boolean @default(true)
+
+  @@unique([companyId, resolutionCode])
+  @@map("mi_resolution_types")
+}

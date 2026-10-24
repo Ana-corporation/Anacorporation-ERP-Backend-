@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Material Inward LLD — ERP Inventory</title>
+<style>
+  :root {
+    --ink: #1b2430;
+    --muted: #5c6b7a;
+    --paper: #f3efe6;
+    --card: #fffcf7;
+    --line: #e3dacb;
+    --teal: #0f6e68;
+    --teal-d: #0c3d3b;
+    --navy: #1e3348;
+    --amber: #8a5a00;
+    --amber-bg: #fff4d8;
+    --red: #9f1239;
+    --red-bg: #fde8ee;
+    --green: #166534;
+    --green-bg: #e8f6ee;
+    --blue: #1d4e89;
+    --blue-bg: #e7f0fa;
+    --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px rgba(27,36,48,.04);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--ink);
+    background: var(--paper);
+    font: 15px/1.55 "Segoe UI", Calibri, sans-serif;
+  }
+  a { color: var(--teal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .layout { display: grid; grid-template-columns: 250px 1fr; min-height: 100vh; }
+  nav.side {
+    position: sticky; top: 0; height: 100vh; overflow: auto;
+    background: var(--navy); color: #d5e2ee; padding: 22px 16px 40px;
+  }
+  nav.side .brand { color: #fff; font-weight: 700; letter-spacing: .04em; font-size: 13px; text-transform: uppercase; }
+  nav.side .brand small { display: block; color: #8fb8b4; font-weight: 500; letter-spacing: 0; text-transform: none; margin-top: 4px; font-size: 12px; }
+  nav.side ol { list-style: none; padding: 18px 0 0; margin: 0; }
+  nav.side li { margin: 2px 0; }
+  nav.side a { display: block; color: #d5e2ee; padding: 6px 10px; border-radius: 6px; font-size: 13.5px; }
+  nav.side a:hover, nav.side a.active { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
+  main { padding: 28px 36px 80px; max-width: 1180px; }
+  h1 { font-size: 32px; line-height: 1.15; margin: 0 0 8px; letter-spacing: -.02em; }
+  h2 { font-size: 22px; margin: 36px 0 10px; padding-top: 8px; }
+  h3 { font-size: 17px; margin: 22px 0 8px; }
+  h4 { margin: 14px 0 6px; font-size: 14px; }
+  p.lead { font-size: 17px; color: var(--navy); max-width: 820px; }
+  .muted { color: var(--muted); }
+  .counts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 8px; }
+  .count {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .count b { display: block; font-size: 28px; color: var(--teal-d); letter-spacing: -.03em; }
+  .count span { color: var(--muted); font-size: 13px; }
+  .card, .note, .rule {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; box-shadow: var(--shadow); margin: 12px 0;
+  }
+  .rule { border-left: 4px solid var(--teal); }
+  .note { background: var(--amber-bg); border-color: #f0ddb0; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); margin: 8px 0 16px; font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 8px; text-align: left; vertical-align: top; }
+  th { background: #f7f3ea; font-size: 12px; letter-spacing: .03em; text-transform: uppercase; color: #3e4d5c; }
+  tr:hover td { background: #fbf8f2; }
+  code, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; }
+  code { background: #efeae0; padding: 1px 5px; border-radius: 4px; }
+  .chip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #eee; }
+  .c-entry { background: #e7f0fa; color: var(--blue); }
+  .c-qc { background: #f3e8ff; color: #6b21a8; }
+  .c-buy { background: var(--amber-bg); color: var(--amber); }
+  .c-store { background: var(--green-bg); color: var(--green); }
+  .c-fin { background: #fde8ee; color: var(--red); }
+  .c-all { background: #e8f4f3; color: var(--teal-d); }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 14px; }
+  .step {
+    background: var(--teal-d); color: #fff; border-radius: 8px; padding: 8px 10px;
+    font-size: 13px; font-weight: 600;
+  }
+  .step small { display: block; font-weight: 500; color: #b7d9d6; }
+  .arrow { color: var(--teal); font-weight: 700; }
+  .split { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .split .card h4 { margin-top: 0; }
+  .app {
+    border: 1px solid #cfc6b6; border-radius: 12px; overflow: hidden; background: #fff; margin: 12px 0 18px;
+    box-shadow: var(--shadow);
+  }
+  .appbar { background: var(--navy); color: #fff; padding: 8px 12px; display: flex; justify-content: space-between; font-size: 12px; }
+  .appbar b { font-size: 13px; }
+  .appbody { display: grid; grid-template-columns: 168px 1fr; min-height: 220px; }
+  .appside { background: #f6f3ec; border-right: 1px solid var(--line); padding: 8px; font-size: 12px; }
+  .appside div { padding: 6px 8px; border-radius: 6px; margin-bottom: 4px; }
+  .appside .on { background: var(--teal); color: #fff; }
+  .appmain { padding: 10px 12px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .kpi { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: #fff; }
+  .kpi b { font-size: 18px; display: block; }
+  .formgrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .fld { font-size: 11px; color: var(--muted); }
+  .fld i { display: block; margin-top: 2px; background: #f7f4ee; border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; color: var(--ink); font-style: normal; }
+  .mini { width: 100%; font-size: 12px; }
+  .btns { display: flex; gap: 6px; margin-top: 8px; }
+  .btn { border-radius: 6px; padding: 5px 10px; font-size: 12px; border: 1px solid var(--line); background: #fff; }
+  .btn.pri { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .two { display: grid; grid-template-columns: 1.2fr .8fr; gap: 14px; }
+  .search { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); margin: 8px 0; font: inherit; }
+  .tag { font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--teal); }
+  footer.page { margin-top: 40px; color: var(--muted); font-size: 12px; }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.side { position: relative; height: auto; }
+    .counts, .split, .kpis, .formgrid, .two, .appbody { grid-template-columns: 1fr; }
+    main { padding: 18px 14px 48px; }
+  }
+  @media print {
+    nav.side { display: none; }
+    .layout { display: block; }
+    main { max-width: none; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="side">
+  <div class="brand">Material Inward<small>Low-level design · v1</small></div>
+  <ol>
+    <li><a href="#overview">1. The answer</a></li>
+    <li><a href="#flow">2. Business flow</a></li>
+    <li><a href="#modules">3. Eight UI modules</a></li>
+    <li><a href="#screens">4. Twenty screens</a></li>
+    <li><a href="#ui">5. Screen layouts</a></li>
+    <li><a href="#status">6. Status and roles</a></li>
+    <li><a href="#qty">7. Quantity rules</a></li>
+    <li><a href="#example">8. Worked example</a></li>
+    <li><a href="#tables">9. Database tables</a></li>
+    <li><a href="#api">10. Server APIs</a></li>
+    <li><a href="#connect">11. How they connect</a></li>
+    <li><a href="#posting">12. Stock posting</a></li>
+    <li><a href="#build">13. Build order</a></li>
+  </ol>
+</nav>
+<main>
+  <p class="tag">ERP INVENTORY · MATERIAL PURCHASE ORDERS ONLY</p>
+  <h1>Material Inward — UI, tables, and API</h1>
+  <p class="lead">This module records what arrived, what passed quality, what was rejected, what the supplier did about it, where accepted stock was stored, and what finance can invoice. Stock changes only through an inventory ledger row that points at a document.</p>
+
+  <section id="overview">
+    <h2>1. The answer</h2>
+    <div class="counts">
+      <div class="count"><b>8</b><span>UI modules users open</span></div>
+      <div class="count"><b>20</b><span>screens inside those modules</span></div>
+      <div class="count"><b>10</b><span>server API modules</span></div>
+      <div class="count"><b>47</b><span>tables, including shared engines</span></div>
+    </div>
+    <div class="rule">
+      <b>How a screen connects to the database.</b>
+      The browser calls one module API. That API writes its own document tables, writes a status/activity/task row in the shared platform, and, when stock must move, asks the inventory API to insert a ledger row and update the balance. The screen never updates an item stock column.
+    </div>
+    <table>
+      <thead><tr><th>UI module</th><th>Who uses it</th><th>Server module</th><th>Tables it owns</th></tr></thead>
+      <tbody>
+        <tr><td>1. My Work</td><td>Every role</td><td>platform-api</td><td>com_task, com_notification</td></tr>
+        <tr><td>2. Receiving</td><td>Entry checker, buyer for short/excess</td><td>grn-api + purchase-read-api</td><td>grn_header, grn_line, grn_batch, grn_serial</td></tr>
+        <tr><td>3. Quality</td><td>QC, QC supervisor</td><td>qc-api</td><td>qc_inspection, qc_inspection_line, qc_check_result</td></tr>
+        <tr><td>4. Supplier resolution</td><td>Buyer, purchase manager</td><td>supplier-case-api + return-api</td><td>sup_case, sup_case_line, ret_header, ret_line, ret_serial</td></tr>
+        <tr><td>5. Put-away</td><td>Storekeeper</td><td>putaway-api</td><td>paw_task, paw_line, paw_serial</td></tr>
+        <tr><td>6. Stock and trace</td><td>Store, buyer, QC, finance</td><td>inventory-api</td><td>inv_ledger, inv_balance + read of all documents</td></tr>
+        <tr><td>7. Invoice match</td><td>Finance</td><td>invoice-match-api</td><td>ap_invoice, ap_invoice_line, ap_match</td></tr>
+        <tr><td>8. Setup and control</td><td>Admin, master-data owner</td><td>master-api + platform-api</td><td>mst_*, cfg_*, sec_*</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">Replacement receipt is not a ninth module. It reuses Receiving with <code>receipt_type = REPLACEMENT</code> and links back to the original GRN and supplier case. Service purchase orders stay outside this module.</p>
+  </section>
+
+  <section id="flow">
+    <h2>2. Business flow</h2>
+    <div class="flow">
+      <div class="step">Material PO<small>po_header / po_line</small></div><span class="arrow">→</span>
+      <div class="step">Receiving<small>grn_*</small></div><span class="arrow">→</span>
+      <div class="step">QC<small>qc_*</small></div><span class="arrow">→</span>
+      <div class="step">Accept path<small>paw_* → available</small></div>
+    </div>
+    <div class="flow">
+      <div class="step">QC reject<small>quarantine stock</small></div><span class="arrow">→</span>
+      <div class="step">Supplier case<small>split the rejected qty</small></div><span class="arrow">→</span>
+      <div class="step">Replace / return / credit<small>each outcome has its own document</small></div><span class="arrow">→</span>
+      <div class="step">Replacement QC again<small>then put-away</small></div>
+    </div>
+    <div class="split">
+      <div class="card"><h4>Accepted</h4><p>Stays in QC hold at the receiving dock until put-away. Put-away moves it to a bin as available stock.</p></div>
+      <div class="card"><h4>Partial</h4><p>Accepted quantity follows put-away. Rejected quantity stays on the same GRN and opens a supplier case.</p></div>
+      <div class="card"><h4>Rejected</h4><p>Moves to quarantine. Buyer splits it across replacement, return, credit, rework, use-as-is, or scrap.</p></div>
+    </div>
+  </section>
+
+  <section id="modules">
+    <h2>3. Eight UI modules</h2>
+    <div class="card">
+      <h3>Module 1 — My Work</h3>
+      <p>Home for every role. It reads open tasks. It does not post stock.</p>
+      <p><b>Pending examples:</b> entry drafts, QC queue, supplier cases, overdue replacements, put-away tasks, invoices waiting for a match.</p>
+    </div>
+    <div class="card">
+      <h3>Module 2 — Receiving</h3>
+      <p>Entry checker selects a material PO, sees outstanding quantity, and records the delivery. Submit creates the GRN, posts QC-hold stock, and opens a QC task when the item requires inspection.</p>
+      <p><b>Also owns:</b> short receipt (outstanding stays on the PO) and excess receipt (tolerance, warning, buyer approval).</p>
+    </div>
+    <div class="card">
+      <h3>Module 3 — Quality</h3>
+      <p>Inspector records sample size, checklist results, accepted quantity, rejected quantity, and conditional quantity. Those three quantities are separate columns. A partial result creates both a put-away task and a supplier case.</p>
+    </div>
+    <div class="card">
+      <h3>Module 4 — Supplier resolution</h3>
+      <p>Buyer works the rejected quantity. One rejection can be split: 7 replacement + 2 return + 1 credit. Return is its own posted document. Replacement creates a linked GRN, then QC runs again.</p>
+    </div>
+    <div class="card">
+      <h3>Module 5 — Put-away</h3>
+      <p>Storekeeper confirms item, batch or serial, quantity, and bin. The system can suggest a bin from the item rule. Confirm posts the ledger move from QC hold at the dock to available at the bin.</p>
+    </div>
+    <div class="card">
+      <h3>Module 6 — Stock and trace</h3>
+      <p>Balance by warehouse, location, batch, serial, owner, and stock status. Ledger shows every in and out. Document chain lets the user walk PO → GRN → QC → case → replacement or return → put-away → invoice.</p>
+    </div>
+    <div class="card">
+      <h3>Module 7 — Invoice match</h3>
+      <p>Finance matches supplier invoice lines to PO lines and GRN lines. The match quantity basis comes from company policy: accepted, received, or put-away. The screen shows quantity, price, and tax differences, plus GRN accepted and not yet invoiced.</p>
+    </div>
+    <div class="card">
+      <h3>Module 8 — Setup and control</h3>
+      <p>Item flags (QC, batch, serial, expiry), units of measure, warehouse locations, QC templates, rejection reasons, resolution types, over-receipt tolerance, notification hours, inventory periods, document numbers, and role actions.</p>
+    </div>
+  </section>
+
+  <section id="screens">
+    <h2>4. Twenty screens</h2>
+    <table>
+      <thead><tr><th>#</th><th>Module</th><th>Screen</th><th>Purpose</th><th>Primary API</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>My Work</td><td>Dashboard</td><td>Open tasks and counts for the signed-in role</td><td>GET /tasks/mine</td></tr>
+        <tr><td>2</td><td>Receiving</td><td>Receiving queue</td><td>Draft GRNs and POs with outstanding quantity</td><td>GET /grn?status=DRAFT</td></tr>
+        <tr><td>3</td><td>Receiving</td><td>GRN entry</td><td>Create normal or replacement receipt, batches, serials, photos</td><td>POST /grn</td></tr>
+        <tr><td>4</td><td>Receiving</td><td>GRN detail</td><td>Read-only document, attachments, activity, links</td><td>GET /grn/{id}</td></tr>
+        <tr><td>5</td><td>Receiving</td><td>Short and excess</td><td>Buyer closes a short balance or approves excess</td><td>POST /grn/{id}/excess-decision</td></tr>
+        <tr><td>6</td><td>Quality</td><td>QC queue</td><td>Inspections in QC_PENDING or QC_IN_PROGRESS</td><td>GET /qc?status=PENDING</td></tr>
+        <tr><td>7</td><td>Quality</td><td>Inspection</td><td>Sample, checklist, accept / partial / reject / conditional</td><td>POST /qc/{id}/complete</td></tr>
+        <tr><td>8</td><td>Supplier</td><td>Case queue</td><td>Open cases and overdue replacements</td><td>GET /supplier-cases</td></tr>
+        <tr><td>9</td><td>Supplier</td><td>Case workspace</td><td>Split rejected quantity across resolutions</td><td>POST /supplier-cases/{id}/lines</td></tr>
+        <tr><td>10</td><td>Supplier</td><td>Supplier return</td><td>Post a return document. Stock goes out of quarantine</td><td>POST /returns</td></tr>
+        <tr><td>11</td><td>Put-away</td><td>Put-away queue</td><td>Accepted quantity waiting for a bin</td><td>GET /putaway?status=PENDING</td></tr>
+        <tr><td>12</td><td>Put-away</td><td>Put-away confirm</td><td>Confirm or change suggested bin, scan-ready</td><td>POST /putaway/{id}/confirm</td></tr>
+        <tr><td>13</td><td>Stock</td><td>Stock balance</td><td>On-hand by status. Available is only AVAILABLE status</td><td>GET /inventory/balances</td></tr>
+        <tr><td>14</td><td>Stock</td><td>Ledger</td><td>Immutable in/out history for an item</td><td>GET /inventory/ledger</td></tr>
+        <tr><td>15</td><td>Stock</td><td>Document chain</td><td>Forward and backward links from any document number</td><td>GET /trace/{docType}/{id}</td></tr>
+        <tr><td>16</td><td>Finance</td><td>Invoice match</td><td>3-way match and GRN-not-invoiced</td><td>POST /invoice-match</td></tr>
+        <tr><td>17</td><td>Setup</td><td>Item control</td><td>QC required, batch, serial, expiry, UOM conversion</td><td>PUT /masters/items/{id}</td></tr>
+        <tr><td>18</td><td>Setup</td><td>Locations</td><td>Warehouse → zone → rack → shelf → bin</td><td>POST /masters/locations</td></tr>
+        <tr><td>19</td><td>Setup</td><td>QC setup</td><td>Templates, checklist lines, rejection reasons</td><td>POST /masters/qc-templates</td></tr>
+        <tr><td>20</td><td>Setup</td><td>Rules and periods</td><td>Tolerance, notify hours, match policy, period close, roles</td><td>PUT /config/periods/{id}</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">Barcode and QR fit the same screens: scan fills PO, item, batch, serial, or bin, then the user confirms quantity. Handheld screens can be added later against the same APIs.</p>
+  </section>
+
+  <section id="ui">
+    <h2>5. Screen layouts</h2>
+    <h3>Dashboard</h3>
+    <div class="app">
+      <div class="appbar"><b>My Work</b><span>Entry checker · Singapore plant</span></div>
+      <div class="appbody">
+        <div class="appside">
+          <div class="on">My tasks</div><div>Receiving</div><div>Quality</div><div>Supplier cases</div><div>Put-away</div><div>Invoice match</div>
+        </div>
+        <div class="appmain">
+          <div class="kpis">
+            <div class="kpi"><span class="chip c-entry">ENTRY</span><b>3</b>deliveries to finish</div>
+            <div class="kpi"><span class="chip c-qc">QC</span><b>8</b>inspections pending</div>
+            <div class="kpi"><span class="chip c-buy">BUYER</span><b>3</b>cases · 2 overdue</div>
+            <div class="kpi"><span class="chip c-store">STORE</span><b>11</b>put-away tasks</div>
+          </div>
+          <table class="mini">
+            <thead><tr><th>Task</th><th>Document</th><th>Waiting</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td>Inspect O-Ring</td><td>QC-000421</td><td>2 h</td><td>Open</td></tr>
+              <tr><td>Put away accepted 92</td><td>PAW-000512</td><td>today</td><td>Open</td></tr>
+              <tr><td>Supplier reply</td><td>CASE-000031</td><td>1 day</td><td>Open</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <h3>GRN entry — Entry checker</h3>
+    <div class="app">
+      <div class="appbar"><b>Goods receipt · draft</b><span>Save draft · Submit to QC</span></div>
+      <div class="appmain">
+        <div class="formgrid">
+          <div class="fld">PO number<i>PO-2026-00125</i></div>
+          <div class="fld">Supplier<i>Apex Seals</i></div>
+          <div class="fld">PO date<i>12 Sep 2026</i></div>
+          <div class="fld">Supplier DO<i>DO-7781</i></div>
+          <div class="fld">Delivery date<i>30 Sep 2026</i></div>
+          <div class="fld">Warehouse<i>Singapore</i></div>
+          <div class="fld">Packaging<i>Good</i></div>
+          <div class="fld">Receipt type<i>Normal</i></div>
+          <div class="fld">Remarks<i>Seal intact</i></div>
+        </div>
+        <table class="mini">
+          <thead><tr><th>Item</th><th>Ordered</th><th>Already received</th><th>Outstanding</th><th>This receipt</th><th>UOM</th><th>Batch / serial</th></tr></thead>
+          <tbody>
+            <tr><td>OR-220 O-Ring</td><td>100</td><td>0</td><td>100</td><td>100</td><td>PCS</td><td>Batch L2609</td></tr>
+          </tbody>
+        </table>
+        <div class="btns"><span class="btn">Attach DO photo</span><span class="btn">Add batch</span><span class="btn pri">Submit</span></div>
+      </div>
+    </div>
+    <p>Fields the checker types: supplier DO, delivery date, received quantity, batch or serial, expiry, packaging, remarks, attachments. Supplier, PO, item, ordered, previously received, outstanding, UOM, and warehouse come from the PO and stay read-only on the line.</p>
+
+    <h3>QC inspection</h3>
+    <div class="two">
+      <div class="app">
+        <div class="appbar"><b>QC-000421 · O-Ring</b><span>Mary · 30 Sep</span></div>
+        <div class="appmain">
+          <div class="formgrid">
+            <div class="fld">Received<i>100</i></div>
+            <div class="fld">Sample<i>10</i></div>
+            <div class="fld">Result<i>Partial accept</i></div>
+            <div class="fld">Accepted<i>92</i></div>
+            <div class="fld">Rejected<i>8</i></div>
+            <div class="fld">Reason<i>Damaged</i></div>
+          </div>
+          <table class="mini">
+            <thead><tr><th>Check</th><th>Spec</th><th>Actual</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>Diameter</td><td>20 ± 0.2</td><td>20.05</td><td>Pass</td></tr>
+              <tr><td>Hardness</td><td>70 Shore</td><td>69</td><td>Pass</td></tr>
+              <tr><td>Visual</td><td>No cuts</td><td>8 pcs cut</td><td>Fail</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h4>What complete does</h4>
+        <p>Writes accepted 92 and rejected 8 on the QC line and rolls the same numbers onto the GRN line.</p>
+        <p>Moves 8 from QC hold to quarantine.</p>
+        <p>Creates put-away task for 92.</p>
+        <p>Creates supplier case for 8, still linked to GRN-000421.</p>
+      </div>
+    </div>
+
+    <h3>Supplier case — one rejection, three outcomes</h3>
+    <div class="app">
+      <div class="appbar"><b>CASE-000031 · rejected 8 from GRN-000421</b><span>Buyer</span></div>
+      <div class="appmain">
+        <table class="mini">
+          <thead><tr><th>Resolution</th><th>Qty</th><th>Done</th><th>Remaining</th><th>Next document</th></tr></thead>
+          <tbody>
+            <tr><td>Replacement</td><td>5</td><td>0</td><td>5</td><td>Replacement GRN, then QC</td></tr>
+            <tr><td>Return to supplier</td><td>2</td><td>0</td><td>2</td><td>Return RT-… posts stock out</td></tr>
+            <tr><td>Credit note</td><td>1</td><td>0</td><td>1</td><td>Finance document, then scrap or keep</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>Put-away confirm</h3>
+    <div class="card">
+      <p><b>Item</b> OR-220 · <b>Qty</b> 92 · <b>Batch</b> L2609 · <b>From</b> Receiving dock (QC hold)</p>
+      <p><b>Suggested</b> Singapore / Hose zone / Rack R03 / Shelf S02 / Bin B05</p>
+      <p>Storekeeper confirms or picks another bin they are allowed to use. Confirm date and user are stored on the put-away line.</p>
+    </div>
+  </section>
+
+  <section id="status">
+    <h2>6. Status and roles</h2>
+    <p>GRN status is the header the user sees. Child documents have their own status. A posted document is cancelled or reversed. It is not deleted and its quantities are not typed over.</p>
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th><th>Who can set it</th></tr></thead>
+      <tbody>
+        <tr><td>DRAFT</td><td>GRN saved, stock not posted</td><td>Entry checker</td></tr>
+        <tr><td>SUBMITTED / RECEIVED</td><td>Receipt posted to QC hold</td><td>Entry checker submit</td></tr>
+        <tr><td>QC_PENDING / QC_IN_PROGRESS</td><td>Waiting for or under inspection</td><td>System, then QC</td></tr>
+        <tr><td>PARTIALLY_ACCEPTED</td><td>Accept and reject both greater than zero</td><td>QC complete</td></tr>
+        <tr><td>ACCEPTED / REJECTED</td><td>Whole line one result</td><td>QC complete</td></tr>
+        <tr><td>SUPPLIER_ACTION</td><td>Case open for rejected quantity</td><td>System when a case is created</td></tr>
+        <tr><td>REPLACEMENT_PENDING / REPLACEMENT_RECEIVED</td><td>Buyer waiting, then replacement GRN submitted</td><td>Buyer, entry checker</td></tr>
+        <tr><td>QC_RECHECK</td><td>Replacement is in QC</td><td>System</td></tr>
+        <tr><td>PUTAWAY_PENDING / PUTAWAY_COMPLETED</td><td>Accepted quantity at dock, then binned</td><td>Storekeeper</td></tr>
+        <tr><td>CLOSED</td><td>Accepted put away and rejected quantity fully resolved</td><td>System, or buyer if short-closed</td></tr>
+        <tr><td>CANCELLED / REVERSED</td><td>Draft discarded, or a reversal document posted</td><td>Authorised role only</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th>Role</th><th>Can do</th><th>Cannot do</th></tr></thead>
+      <tbody>
+        <tr><td>Entry checker</td><td>Create and submit GRN, count, capture DO, batch, serial, photos</td><td>Pass QC, close a supplier case, put away, match an invoice</td></tr>
+        <tr><td>QC</td><td>Inspect, record checklist, accept, partial, reject, conditional</td><td>Agree commercial settlement with the supplier</td></tr>
+        <tr><td>Buyer</td><td>Short-close, excess approval, split supplier case, request replacement</td><td>Change QC accepted quantity</td></tr>
+        <tr><td>Storekeeper</td><td>Confirm bin and post put-away</td><td>Edit the GRN received quantity</td></tr>
+        <tr><td>Finance</td><td>Match invoice, see GRN not invoiced, price and tax variance</td><td>Move stock</td></tr>
+        <tr><td>Purchase manager / QC supervisor</td><td>Escalations, overdue replacement, closed-period exception</td><td>Silent edit of a posted ledger row</td></tr>
+      </tbody>
+    </table>
+    <p>Actions live in <code>sec_role_action</code>. The API checks the action before it changes status. Notification rules in <code>cfg_notify_rule</code> raise tasks when QC pending, supplier reply, or replacement age crosses the configured hours.</p>
+  </section>
+
+  <section id="qty">
+    <h2>7. Quantity rules</h2>
+    <div class="rule">Each quantity has its own column. A later step adds its own number. It does not replace received quantity with accepted quantity.</div>
+    <table>
+      <thead><tr><th>Quantity</th><th>Where it is stored</th><th>Who writes it</th></tr></thead>
+      <tbody>
+        <tr><td>PO quantity</td><td>po_line.order_qty</td><td>Purchase module</td></tr>
+        <tr><td>Received</td><td>grn_line.received_qty and po_line.received_qty rollup</td><td>GRN submit, normal receipts only</td></tr>
+        <tr><td>Inspected</td><td>qc_inspection_line.inspect_qty, rolled to grn_line.inspected_qty</td><td>QC</td></tr>
+        <tr><td>Accepted</td><td>qc line, then grn_line.accepted_qty</td><td>QC</td></tr>
+        <tr><td>Rejected</td><td>qc line, then grn_line.rejected_qty</td><td>QC</td></tr>
+        <tr><td>Conditional</td><td>grn_line.conditional_qty</td><td>QC, released by buyer as use-as-is</td></tr>
+        <tr><td>Put-away</td><td>paw_line.qty summed to grn_line.putaway_qty</td><td>Storekeeper confirm</td></tr>
+        <tr><td>Returned</td><td>ret_line.qty summed to grn_line.returned_qty</td><td>Return post</td></tr>
+        <tr><td>Replacement</td><td>sup_case_line.resolution_qty and resolved_qty</td><td>Buyer plan, then replacement GRN</td></tr>
+        <tr><td>Outstanding</td><td>po_line.outstanding_qty</td><td>System formula below</td></tr>
+        <tr><td>Pending replacement</td><td>sup_case_line.remaining_qty</td><td>resolution_qty − received replacement qty</td></tr>
+      </tbody>
+    </table>
+    <div class="card">
+      <h4>PO outstanding</h4>
+      <p class="mono">outstanding_qty = order_qty − received_qty − short_closed_qty</p>
+      <p><code>received_qty</code> on the PO line sums normal GRNs only. A replacement GRN fulfills a rejected quantity and does not increase PO received quantity, so the receipt does not look like a second purchase. Unapproved excess is stored on the GRN line and is excluded from the PO rollup until a buyer approves it.</p>
+      <p><b>Short example.</b> Order 100, this receipt 95. Short on the line is 5. Outstanding stays 5. Buyer leaves the PO open, or posts <code>short_closed_qty = 5</code> and the line can close.</p>
+      <p><b>Excess example.</b> Order 100, this receipt 110, tolerance 2%. Allowed without approval is 102. The extra 8 waits in <code>excess_status = PENDING_APPROVAL</code>. Stock posts for the allowed quantity. The extra posts only after approval.</p>
+      <p><b>Partial replacement.</b> Rejected 20. First replacement 12. <code>remaining_qty</code> stays 8 until the second replacement arrives.</p>
+    </div>
+    <div class="card">
+      <h4>Units of measure</h4>
+      <p>The user enters purchase UOM. The line also stores inventory UOM, the conversion factor, and the converted quantity. Example: 1 BOX = 12 PCS. Both the entered 2 BOX and the stock 24 PCS remain on the GRN line. Rounding mode and decimal places come from <code>mst_uom</code> and <code>mst_item_uom</code>.</p>
+    </div>
+    <div class="card">
+      <h4>Stock status versus physical quantity</h4>
+      <p>Physical stock can sit in five states: <b>QC_HOLD</b>, <b>AVAILABLE</b>, <b>QUARANTINE</b>, <b>RESERVED</b>, <b>BLOCKED</b>. Available to issue is only the AVAILABLE balance. Owner type on the same balance row can be company, supplier, customer, consignment, or third party. Version 1 can post company-owned only. The column is already there.</p>
+    </div>
+  </section>
+
+  <section id="example">
+    <h2>8. Worked example</h2>
+    <p>PO-2026-00125, Apex Seals, item OR-220, order quantity 100 PCS, PO price 100. One GRN receives the full 100. QC accepts 92 and rejects 8 as damaged.</p>
+    <table>
+      <thead><tr><th>Step</th><th>Document</th><th>Quantities kept</th><th>Ledger</th><th>Balance after</th></tr></thead>
+      <tbody>
+        <tr><td>1 Receive</td><td>GRN-000421</td><td>Received 100</td><td>+100 QC_HOLD at dock</td><td>Hold 100</td></tr>
+        <tr><td>2 QC</td><td>QC-000421</td><td>Sample 10, accept 92, reject 8</td><td>−8 hold, +8 quarantine</td><td>Hold 92, quarantine 8</td></tr>
+        <tr><td>3 Put-away</td><td>PAW-000512 bin B05</td><td>Put-away 92</td><td>−92 hold, +92 available at B05</td><td>Available 92, quarantine 8</td></tr>
+        <tr><td>4 Case split</td><td>CASE-000031</td><td>Replace 5, return 2, credit 1</td><td>No stock move</td><td>Same</td></tr>
+        <tr><td>5 Return</td><td>RET-000014</td><td>Returned 2</td><td>−2 quarantine</td><td>Available 92, quarantine 6</td></tr>
+        <tr><td>6 Credit then scrap</td><td>Finance credit + scrap txn</td><td>Credit qty 1</td><td>−1 quarantine</td><td>Available 92, quarantine 5</td></tr>
+        <tr><td>7 Replacement arrives</td><td>GRN-000488 linked to GRN-000421 and the case line</td><td>Replacement received 5. PO received stays 100</td><td>+5 QC_HOLD</td><td>Hold 5, quarantine 5</td></tr>
+        <tr><td>8 Recheck and put-away</td><td>QC then PAW</td><td>Replacement accepted 5, put away 5</td><td>−5 hold, +5 available</td><td>Available 97, quarantine 0</td></tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>What the chain answers.</b> Arrived 100 on GRN-000421. Accepted 92 plus replacement 5. Rejected 8 because of damage. 2 returned, 1 credited and scrapped, 5 replaced on GRN-000488, rechecked, and stored in bin B05. Available stock is 97. Invoice match uses policy. If policy is accepted quantity, finance can match 97. A supplier invoice for 100 shows a quantity difference of 3. An invoice price of 105 against PO price 100 shows a price variance of 5. GRN accepted quantity with no match row is the GRN-not-invoiced report.
+    </div>
+  </section>
+
+  <section id="tables">
+    <h2>9. Database tables</h2>
+    <p>Every transactional table includes these standard columns: <code>id</code> bigint PK, <code>company_id</code>, <code>created_by</code>, <code>created_at</code>, <code>updated_by</code>, <code>updated_at</code>, <code>row_version</code> int. Document tables also store <code>doc_no</code> where listed. Ledger rows are insert-only: no update of qty, no delete. Corrections insert a reversal row.</p>
+    <input class="search" id="q" placeholder="Filter tables or columns, for example batch, quarantine, invoice" />
+
+    <h3>9.1 Masters and control — 19 tables</h3>
+    <div class="tbl" data-name="mst_supplier supplier_code">
+      <h4>mst_supplier</h4>
+      <p class="muted">Read by receiving. Owned by the supplier master, not by inward.</p>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>supplier_code</td><td>varchar(30)</td><td>UK</td><td>Business code</td></tr>
+        <tr><td>supplier_name</td><td>varchar(200)</td><td></td><td>Display name</td></tr>
+        <tr><td>currency_code</td><td>char(3)</td><td></td><td>Default currency</td></tr>
+        <tr><td>status</td><td>varchar(20)</td><td></td><td>ACTIVE / BLOCKED</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tbl" data-name="mst_item batch serial expiry qc barcode">
+      <h4>mst_item</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>item_code</td><td>varchar(40)</td><td>UK</td><td>Scan and search code</td></tr>
+        <tr><td>item_name</td><td>varchar(200)</td><td></td><td>Short name</td></tr>
+        <tr><td>item_desc</td><td>varchar(500)</td><td></td><td>Description printed on GRN</td></tr>
+        <tr><td>category_id</td><td>bigint</td><td>FK</td><td>Drives default QC template and tolerance</td></tr>
+        <tr><td>purchase_uom_id</td><td>bigint</td><td>FK</td><td>UOM on the PO</td></tr>
+        <tr><td>inventory_uom_id</td><td>bigint</td><td>FK</td><td>UOM in the ledger</td></tr>
+        <tr><td>batch_controlled</td><td>bit</td><td></td><td>GRN line requires at least one batch</td></tr>
+        <tr><td>serial_controlled</td><td>bit</td><td></td><td>Serial count must equal quantity</td></tr>
+        <tr><td>expiry_controlled</td><td>bit</td><td></td><td>Expiry date required on the batch</td></tr>
+        <tr><td>qc_required</td><td>bit</td><td></td><td>Submit opens QC. If false, submit opens put-away</td></tr>
+        <tr><td>shelf_life_days</td><td>int</td><td></td><td>Optional check against expiry</td></tr>
+        <tr><td>default_owner_type</td><td>varchar(20)</td><td></td><td>COMPANY, SUPPLIER, CUSTOMER, CONSIGNMENT, THIRD_PARTY</td></tr>
+        <tr><td>barcode</td><td>varchar(80)</td><td></td><td>Item scan value</td></tr>
+        <tr><td>status</td><td>varchar(20)</td><td></td><td>ACTIVE / INACTIVE</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tbl" data-name="mst_uom mst_item_uom conversion">
+      <h4>mst_uom</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>uom_code</td><td>varchar(10)</td><td>UK</td><td>PCS, BOX, KG</td></tr>
+        <tr><td>uom_name</td><td>varchar(40)</td><td></td><td>Name</td></tr>
+        <tr><td>decimal_precision</td><td>tinyint</td><td></td><td>Allowed decimals</td></tr>
+      </tbody></table>
+      <h4>mst_item_uom</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>item_id</td><td>bigint</td><td>FK</td><td>Item</td></tr>
+        <tr><td>from_uom_id</td><td>bigint</td><td>FK</td><td>Purchase UOM</td></tr>
+        <tr><td>to_uom_id</td><td>bigint</td><td>FK</td><td>Inventory UOM</td></tr>
+        <tr><td>conversion_factor</td><td>decimal(18,6)</td><td></td><td>1 BOX = 12 PCS</td></tr>
+        <tr><td>rounding_mode</td><td>varchar(10)</td><td></td><td>HALF_UP, UP, DOWN</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tbl" data-name="mst_warehouse mst_storage_location bin rack zone">
+      <h4>mst_warehouse</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>warehouse_code</td><td>varchar(20)</td><td>UK</td><td>WH-SG</td></tr>
+        <tr><td>warehouse_name</td><td>varchar(120)</td><td></td><td>Singapore Warehouse</td></tr>
+        <tr><td>plant_code</td><td>varchar(20)</td><td></td><td>Plant</td></tr>
+        <tr><td>is_default</td><td>bit</td><td></td><td>Default for the plant</td></tr>
+        <tr><td>status</td><td>varchar(20)</td><td></td><td>ACTIVE</td></tr>
+      </tbody></table>
+      <h4>mst_storage_location</h4>
+      <p class="muted">One table for zone, rack, shelf, and bin. <code>parent_location_id</code> builds the tree. A bin barcode is the scan value at put-away.</p>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>warehouse_id</td><td>bigint</td><td>FK</td><td>Warehouse</td></tr>
+        <tr><td>parent_location_id</td><td>bigint</td><td>FK</td><td>Null for a top zone</td></tr>
+        <tr><td>location_type</td><td>varchar(20)</td><td></td><td>ZONE, RACK, SHELF, BIN</td></tr>
+        <tr><td>location_code</td><td>varchar(30)</td><td>UK with parent</td><td>R03, S02, B05</td></tr>
+        <tr><td>location_name</td><td>varchar(120)</td><td></td><td>Hose zone</td></tr>
+        <tr><td>capacity_qty</td><td>decimal(18,4)</td><td></td><td>Used later for directed put-away</td></tr>
+        <tr><td>is_receiving_dock</td><td>bit</td><td></td><td>Default location for a new GRN</td></tr>
+        <tr><td>is_quarantine</td><td>bit</td><td></td><td>Rejected stock lands here</td></tr>
+        <tr><td>is_scrap</td><td>bit</td><td></td><td>Scrap location</td></tr>
+        <tr><td>barcode</td><td>varchar(80)</td><td></td><td>Bin scan</td></tr>
+        <tr><td>status</td><td>varchar(20)</td><td></td><td>ACTIVE / BLOCKED</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tbl" data-name="mst_item_putaway_rule preferred location">
+      <h4>mst_item_putaway_rule</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>item_id</td><td>bigint</td><td>FK</td><td>Item</td></tr>
+        <tr><td>warehouse_id</td><td>bigint</td><td>FK</td><td>Warehouse</td></tr>
+        <tr><td>preferred_location_id</td><td>bigint</td><td>FK</td><td>Suggested bin</td></tr>
+        <tr><td>priority</td><td>int</td><td></td><td>Lower number wins</td></tr>
+        <tr><td>max_qty</td><td>decimal(18,4)</td><td></td><td>Capacity hint</td></tr>
+        <tr><td>active</td><td>bit</td><td></td><td>Rule on or off</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tbl" data-name="mst_rejection_reason mst_resolution_type damaged replacement return">
+      <h4>mst_rejection_reason</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>reason_code</td><td>varchar(30)</td><td>UK</td><td>DAMAGED, WRONG_ITEM, WRONG_SPEC, WRONG_SIZE, QUALITY_FAIL, EXPIRED, PACKAGING, DOCUMENT, QUANTITY, OTHER</td></tr>
+        <tr><td>reason_name</td><td>varchar(120)</td><td></td><td>Label</td></tr>
+        <tr><td>requires_photo</td><td>bit</td><td></td><td>QC must attach a file</td></tr>
+        <tr><td>active</td><td>bit</td><td></td><td>Shown in the list</td></tr>
+      </tbody></table>
+      <h4>mst_resolution_type</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>resolution_code</td><td>varchar(30)</td><td>UK</td><td>REPLACEMENT, RETURN, DEBIT_CREDIT, REWORK, USE_AS_IS, SCRAP, PENDING, OTHER</td></tr>
+        <tr><td>affects_stock</td><td>bit</td><td></td><td>Return and scrap post stock. Credit alone does not</td></tr>
+        <tr><td>requires_qc</td><td>bit</td><td></td><td>Replacement and rework return to QC</td></tr>
+        <tr><td>active</td><td>bit</td><td></td><td>Shown to the buyer</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tbl" data-name="mst_qc_template checklist sample">
+      <h4>mst_qc_template / mst_qc_template_line / mst_item_qc</h4>
+      <table><thead><tr><th>Table.column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>mst_qc_template.template_code</td><td>varchar(30)</td><td>ORING-VISUAL</td></tr>
+        <tr><td>mst_qc_template.sample_rule</td><td>varchar(20)</td><td>NONE, FIXED, PERCENT, FULL</td></tr>
+        <tr><td>mst_qc_template.sample_value</td><td>decimal(18,4)</td><td>50 pieces, or 5 percent</td></tr>
+        <tr><td>mst_qc_template_line.check_code</td><td>varchar(30)</td><td>DIAMETER, HARDNESS</td></tr>
+        <tr><td>mst_qc_template_line.spec_text</td><td>varchar(200)</td><td>Shown to the inspector</td></tr>
+        <tr><td>mst_qc_template_line.min_value / max_value</td><td>decimal</td><td>Numeric spec</td></tr>
+        <tr><td>mst_qc_template_line.result_type</td><td>varchar(20)</td><td>PASS_FAIL, NUMBER, TEXT</td></tr>
+        <tr><td>mst_qc_template_line.mandatory</td><td>bit</td><td>Required before complete</td></tr>
+        <tr><td>mst_qc_template_line.sequence_no</td><td>int</td><td>Display order</td></tr>
+        <tr><td>mst_item_qc.item_id + template_id</td><td>bigint</td><td>Which checklist an item uses</td></tr>
+      </tbody></table>
+    </div>
+    <div class="tbl" data-name="cfg_tolerance cfg_notify_rule cfg_period cfg_number_series cfg_match_policy sec_role">
+      <h4>cfg_tolerance</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>scope_type</td><td>varchar(20)</td><td>COMPANY, SUPPLIER, CATEGORY, ITEM. Most specific scope wins</td></tr>
+        <tr><td>scope_id</td><td>bigint</td><td>Null when scope is company</td></tr>
+        <tr><td>over_receipt_pct</td><td>decimal(8,3)</td><td>2.000 means 2 percent</td></tr>
+        <tr><td>price_variance_pct</td><td>decimal(8,3)</td><td>Invoice price tolerance</td></tr>
+        <tr><td>tax_variance_pct</td><td>decimal(8,3)</td><td>Tax tolerance</td></tr>
+      </tbody></table>
+      <h4>cfg_notify_rule</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>event_code</td><td>varchar(40)</td><td>QC_PENDING, SUPPLIER_RESPONSE, REPLACEMENT_OVERDUE</td></tr>
+        <tr><td>threshold_hours</td><td>int</td><td>Age before escalation</td></tr>
+        <tr><td>escalate_to_role</td><td>varchar(30)</td><td>QC_SUPERVISOR, BUYER, PURCHASE_MANAGER</td></tr>
+      </tbody></table>
+      <h4>cfg_period</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>period_year / period_month</td><td>int</td><td>2026 / 9</td></tr>
+        <tr><td>inventory_status</td><td>varchar(10)</td><td>OPEN or CLOSED. Posting into CLOSED needs an exception permission</td></tr>
+        <tr><td>closed_by / closed_at</td><td>user, datetime</td><td>Who closed the period</td></tr>
+      </tbody></table>
+      <h4>cfg_number_series</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>doc_type</td><td>varchar(20)</td><td>GRN, QC, CASE, RET, PAW, LEDGER</td></tr>
+        <tr><td>prefix</td><td>varchar(10)</td><td>GRN-</td></tr>
+        <tr><td>next_number</td><td>int</td><td>Increment in the same transaction as the insert</td></tr>
+        <tr><td>padding</td><td>tinyint</td><td>6 → GRN-000421</td></tr>
+      </tbody></table>
+      <h4>cfg_match_policy</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>match_qty_basis</td><td>varchar(20)</td><td>ACCEPTED, RECEIVED, or PUTAWAY. This is the company rule for invoice quantity</td></tr>
+      </tbody></table>
+      <h4>sec_role / sec_role_action</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>sec_role.role_code</td><td>varchar(30)</td><td>ENTRY_CHECKER, QC, QC_SUPERVISOR, BUYER, STOREKEEPER, FINANCE, PURCHASE_MANAGER, ADMIN</td></tr>
+        <tr><td>sec_role_action.module_code</td><td>varchar(30)</td><td>GRN, QC, CASE, RETURN, PUTAWAY, INVENTORY, INVOICE, CONFIG</td></tr>
+        <tr><td>sec_role_action.action_code</td><td>varchar(30)</td><td>CREATE, SUBMIT, INSPECT, APPROVE_EXCESS, SHORT_CLOSE, RESOLVE, PUTAWAY, MATCH, CANCEL, REVERSE, POST_CLOSED</td></tr>
+      </tbody></table>
+    </div>
+
+    <h3>9.2 Purchase order — read and rollup — 2 tables</h3>
+    <div class="tbl" data-name="po_header po_line outstanding received_qty">
+      <p class="muted">Purchase owns these tables. Inward reads them and updates only the rollup columns on <code>po_line</code> through the purchase port.</p>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>po_header.po_no</td><td>varchar(30)</td><td>PO-2026-00125</td></tr>
+        <tr><td>po_header.po_type</td><td>varchar(20)</td><td>MATERIAL. Service POs are filtered out</td></tr>
+        <tr><td>po_header.po_date</td><td>date</td><td>PO date</td></tr>
+        <tr><td>po_header.supplier_id</td><td>bigint</td><td>Supplier</td></tr>
+        <tr><td>po_header.buyer_id</td><td>bigint</td><td>Default buyer for the case</td></tr>
+        <tr><td>po_header.status</td><td>varchar(20)</td><td>OPEN, PARTIAL, CLOSED, SHORT_CLOSED, CANCELLED</td></tr>
+        <tr><td>po_line.line_no</td><td>int</td><td>10, 20, 30</td></tr>
+        <tr><td>po_line.item_id</td><td>bigint</td><td>Item</td></tr>
+        <tr><td>po_line.warehouse_id</td><td>bigint</td><td>Expected warehouse</td></tr>
+        <tr><td>po_line.order_qty</td><td>decimal(18,4)</td><td>PO quantity in purchase UOM</td></tr>
+        <tr><td>po_line.purchase_uom_id</td><td>bigint</td><td>UOM</td></tr>
+        <tr><td>po_line.unit_price</td><td>decimal(18,4)</td><td>Used for price variance</td></tr>
+        <tr><td>po_line.tax_pct</td><td>decimal(8,3)</td><td>Used for tax variance</td></tr>
+        <tr><td>po_line.received_qty</td><td>decimal(18,4)</td><td>Sum of approved normal receipts</td></tr>
+        <tr><td>po_line.accepted_qty</td><td>decimal(18,4)</td><td>Sum of QC accepted, including accepted replacements</td></tr>
+        <tr><td>po_line.rejected_open_qty</td><td>decimal(18,4)</td><td>Rejected quantity not yet resolved</td></tr>
+        <tr><td>po_line.returned_qty</td><td>decimal(18,4)</td><td>Posted returns</td></tr>
+        <tr><td>po_line.invoiced_qty</td><td>decimal(18,4)</td><td>Sum of match quantities</td></tr>
+        <tr><td>po_line.short_closed_qty</td><td>decimal(18,4)</td><td>Balance the buyer will not receive</td></tr>
+        <tr><td>po_line.outstanding_qty</td><td>decimal(18,4)</td><td>order − received − short closed</td></tr>
+        <tr><td>po_line.line_status</td><td>varchar(20)</td><td>OPEN, PARTIAL, CLOSED</td></tr>
+      </tbody></table>
+    </div>
+
+    <h3>9.3 Goods receipt — 4 tables</h3>
+    <div class="tbl" data-name="grn_header grn_line grn_batch grn_serial delivery">
+      <h4>grn_header</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>grn_no</td><td>varchar(30)</td><td>GRN-000421</td></tr>
+        <tr><td>receipt_type</td><td>varchar(20)</td><td>NORMAL or REPLACEMENT</td></tr>
+        <tr><td>po_id</td><td>bigint</td><td>Original PO, including for a replacement</td></tr>
+        <tr><td>supplier_id</td><td>bigint</td><td>Copied from the PO</td></tr>
+        <tr><td>supplier_do_no</td><td>varchar(40)</td><td>Delivery note</td></tr>
+        <tr><td>delivery_date</td><td>date</td><td>Arrival date</td></tr>
+        <tr><td>warehouse_id</td><td>bigint</td><td>Receiving warehouse</td></tr>
+        <tr><td>status</td><td>varchar(30)</td><td>See status list</td></tr>
+        <tr><td>packaging_condition</td><td>varchar(20)</td><td>GOOD, DAMAGED, OPENED, WET, OTHER</td></tr>
+        <tr><td>remarks</td><td>varchar(1000)</td><td>Checker notes</td></tr>
+        <tr><td>parent_grn_id</td><td>bigint</td><td>Original GRN when this is a replacement</td></tr>
+        <tr><td>supplier_case_id</td><td>bigint</td><td>Case that authorised the replacement</td></tr>
+        <tr><td>supplier_case_line_id</td><td>bigint</td><td>The replacement split line</td></tr>
+        <tr><td>period_id</td><td>bigint</td><td>Inventory period of posting</td></tr>
+        <tr><td>reversal_of_grn_id</td><td>bigint</td><td>Set when this GRN reverses another</td></tr>
+        <tr><td>received_by / submitted_at</td><td>user, datetime</td><td>Who submitted</td></tr>
+      </tbody></table>
+      <h4>grn_line</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>grn_id / line_no</td><td>bigint, int</td><td>Parent and line</td></tr>
+        <tr><td>po_line_id / item_id</td><td>bigint</td><td>Source PO line and item</td></tr>
+        <tr><td>order_qty_snapshot</td><td>decimal(18,4)</td><td>PO qty at entry time</td></tr>
+        <tr><td>prev_received_qty_snapshot</td><td>decimal(18,4)</td><td>Already received before this GRN</td></tr>
+        <tr><td>outstanding_qty_snapshot</td><td>decimal(18,4)</td><td>Outstanding before this GRN</td></tr>
+        <tr><td>received_qty</td><td>decimal(18,4)</td><td>Entered quantity in purchase UOM</td></tr>
+        <tr><td>purchase_uom_id</td><td>bigint</td><td>UOM the user typed</td></tr>
+        <tr><td>inventory_uom_id</td><td>bigint</td><td>Stock UOM</td></tr>
+        <tr><td>conversion_factor</td><td>decimal(18,6)</td><td>Factor used, stored so later master changes do not rewrite history</td></tr>
+        <tr><td>received_qty_inv</td><td>decimal(18,4)</td><td>Quantity posted toward stock, after conversion and after removing unapproved excess</td></tr>
+        <tr><td>excess_qty</td><td>decimal(18,4)</td><td>Amount above PO outstanding</td></tr>
+        <tr><td>short_qty</td><td>decimal(18,4)</td><td>Outstanding still left after this receipt</td></tr>
+        <tr><td>tolerance_pct_applied</td><td>decimal(8,3)</td><td>Tolerance used at submit</td></tr>
+        <tr><td>excess_status</td><td>varchar(20)</td><td>NONE, WARNING, PENDING_APPROVAL, APPROVED, REJECTED_EXCESS</td></tr>
+        <tr><td>inspected_qty</td><td>decimal(18,4)</td><td>Rollup from QC</td></tr>
+        <tr><td>accepted_qty</td><td>decimal(18,4)</td><td>Rollup from QC</td></tr>
+        <tr><td>rejected_qty</td><td>decimal(18,4)</td><td>Rollup from QC</td></tr>
+        <tr><td>conditional_qty</td><td>decimal(18,4)</td><td>Rollup from QC</td></tr>
+        <tr><td>putaway_qty</td><td>decimal(18,4)</td><td>Rollup from put-away</td></tr>
+        <tr><td>returned_qty</td><td>decimal(18,4)</td><td>Rollup from returns</td></tr>
+        <tr><td>remarks</td><td>varchar(500)</td><td>Line note</td></tr>
+      </tbody></table>
+      <h4>grn_batch</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>grn_line_id</td><td>bigint</td><td>One GRN line can have many batches</td></tr>
+        <tr><td>batch_no</td><td>varchar(40)</td><td>Internal or scanned lot</td></tr>
+        <tr><td>supplier_batch_no</td><td>varchar(40)</td><td>Supplier lot, kept even when internal lot differs</td></tr>
+        <tr><td>mfg_date / expiry_date</td><td>date</td><td>Required when the item is expiry controlled</td></tr>
+        <tr><td>qty_inv</td><td>decimal(18,4)</td><td>Batch quantity. Sum of batches equals line inventory quantity</td></tr>
+        <tr><td>accepted_qty / rejected_qty</td><td>decimal</td><td>QC split at batch level</td></tr>
+      </tbody></table>
+      <h4>grn_serial</h4>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>grn_line_id / grn_batch_id</td><td>bigint</td><td>Serial belongs to the line and optional batch</td></tr>
+        <tr><td>serial_no</td><td>varchar(60)</td><td>Unique per company + item</td></tr>
+        <tr><td>status</td><td>varchar(20)</td><td>RECEIVED, ACCEPTED, REJECTED, PUTAWAY, RETURNED, SCRAPPED</td></tr>
+      </tbody></table>
+    </div>
+
+    <h3>9.4 Quality — 3 tables</h3>
+    <div class="tbl" data-name="qc_inspection qc_inspection_line qc_check_result sample">
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>qc_inspection.qc_no</td><td>varchar(30)</td><td>QC-000421</td></tr>
+        <tr><td>qc_inspection.grn_id</td><td>bigint</td><td>Parent receipt</td></tr>
+        <tr><td>qc_inspection.parent_qc_id</td><td>bigint</td><td>Set on a recheck of replacement or rework</td></tr>
+        <tr><td>qc_inspection.status</td><td>varchar(20)</td><td>PENDING, IN_PROGRESS, COMPLETED, CANCELLED</td></tr>
+        <tr><td>qc_inspection.assigned_to / inspector_id</td><td>bigint</td><td>Queue assignee and the person who finished</td></tr>
+        <tr><td>qc_inspection.inspection_date</td><td>date</td><td>Inspection date</td></tr>
+        <tr><td>qc_inspection.sample_qty</td><td>decimal(18,4)</td><td>How many were physically checked</td></tr>
+        <tr><td>qc_inspection.sample_basis</td><td>varchar(20)</td><td>Copied from the template rule</td></tr>
+        <tr><td>qc_inspection.overall_result</td><td>varchar(20)</td><td>ACCEPT, PARTIAL_ACCEPT, REJECT, CONDITIONAL_ACCEPT</td></tr>
+        <tr><td>qc_inspection_line.grn_line_id / grn_batch_id</td><td>bigint</td><td>Line and optional batch</td></tr>
+        <tr><td>qc_inspection_line.inspect_qty</td><td>decimal</td><td>Quantity this decision covers. Can be the full received qty while sample_qty is smaller</td></tr>
+        <tr><td>qc_inspection_line.accepted_qty / rejected_qty / conditional_qty</td><td>decimal</td><td>Must sum to inspect_qty</td></tr>
+        <tr><td>qc_inspection_line.rejection_reason_id</td><td>bigint</td><td>Required when rejected_qty &gt; 0</td></tr>
+        <tr><td>qc_inspection_line.remarks</td><td>varchar(1000)</td><td>Free text</td></tr>
+        <tr><td>qc_check_result.template_line_id</td><td>bigint</td><td>Checklist row</td></tr>
+        <tr><td>qc_check_result.actual_value</td><td>varchar(200)</td><td>Measured value or note</td></tr>
+        <tr><td>qc_check_result.result</td><td>varchar(10)</td><td>PASS, FAIL, NA</td></tr>
+      </tbody></table>
+    </div>
+
+    <h3>9.5 Supplier case — 2 tables</h3>
+    <div class="tbl" data-name="sup_case sup_case_line resolution remaining">
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>sup_case.case_no</td><td>varchar(30)</td><td>CASE-000031</td></tr>
+        <tr><td>sup_case.grn_id / qc_id / po_id / supplier_id</td><td>bigint</td><td>Full backward link</td></tr>
+        <tr><td>sup_case.buyer_id</td><td>bigint</td><td>Owner</td></tr>
+        <tr><td>sup_case.status</td><td>varchar(20)</td><td>OPEN, SUPPLIER_ACTION, PARTIAL, CLOSED, CANCELLED</td></tr>
+        <tr><td>sup_case.due_at</td><td>datetime</td><td>Used for overdue replacement alerts</td></tr>
+        <tr><td>sup_case_line.grn_line_id / qc_line_id</td><td>bigint</td><td>Which rejected quantity</td></tr>
+        <tr><td>sup_case_line.rejection_reason_id</td><td>bigint</td><td>Copied from QC</td></tr>
+        <tr><td>sup_case_line.rejected_qty</td><td>decimal</td><td>Original rejected quantity this slice came from. Repeated on each slice so the line can be read alone. The control total is sum of resolution_qty, which must equal the GRN line rejected quantity</td></tr>
+        <tr><td>sup_case_line.resolution_type_id</td><td>bigint</td><td>Replacement, return, credit, and so on</td></tr>
+        <tr><td>sup_case_line.resolution_qty</td><td>decimal</td><td>Planned quantity for this outcome</td></tr>
+        <tr><td>sup_case_line.resolved_qty</td><td>decimal</td><td>Quantity already received, returned, or credited</td></tr>
+        <tr><td>sup_case_line.remaining_qty</td><td>decimal</td><td>resolution_qty − resolved_qty</td></tr>
+        <tr><td>sup_case_line.status</td><td>varchar(20)</td><td>OPEN, PARTIAL, DONE</td></tr>
+        <tr><td>sup_case_line.remarks</td><td>varchar(1000)</td><td>Supplier agreement note</td></tr>
+      </tbody></table>
+      <p>Sum of <code>resolution_qty</code> for a GRN line cannot exceed that line’s <code>rejected_qty + conditional_qty</code> still open.</p>
+    </div>
+
+    <h3>9.6 Supplier return — 3 tables</h3>
+    <div class="tbl" data-name="ret_header ret_line ret_serial return">
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>ret_header.return_no</td><td>varchar(30)</td><td>RET-000014</td></tr>
+        <tr><td>ret_header.case_id / case_line_id / grn_id</td><td>bigint</td><td>Why the stock is leaving</td></tr>
+        <tr><td>ret_header.supplier_id</td><td>bigint</td><td>Ship-to supplier</td></tr>
+        <tr><td>ret_header.status</td><td>varchar(20)</td><td>DRAFT or POSTED. Posted rows stay. Cancel posts a reversal</td></tr>
+        <tr><td>ret_header.return_date / period_id</td><td>date, bigint</td><td>Posting period check</td></tr>
+        <tr><td>ret_line.item_id / grn_line_id / grn_batch_id</td><td>bigint</td><td>What is returned</td></tr>
+        <tr><td>ret_line.location_id</td><td>bigint</td><td>Quarantine bin the stock leaves</td></tr>
+        <tr><td>ret_line.qty / uom_id</td><td>decimal, bigint</td><td>Inventory quantity out</td></tr>
+        <tr><td>ret_serial.grn_serial_id</td><td>bigint</td><td>Which serials left</td></tr>
+      </tbody></table>
+    </div>
+
+    <h3>9.7 Put-away — 3 tables</h3>
+    <div class="tbl" data-name="paw_task paw_line paw_serial bin putaway">
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>paw_task.task_no</td><td>varchar(30)</td><td>PAW-000512</td></tr>
+        <tr><td>paw_task.grn_id / qc_id / warehouse_id</td><td>bigint</td><td>Source</td></tr>
+        <tr><td>paw_task.source</td><td>varchar(20)</td><td>QC_ACCEPT, CONDITIONAL, REPLACEMENT</td></tr>
+        <tr><td>paw_task.status</td><td>varchar(20)</td><td>PENDING, IN_PROGRESS, DONE, CANCELLED</td></tr>
+        <tr><td>paw_line.grn_line_id / grn_batch_id / item_id</td><td>bigint</td><td>What moves</td></tr>
+        <tr><td>paw_line.qty</td><td>decimal(18,4)</td><td>Can be split across bins with two lines</td></tr>
+        <tr><td>paw_line.from_location_id</td><td>bigint</td><td>Receiving dock</td></tr>
+        <tr><td>paw_line.suggested_location_id</td><td>bigint</td><td>From put-away rule</td></tr>
+        <tr><td>paw_line.confirmed_location_id</td><td>bigint</td><td>Bin the storekeeper confirmed</td></tr>
+        <tr><td>paw_line.putaway_by / putaway_at</td><td>user, datetime</td><td>Audit of the physical move</td></tr>
+        <tr><td>paw_serial.grn_serial_id</td><td>bigint</td><td>Serial now at that bin</td></tr>
+      </tbody></table>
+    </div>
+
+    <h3>9.8 Inventory — 2 tables</h3>
+    <div class="tbl" data-name="inv_ledger inv_balance stock status owner">
+      <h4>inv_ledger</h4>
+      <p class="muted">One row per movement. Qty in and qty out are never edited.</p>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>txn_no</td><td>varchar(30)</td><td>Ledger document number</td></tr>
+        <tr><td>txn_type</td><td>varchar(30)</td><td>GRN_RECEIPT, QC_STATUS_MOVE, PUTAWAY, SUPPLIER_RETURN, SCRAP, REVERSAL</td></tr>
+        <tr><td>doc_type / doc_id / doc_line_id</td><td>varchar, bigint</td><td>GRN, QC, PAW, RET, or reversal source</td></tr>
+        <tr><td>item_id / warehouse_id / location_id</td><td>bigint</td><td>Where</td></tr>
+        <tr><td>batch_no / serial_no</td><td>varchar</td><td>Blank when the item is not controlled</td></tr>
+        <tr><td>owner_type</td><td>varchar(20)</td><td>COMPANY by default in v1</td></tr>
+        <tr><td>stock_status</td><td>varchar(20)</td><td>QC_HOLD, AVAILABLE, QUARANTINE, RESERVED, BLOCKED</td></tr>
+        <tr><td>qty_in / qty_out</td><td>decimal(18,4)</td><td>One of them is zero on a normal row</td></tr>
+        <tr><td>uom_id</td><td>bigint</td><td>Inventory UOM</td></tr>
+        <tr><td>txn_date / posting_date / period_id</td><td>date, date, bigint</td><td>Period gate uses posting_date</td></tr>
+        <tr><td>ref_doc_type / ref_doc_id</td><td>varchar, bigint</td><td>PO or original GRN</td></tr>
+        <tr><td>reversal_of_id</td><td>bigint</td><td>Points at the ledger row being reversed</td></tr>
+      </tbody></table>
+      <h4>inv_balance</h4>
+      <p class="muted">Unique key: company, item, warehouse, location, batch, serial, owner, status. Updated in the same database transaction as the ledger insert.</p>
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>on_hand_qty</td><td>decimal(18,4)</td><td>Physical quantity in that status</td></tr>
+        <tr><td>The status column</td><td>varchar(20)</td><td>AVAILABLE rows are the only quantity MRP and issue can take</td></tr>
+      </tbody></table>
+    </div>
+
+    <h3>9.9 Invoice match — 3 tables</h3>
+    <div class="tbl" data-name="ap_invoice ap_invoice_line ap_match price variance">
+      <table><thead><tr><th>Column</th><th>Type</th><th>Meaning</th></tr></thead><tbody>
+        <tr><td>ap_invoice.invoice_no / invoice_date</td><td>varchar, date</td><td>Supplier invoice</td></tr>
+        <tr><td>ap_invoice.supplier_id / po_id / currency_code</td><td></td><td>Header link. po_id can be null so “invoice without PO” is visible</td></tr>
+        <tr><td>ap_invoice.total_amount / tax_amount / status</td><td></td><td>DRAFT, MATCHED, VARIANCE, POSTED</td></tr>
+        <tr><td>ap_invoice_line.item_id / po_line_id</td><td>bigint</td><td>PO line can be null</td></tr>
+        <tr><td>ap_invoice_line.qty / unit_price / tax_pct</td><td>decimal</td><td>Invoice commercial values</td></tr>
+        <tr><td>ap_match.invoice_line_id / po_line_id / grn_line_id</td><td>bigint</td><td>The three-way link. grn_line_id null means missing GRN</td></tr>
+        <tr><td>ap_match.matched_qty</td><td>decimal</td><td>Quantity cleared against the policy basis</td></tr>
+        <tr><td>ap_match.po_price / invoice_price / price_variance</td><td>decimal</td><td>Price difference</td></tr>
+        <tr><td>ap_match.qty_variance / tax_variance</td><td>decimal</td><td>Quantity and tax difference</td></tr>
+        <tr><td>ap_match.match_status</td><td>varchar(20)</td><td>MATCHED, QTY_DIFF, PRICE_DIFF, TAX_DIFF, NO_GRN, NO_PO</td></tr>
+      </tbody></table>
+      <p>GRN not invoiced is a query: policy quantity on the GRN line minus the sum of <code>ap_match.matched_qty</code>. It does not need its own table.</p>
+    </div>
+
+    <h3>9.10 Shared platform — 6 tables</h3>
+    <div class="tbl" data-name="com_attachment com_activity com_audit com_status_log com_task com_notification">
+      <table><thead><tr><th>Table</th><th>Important columns</th><th>Used for</th></tr></thead><tbody>
+        <tr><td>com_attachment</td><td>doc_type, doc_id, file_name, file_url, mime_type, category (DO, PACKING, QC_REPORT, PHOTO, EMAIL, RETURN_DOC), uploaded_by</td><td>Same attachment API for every document</td></tr>
+        <tr><td>com_activity</td><td>doc_type, doc_id, event_time, actor_id, event_text, related_doc_type, related_doc_id</td><td>Timeline: “Mary rejected 5 pcs”</td></tr>
+        <tr><td>com_audit</td><td>doc_type, doc_id, action, field_name, old_value, new_value, reason, actor_id, event_time</td><td>Field-level history on draft edits and approvals</td></tr>
+        <tr><td>com_status_log</td><td>doc_type, doc_id, from_status, to_status, actor_id, event_time, remarks</td><td>Who moved the document</td></tr>
+        <tr><td>com_task</td><td>task_type, role_code, assignee_id, doc_type, doc_id, title, due_at, status, escalated</td><td>Dashboard queues</td></tr>
+        <tr><td>com_notification</td><td>user_id, role_code, task_id, title, body, read_at</td><td>Escalation messages</td></tr>
+      </tbody></table>
+    </div>
+    <div class="note"><b>47 tables.</b> 19 control, 2 purchase, 4 GRN, 3 QC, 2 supplier case, 3 return, 3 put-away, 2 inventory, 3 invoice, 6 platform.</div>
+    <h3>Indexes to create with the tables</h3>
+    <p class="mono">po_line(po_id, item_id) · grn_header(company_id, grn_no) unique · grn_header(po_id, status) · grn_line(po_line_id) · grn_serial(company_id, item_id, serial_no) unique · qc_inspection(grn_id) · sup_case(status, buyer_id) · sup_case_line(case_id) · inv_ledger(item_id, warehouse_id, posting_date) · inv_balance unique natural key · com_task(role_code, status, due_at) · com_attachment(doc_type, doc_id) · ap_match(grn_line_id)</p>
+  </section>
+
+  <section id="api">
+    <h2>10. Server APIs</h2>
+    <p>Base path <code>/api/v1</code>. Every call sends the company and the user. Write calls that post stock run in one database transaction: document, rollup, ledger, balance, status log, activity, task.</p>
+    <table>
+      <thead><tr><th>Module</th><th>Method and path</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td>platform</td><td>GET /tasks/mine</td><td>Open tasks for the user and their roles</td></tr>
+        <tr><td>platform</td><td>POST /attachments</td><td>File linked to doc_type + doc_id</td></tr>
+        <tr><td>platform</td><td>GET /documents/{type}/{id}/activity</td><td>Timeline</td></tr>
+        <tr><td>platform</td><td>GET /trace/{type}/{id}</td><td>Parent and child documents</td></tr>
+        <tr><td>purchase read</td><td>GET /purchase-orders?poNo=&amp;outstandingOnly=true</td><td>Material POs the checker can receive</td></tr>
+        <tr><td>purchase read</td><td>GET /purchase-orders/{id}/lines</td><td>Item, ordered, received, outstanding, UOM, warehouse, price</td></tr>
+        <tr><td>grn</td><td>POST /grn</td><td>Create draft. Body below</td></tr>
+        <tr><td>grn</td><td>PUT /grn/{id}</td><td>Edit while status is DRAFT</td></tr>
+        <tr><td>grn</td><td>POST /grn/{id}/submit</td><td>Validate qty, period, serial count. Post QC_HOLD. Open QC or put-away task. Roll up PO received</td></tr>
+        <tr><td>grn</td><td>POST /grn/{id}/excess-decision</td><td>Buyer APPROVE or REJECT excess</td></tr>
+        <tr><td>grn</td><td>POST /purchase-orders/{lineId}/short-close</td><td>Buyer sets short_closed_qty</td></tr>
+        <tr><td>grn</td><td>POST /grn/{id}/reverse</td><td>Reversal document and opposite ledger rows</td></tr>
+        <tr><td>qc</td><td>GET /qc?status=PENDING</td><td>Queue</td></tr>
+        <tr><td>qc</td><td>POST /qc/{id}/start</td><td>QC_IN_PROGRESS</td></tr>
+        <tr><td>qc</td><td>POST /qc/{id}/complete</td><td>Save results, move rejected qty to quarantine, create put-away and supplier case</td></tr>
+        <tr><td>case</td><td>GET /supplier-cases</td><td>Buyer queue, includes remaining replacement</td></tr>
+        <tr><td>case</td><td>POST /supplier-cases/{id}/lines</td><td>Add a resolution split</td></tr>
+        <tr><td>case</td><td>POST /supplier-cases/{id}/lines/{lineId}/use-as-is</td><td>Conditional quantity becomes a put-away task</td></tr>
+        <tr><td>return</td><td>POST /returns</td><td>Draft return from a case line</td></tr>
+        <tr><td>return</td><td>POST /returns/{id}/post</td><td>Ledger qty out of quarantine, update resolved_qty</td></tr>
+        <tr><td>putaway</td><td>GET /putaway?status=PENDING</td><td>Store queue with suggested bin</td></tr>
+        <tr><td>putaway</td><td>POST /putaway/{id}/confirm</td><td>Ledger move to AVAILABLE at the confirmed bin</td></tr>
+        <tr><td>inventory</td><td>GET /inventory/balances?itemId=&amp;status=</td><td>On-hand by location and status</td></tr>
+        <tr><td>inventory</td><td>GET /inventory/ledger?itemId=</td><td>Running history</td></tr>
+        <tr><td>inventory</td><td>POST /inventory/commands</td><td>Internal. Other modules call this. UI does not</td></tr>
+        <tr><td>invoice</td><td>GET /invoice-match/uninvoiced</td><td>Accepted or put-away qty with no full match</td></tr>
+        <tr><td>invoice</td><td>POST /invoice-match</td><td>Create ap_match and variance columns</td></tr>
+        <tr><td>master</td><td>PUT /masters/items/{id}</td><td>QC, batch, serial, expiry flags</td></tr>
+        <tr><td>master</td><td>POST /masters/locations</td><td>Add zone, rack, shelf, bin</td></tr>
+        <tr><td>master</td><td>POST /masters/qc-templates</td><td>Checklist</td></tr>
+        <tr><td>master</td><td>PUT /masters/rejection-reasons</td><td>Reason list</td></tr>
+        <tr><td>config</td><td>PUT /config/tolerances</td><td>Over-receipt and price tolerance</td></tr>
+        <tr><td>config</td><td>PUT /config/notify-rules</td><td>Escalation hours</td></tr>
+        <tr><td>config</td><td>PUT /config/periods/{id}/close</td><td>Close inventory period</td></tr>
+        <tr><td>config</td><td>PUT /config/match-policy</td><td>ACCEPTED, RECEIVED, or PUTAWAY</td></tr>
+      </tbody></table>
+      <h3>Submit body the GRN screen sends</h3>
+      <pre class="card"><code>{
+  "receiptType": "NORMAL",
+  "poId": 125,
+  "supplierDoNo": "DO-7781",
+  "deliveryDate": "2026-09-30",
+  "warehouseId": 3,
+  "packagingCondition": "GOOD",
+  "remarks": "Seal intact",
+  "lines": [
+    {
+      "poLineId": 900,
+      "receivedQty": 100,
+      "batches": [
+        { "batchNo": "L2609", "supplierBatchNo": "AX-99", "qty": 100, "mfgDate": null, "expiryDate": null }
+      ],
+      "serials": []
+    }
+  ]
+}</code></pre>
+      <p>Replacement uses the same API with <code>receiptType: "REPLACEMENT"</code>, plus <code>parentGrnId</code>, <code>supplierCaseId</code>, and <code>supplierCaseLineId</code>.</p>
+      <h3>QC complete body</h3>
+      <pre class="card"><code>{
+  "sampleQty": 10,
+  "overallResult": "PARTIAL_ACCEPT",
+  "lines": [
+    {
+      "grnLineId": 501,
+      "inspectQty": 100,
+      "acceptedQty": 92,
+      "rejectedQty": 8,
+      "conditionalQty": 0,
+      "rejectionReasonCode": "DAMAGED",
+      "remarks": "Cuts on 8 pieces",
+      "checks": [
+        { "checkCode": "DIAMETER", "actualValue": "20.05", "result": "PASS" },
+        { "checkCode": "VISUAL", "actualValue": "8 pcs cut", "result": "FAIL" }
+      ]
+    }
+  ]
+}</code></pre>
+      <h3>Errors the UI must show</h3>
+      <table>
+        <thead><tr><th>Code</th><th>When</th><th>Screen</th></tr></thead>
+        <tbody>
+          <tr><td>PERIOD_CLOSED</td><td>Posting date is in a closed inventory period</td><td>Any submit</td></tr>
+          <tr><td>OVER_RECEIPT_APPROVAL_REQUIRED</td><td>Quantity is above tolerance</td><td>GRN submit, then buyer screen</td></tr>
+          <tr><td>SERIAL_COUNT_MISMATCH</td><td>Serial rows do not equal quantity</td><td>GRN entry</td></tr>
+          <tr><td>BATCH_QTY_MISMATCH</td><td>Batch quantities do not equal the line</td><td>GRN entry</td></tr>
+          <tr><td>QC_QTY_MISMATCH</td><td>Accept + reject + conditional ≠ inspected</td><td>QC</td></tr>
+          <tr><td>RESOLUTION_EXCEEDS_REJECTED</td><td>Split sums past rejected quantity</td><td>Case</td></tr>
+          <tr><td>STOCK_STATUS_EMPTY</td><td>Return or put-away quantity is not in the expected status</td><td>Return, put-away</td></tr>
+        </tbody>
+      </table>
+  </section>
+
+  <section id="connect">
+    <h2>11. How they connect</h2>
+    <div class="rule">UI module → its API → its tables → platform rows (status, activity, task, attachment) → inventory command when stock moves → ledger insert + balance update → next role’s task.</div>
+    <table>
+      <thead><tr><th>User action</th><th>API</th><th>Rows written</th><th>Stock</th><th>Next task</th></tr></thead>
+      <tbody>
+        <tr><td>Open PO on GRN screen</td><td>GET /purchase-orders/{id}/lines</td><td>None</td><td>None</td><td>Checker fills DO and qty</td></tr>
+        <tr><td>Save draft</td><td>POST /grn</td><td>grn_header, grn_line, grn_batch, grn_serial, com_attachment</td><td>None</td><td>Stays with entry</td></tr>
+        <tr><td>Submit GRN</td><td>POST /grn/{id}/submit</td><td>Status log, PO received rollup, com_task</td><td>+QC_HOLD at dock</td><td>QC if item.qc_required, else put-away</td></tr>
+        <tr><td>Approve excess</td><td>POST /grn/{id}/excess-decision</td><td>excess_status, audit</td><td>+QC_HOLD for the approved extra</td><td>QC or put-away for that extra</td></tr>
+        <tr><td>Complete QC partial</td><td>POST /qc/{id}/complete</td><td>qc_*, rollup on grn_line, sup_case, paw_task</td><td>Rejected qty: −hold +quarantine. Accepted qty stays on hold</td><td>Store put-away and buyer case</td></tr>
+        <tr><td>Split case 5 / 2 / 1</td><td>POST /supplier-cases/{id}/lines</td><td>sup_case_line × 3, activity</td><td>None</td><td>Replacement receipt, return, finance credit</td></tr>
+        <tr><td>Post return</td><td>POST /returns/{id}/post</td><td>ret_*, case resolved_qty, grn returned_qty</td><td>−quarantine</td><td>Case line done when remaining is 0</td></tr>
+        <tr><td>Receive replacement</td><td>POST /grn then submit</td><td>New grn_* linked to parent GRN and case line</td><td>+QC_HOLD. PO received_qty unchanged</td><td>QC recheck</td></tr>
+        <tr><td>Confirm bin</td><td>POST /putaway/{id}/confirm</td><td>paw_line.confirmed_location_id, grn putaway_qty</td><td>−QC_HOLD dock, +AVAILABLE bin</td><td>Finance can match when policy qty is ready</td></tr>
+        <tr><td>Match invoice</td><td>POST /invoice-match</td><td>ap_match, po_line.invoiced_qty</td><td>None</td><td>Variance task if outside tolerance</td></tr>
+      </tbody>
+    </table>
+    <h3>Document links a trace screen follows</h3>
+    <p class="mono">po_header.id ← grn_header.po_id ← qc_inspection.grn_id ← sup_case.qc_id ← sup_case_line ← ret_header.case_line_id</p>
+    <p class="mono">sup_case_line.id ← grn_header.supplier_case_line_id (replacement) ← qc again ← paw_task.grn_id ← inv_ledger.doc_id</p>
+    <p class="mono">grn_line.id ← ap_match.grn_line_id → ap_invoice_line → ap_invoice</p>
+    <p>From any of those ids, <code>GET /trace/{type}/{id}</code> returns parent, children, and the activity list. The UI is one chain page, not eight disconnected screens.</p>
+    <h3>Suggested code packages</h3>
+    <table>
+      <thead><tr><th>Package</th><th>Calls</th><th>Must not</th></tr></thead>
+      <tbody>
+        <tr><td>grn-api</td><td>purchase port for PO read and received rollup; inventory command on submit</td><td>Update inv_balance itself</td></tr>
+        <tr><td>qc-api</td><td>inventory command for the quarantine move; platform to create case and put-away tasks</td><td>Write commercial credit amounts</td></tr>
+        <tr><td>supplier-case-api</td><td>Creates the split. Opens replacement context for grn-api</td><td>Change qc accepted_qty</td></tr>
+        <tr><td>return-api / putaway-api</td><td>Inventory command only for their own document</td><td>Edit the original GRN received_qty</td></tr>
+        <tr><td>inventory-api</td><td>The only writer of inv_ledger and inv_balance</td><td>Accept a quantity with no doc_type and doc_id</td></tr>
+        <tr><td>invoice-match-api</td><td>Reads GRN accepted, received, or put-away based on policy</td><td>Post stock</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="posting">
+    <h2>12. Stock posting</h2>
+    <p>A status change that keeps the same bin and the same quantity is still two ledger rows when the status changes: quantity out of the old status, quantity in to the new status. Put-away is the same pattern across two locations.</p>
+    <table>
+      <thead><tr><th>Event</th><th>Out</th><th>In</th></tr></thead>
+      <tbody>
+        <tr><td>GRN submit</td><td></td><td>Dock · QC_HOLD · received inventory qty, excluding unapproved excess</td></tr>
+        <tr><td>QC reject portion</td><td>Dock · QC_HOLD</td><td>Quarantine location · QUARANTINE</td></tr>
+        <tr><td>QC accept portion</td><td colspan="2">No ledger row. Quantity remains QC_HOLD. A put-away task is created.</td></tr>
+        <tr><td>Put-away confirm</td><td>Dock · QC_HOLD</td><td>Chosen bin · AVAILABLE</td></tr>
+        <tr><td>Supplier return post</td><td>Quarantine · QUARANTINE</td><td></td></tr>
+        <tr><td>Scrap</td><td>Quarantine or scrap bin · QUARANTINE</td><td></td></tr>
+        <tr><td>Use as is</td><td colspan="2">After buyer approval, a put-away task moves it the same way as accepted stock</td></tr>
+        <tr><td>Replacement submit</td><td></td><td>Dock · QC_HOLD, linked to the case line</td></tr>
+        <tr><td>Reverse</td><td colspan="2">Opposite quantities, new ledger rows, reversal_of_id filled</td></tr>
+      </tbody>
+    </table>
+    <p>Running balance for an item is the sum of qty_in minus qty_out. The balance table is a projection of that ledger, keyed by location and status, so the stock screen does not scan the whole ledger on every open.</p>
+  </section>
+
+  <section id="build">
+    <h2>13. Build order</h2>
+    <table>
+      <thead><tr><th>Order</th><th>Build</th><th>Done when</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Platform: numbering, status log, activity, audit, attachment, task, role action, period check</td><td>Any document can be numbered, attached, and status-changed by role</td></tr>
+        <tr><td>2</td><td>Masters: item flags, UOM, warehouse tree, rejection reasons, QC template, tolerance</td><td>O-Ring can require QC and a checklist</td></tr>
+        <tr><td>3</td><td>Inventory command, ledger, balance</td><td>A test command increases QC_HOLD and shows on the balance screen</td></tr>
+        <tr><td>4</td><td>PO read model and GRN draft / submit</td><td>Receive 100 against a PO of 100. Outstanding becomes 0. Hold becomes 100</td></tr>
+        <tr><td>5</td><td>QC complete with partial quantities</td><td>92 stay on hold, 8 move to quarantine, both numbers remain on the GRN</td></tr>
+        <tr><td>6</td><td>Put-away confirm</td><td>92 become available at a bin</td></tr>
+        <tr><td>7</td><td>Supplier case split, return post, replacement GRN</td><td>The worked example finishes at available 97 and PO received still 100</td></tr>
+        <tr><td>8</td><td>Short close, excess approval, notifications, document chain page</td><td>Buyer and supervisor queues match the rules</td></tr>
+        <tr><td>9</td><td>Invoice match and GRN-not-invoiced</td><td>Price 105 vs 100 and missing invoice both appear</td></tr>
+      </tbody>
+    </table>
+    <div class="card">
+      <h3>Leave the schema ready, build the screens later</h3>
+      <p>Stock transfer, issue, cycle count, adjustment, FIFO, FEFO, weighted average, valuation, and mobile scanning are new <code>txn_type</code> values and new documents that call the same inventory command. They use <code>inv_ledger</code>, <code>inv_balance</code>, batch, serial, location, owner, and the attachment and audit tables already listed. Version 1 does not need those screens.</p>
+    </div>
+    <div class="rule">
+      <b>First version acceptance test.</b> From one PO the user can show received, accepted, rejected, reason, the split of the rejected quantity, the replacement GRN, the second QC, the bin, the available quantity, and the invoice variance, each as its own document, with a ledger row for every stock change.
+    </div>
+  </section>
+  <footer class="page">Material Inward LLD · material purchase orders · document chain PO → GRN → QC → supplier case → return or replacement → put-away → ledger → invoice match.</footer>
+</main>
+</div>
+<script>
+  const q = document.getElementById('q');
+  q.addEventListener('input', () => {
+    const v = q.value.trim().toLowerCase();
+    document.querySelectorAll('.tbl').forEach(el => {
+      const hit = !v || el.innerText.toLowerCase().includes(v) || (el.dataset.name || '').includes(v);
+      el.style.display = hit ? '' : 'none';
+    });
+  });
+  const links = [...document.querySelectorAll('nav.side a')];
+  const sections = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  const mark = () => {
+    let current = sections[0];
+    sections.forEach(s => { if (s.getBoundingClientRect().top < 120) current = s; });
+    links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current.id));
+  };
+  document.addEventListener('scroll', mark, { passive: true });
+  mark();
+</script>
+</body>
+</html>
