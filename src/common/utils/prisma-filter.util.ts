@@ -14,6 +14,11 @@ export interface ListFilterOptions {
   /** allowlisted sortBy fields */
   sortFields: string[];
   defaultSortField?: string;
+  /**
+   * Unique field added after sortBy (same direction) so rows with equal sort values keep one
+   * order across pages (no repeats / gaps when paging or scroll-loading).
+   */
+  tieBreaker?: string;
 }
 
 function queryValue(query: ListQueryDto, key: string): unknown {
@@ -70,5 +75,7 @@ export function buildListWhere(
 export function resolveOrderBy(query: ListQueryDto, options: ListFilterOptions) {
   const defaultField = options.defaultSortField ?? options.sortFields[0] ?? 'createdAt';
   const sortBy = query.sortBy && options.sortFields.includes(query.sortBy) ? query.sortBy : defaultField;
-  return { [sortBy]: query.sortOrder ?? 'desc' };
+  const direction = query.sortOrder ?? 'desc';
+  if (!options.tieBreaker || options.tieBreaker === sortBy) return { [sortBy]: direction };
+  return [{ [sortBy]: direction }, { [options.tieBreaker]: direction }];
 }

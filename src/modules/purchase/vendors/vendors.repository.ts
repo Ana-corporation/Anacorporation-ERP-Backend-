@@ -17,6 +17,7 @@ const VENDORS_LIST_FILTER: ListFilterOptions = {
   searchFields: ['vendorCode', 'name', 'email', 'phone', 'city', 'country', 'supplierType'],
   sortFields: ['vendorCode', 'name', 'supplierType', 'createdAt'],
   defaultSortField: 'createdAt',
+  tieBreaker: 'vendorId',
 };
 
 @Injectable()
@@ -24,7 +25,8 @@ export class VendorsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   private db(client?: DbClient): Prisma.TransactionClient {
-    return (client ?? this.prisma) as unknown as Prisma.TransactionClient;
+    if (client) return client as unknown as Prisma.TransactionClient;
+    return this.prisma as unknown as Prisma.TransactionClient;
   }
 
   findManyByCompany(
