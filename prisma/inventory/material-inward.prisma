@@ -43,6 +43,8 @@ model MiPurchaseOrderLine {
   invoicedQty      Decimal  @default(0) @map("invoiced_qty") @db.Decimal(18, 4)
   shortClosedQty   Decimal  @default(0) @map("short_closed_qty") @db.Decimal(18, 4)
   outstandingQty   Decimal  @map("outstanding_qty") @db.Decimal(18, 4)
+  stockUomCode     String   @default("PCS") @map("stock_uom_code") @db.VarChar(10)
+  conversionFactor Decimal  @default(1) @map("conversion_factor") @db.Decimal(18, 6)
   qcRequired       Boolean  @default(true) @map("qc_required")
   batchControlled  Boolean  @default(false) @map("batch_controlled")
   serialControlled Boolean  @default(false) @map("serial_controlled")
@@ -96,6 +98,7 @@ model MiGrnHeader {
   supplierCaseId      BigInt?   @map("supplier_case_id")
   supplierCaseLineId  BigInt?   @map("supplier_case_line_id")
   reversalOfGrnId     BigInt?   @map("reversal_of_grn_id")
+  periodId            BigInt?   @map("period_id")
   receivedBy          BigInt?   @map("received_by")
   submittedAt         DateTime? @map("submitted_at")
   createdBy           BigInt?   @map("created_by")
@@ -125,8 +128,12 @@ model MiGrnLine {
   outstandingQtySnapshot    Decimal  @map("outstanding_qty_snapshot") @db.Decimal(18, 4)
   receivedQty               Decimal  @map("received_qty") @db.Decimal(18, 4)
   uomCode                   String   @map("uom_code") @db.VarChar(10)
+  purchaseUomCode           String   @default("PCS") @map("purchase_uom_code") @db.VarChar(10)
+  inventoryUomCode          String   @default("PCS") @map("inventory_uom_code") @db.VarChar(10)
+  conversionFactor          Decimal  @default(1) @map("conversion_factor") @db.Decimal(18, 6)
   receivedQtyInv            Decimal  @default(0) @map("received_qty_inv") @db.Decimal(18, 4)
   excessQty                 Decimal  @default(0) @map("excess_qty") @db.Decimal(18, 4)
+  tolerancePctApplied       Decimal  @default(0) @map("tolerance_pct_applied") @db.Decimal(8, 3)
   shortQty                  Decimal  @default(0) @map("short_qty") @db.Decimal(18, 4)
   excessStatus              String   @default("NONE") @map("excess_status") @db.VarChar(20)
   inspectedQty              Decimal  @default(0) @map("inspected_qty") @db.Decimal(18, 4)
@@ -446,6 +453,7 @@ model MiApMatch {
   invoicePrice  Decimal @default(0) @map("invoice_price") @db.Decimal(18, 4)
   priceVariance Decimal @default(0) @map("price_variance") @db.Decimal(18, 4)
   qtyVariance   Decimal @default(0) @map("qty_variance") @db.Decimal(18, 4)
+  taxVariance   Decimal @default(0) @map("tax_variance") @db.Decimal(18, 4)
   matchStatus   String  @map("match_status") @db.VarChar(20)
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -462,9 +470,12 @@ model MiTask {
   roleCode   String    @map("role_code") @db.VarChar(30)
   docType    String    @map("doc_type") @db.VarChar(20)
   docId      BigInt    @map("doc_id")
-  title      String    @db.VarChar(200)
-  dueAt      DateTime? @map("due_at")
-  status     String    @default("OPEN") @db.VarChar(20)
+  assigneeId  BigInt?   @map("assignee_id")
+  title       String    @db.VarChar(200)
+  dueAt       DateTime? @map("due_at")
+  escalated   Boolean   @default(false)
+  escalatedAt DateTime? @map("escalated_at")
+  status      String    @default("OPEN") @db.VarChar(20)
   createdAt  DateTime  @default(now()) @map("created_at")
 
   @@index([companyId, roleCode, status])
@@ -477,8 +488,10 @@ model MiActivity {
   docType    String   @map("doc_type") @db.VarChar(20)
   docId      BigInt   @map("doc_id")
   eventTime  DateTime @default(now()) @map("event_time")
-  actorId    BigInt?  @map("actor_id")
-  eventText  String   @map("event_text") @db.VarChar(500)
+  actorId        BigInt?  @map("actor_id")
+  eventText      String   @map("event_text") @db.VarChar(500)
+  relatedDocType String?  @map("related_doc_type") @db.VarChar(20)
+  relatedDocId   BigInt?  @map("related_doc_id")
 
   @@index([companyId, docType, docId])
   @@map("mi_activities")
@@ -502,9 +515,10 @@ model MiStatusLog {
 model MiRejectionReason {
   id          BigInt  @id @default(autoincrement()) @map("id")
   companyId   BigInt  @map("company_id")
-  reasonCode  String  @map("reason_code") @db.VarChar(30)
-  reasonName  String  @map("reason_name") @db.VarChar(120)
-  active      Boolean @default(true)
+  reasonCode    String  @map("reason_code") @db.VarChar(30)
+  reasonName    String  @map("reason_name") @db.VarChar(120)
+  requiresPhoto Boolean @default(false) @map("requires_photo")
+  active        Boolean @default(true)
 
   @@unique([companyId, reasonCode])
   @@map("mi_rejection_reasons")
@@ -521,4 +535,190 @@ model MiResolutionType {
 
   @@unique([companyId, resolutionCode])
   @@map("mi_resolution_types")
+}
+
+model MiCfgTolerance {
+  id               BigInt  @id @default(autoincrement()) @map("id")
+  companyId        BigInt  @map("company_id")
+  scopeType        String @map("scope_type") @db.VarChar(20)
+  scopeId          BigInt @default(0) @map("scope_id")
+  overReceiptPct   Decimal @default(0) @map("over_receipt_pct") @db.Decimal(8, 3)
+  priceVariancePct Decimal @default(0) @map("price_variance_pct") @db.Decimal(8, 3)
+  taxVariancePct   Decimal @default(0) @map("tax_variance_pct") @db.Decimal(8, 3)
+
+  @@unique([companyId, scopeType, scopeId])
+  @@map("mi_cfg_tolerances")
+}
+
+model MiCfgNotifyRule {
+  id              BigInt  @id @default(autoincrement()) @map("id")
+  companyId       BigInt  @map("company_id")
+  eventCode       String  @map("event_code") @db.VarChar(40)
+  thresholdHours  Int     @map("threshold_hours")
+  escalateToRole  String  @map("escalate_to_role") @db.VarChar(30)
+  active          Boolean @default(true)
+
+  @@unique([companyId, eventCode])
+  @@map("mi_cfg_notify_rules")
+}
+
+model MiCfgPeriod {
+  id              BigInt    @id @default(autoincrement()) @map("id")
+  companyId       BigInt    @map("company_id")
+  periodYear      Int       @map("period_year")
+  periodMonth     Int       @map("period_month")
+  inventoryStatus String    @default("OPEN") @map("inventory_status") @db.VarChar(10)
+  closedBy        BigInt?   @map("closed_by")
+  closedAt        DateTime? @map("closed_at")
+
+  @@unique([companyId, periodYear, periodMonth])
+  @@map("mi_cfg_periods")
+}
+
+model MiCfgNumberSeries {
+  id         BigInt @id @default(autoincrement()) @map("id")
+  companyId  BigInt @map("company_id")
+  docType    String @map("doc_type") @db.VarChar(20)
+  prefix     String @db.VarChar(10)
+  nextNumber Int    @default(1) @map("next_number")
+  padding    Int    @default(6)
+
+  @@unique([companyId, docType])
+  @@map("mi_cfg_number_series")
+}
+
+model MiCfgMatchPolicy {
+  id            BigInt @id @default(autoincrement()) @map("id")
+  companyId     BigInt @unique @map("company_id")
+  matchQtyBasis String @default("ACCEPTED") @map("match_qty_basis") @db.VarChar(20)
+
+  @@map("mi_cfg_match_policies")
+}
+
+model MiSecRole {
+  id        BigInt  @id @default(autoincrement()) @map("id")
+  companyId BigInt  @map("company_id")
+  roleCode  String  @map("role_code") @db.VarChar(30)
+  roleName  String  @map("role_name") @db.VarChar(120)
+  active    Boolean @default(true)
+
+  actions MiSecRoleAction[]
+
+  @@unique([companyId, roleCode])
+  @@map("mi_sec_roles")
+}
+
+model MiSecRoleAction {
+  id         BigInt @id @default(autoincrement()) @map("id")
+  roleId     BigInt @map("role_id")
+  moduleCode String @map("module_code") @db.VarChar(30)
+  actionCode String @map("action_code") @db.VarChar(30)
+
+  role MiSecRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, moduleCode, actionCode])
+  @@map("mi_sec_role_actions")
+}
+
+model MiQcTemplate {
+  id          BigInt  @id @default(autoincrement()) @map("id")
+  companyId   BigInt  @map("company_id")
+  templateCode String @map("template_code") @db.VarChar(30)
+  templateName String @map("template_name") @db.VarChar(120)
+  sampleRule  String  @default("NONE") @map("sample_rule") @db.VarChar(20)
+  sampleValue Decimal @default(0) @map("sample_value") @db.Decimal(18, 4)
+  active      Boolean @default(true)
+
+  lines MiQcTemplateLine[]
+  items MiItemQc[]
+
+  @@unique([companyId, templateCode])
+  @@map("mi_qc_templates")
+}
+
+model MiQcTemplateLine {
+  id          BigInt  @id @default(autoincrement()) @map("id")
+  templateId  BigInt  @map("template_id")
+  checkCode   String  @map("check_code") @db.VarChar(30)
+  specText    String? @map("spec_text") @db.VarChar(200)
+  minValue    Decimal? @map("min_value") @db.Decimal(18, 4)
+  maxValue    Decimal? @map("max_value") @db.Decimal(18, 4)
+  resultType  String  @default("PASS_FAIL") @map("result_type") @db.VarChar(20)
+  mandatory   Boolean @default(false)
+  sequenceNo  Int     @default(10) @map("sequence_no")
+
+  template MiQcTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, checkCode])
+  @@map("mi_qc_template_lines")
+}
+
+model MiItemQc {
+  id         BigInt @id @default(autoincrement()) @map("id")
+  companyId  BigInt @map("company_id")
+  itemId     BigInt @map("item_id")
+  templateId BigInt @map("template_id")
+
+  template MiQcTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, itemId])
+  @@map("mi_item_qc")
+}
+
+model MiItemPutawayRule {
+  id                  BigInt   @id @default(autoincrement()) @map("id")
+  companyId           BigInt   @map("company_id")
+  itemId              BigInt   @map("item_id")
+  warehouseId         BigInt   @map("warehouse_id")
+  preferredLocationId BigInt   @map("preferred_location_id")
+  priority            Int      @default(1)
+  maxQty              Decimal? @map("max_qty") @db.Decimal(18, 4)
+  active              Boolean  @default(true)
+
+  @@index([companyId, itemId, warehouseId])
+  @@map("mi_item_putaway_rules")
+}
+
+model MiUomConversion {
+  id          BigInt  @id @default(autoincrement()) @map("id")
+  companyId   BigInt  @map("company_id")
+  itemId      BigInt? @map("item_id")
+  fromUomCode String  @map("from_uom_code") @db.VarChar(10)
+  toUomCode   String  @map("to_uom_code") @db.VarChar(10)
+  factor      Decimal @db.Decimal(18, 6)
+  active      Boolean @default(true)
+
+  @@index([companyId, fromUomCode, toUomCode])
+  @@map("mi_uom_conversions")
+}
+
+model MiAttachment {
+  id         BigInt   @id @default(autoincrement()) @map("id")
+  companyId  BigInt   @map("company_id")
+  docType    String   @map("doc_type") @db.VarChar(20)
+  docId      BigInt   @map("doc_id")
+  fileName   String   @map("file_name") @db.VarChar(255)
+  fileUrl    String   @map("file_url") @db.VarChar(500)
+  mimeType   String?  @map("mime_type") @db.VarChar(120)
+  category   String   @default("DO") @db.VarChar(20)
+  uploadedBy BigInt?  @map("uploaded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([companyId, docType, docId])
+  @@map("mi_attachments")
+}
+
+model MiNotification {
+  id        BigInt    @id @default(autoincrement()) @map("id")
+  companyId BigInt    @map("company_id")
+  userId    BigInt?   @map("user_id")
+  roleCode  String?   @map("role_code") @db.VarChar(30)
+  taskId    BigInt?   @map("task_id")
+  title     String    @db.VarChar(200)
+  body      String    @db.VarChar(500)
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([companyId, roleCode, readAt])
+  @@map("mi_notifications")
 }

@@ -8,6 +8,7 @@ import {
   AddCaseLinesDto,
   CompleteQcDto,
   ConfirmPutawayDto,
+  AttachmentDto,
   CreateLocationDto,
   CreatePurchaseOrderDto,
   CreateReturnDto,
@@ -29,7 +30,37 @@ export class MaterialInwardController {
   @ApiOperation({ summary: 'Open material-inward tasks and role counts' })
   tasks(@Param('companyId') companyId: string, @CurrentUser() user: AuthenticatedUser) {
     assertCompanyAccess(companyId, user);
-    return this.inward.tasks(companyId);
+    return this.inward.tasks(companyId, user.sub);
+  }
+
+  @Get('config')
+  @RequirePermissions('items:view')
+  config(@Param('companyId') companyId: string, @CurrentUser() user: AuthenticatedUser) {
+    assertCompanyAccess(companyId, user);
+    return this.inward.config(companyId);
+  }
+
+  @Get('documents/:docType/:id/attachments')
+  @RequirePermissions('items:view')
+  listAttachments(
+    @Param('companyId') companyId: string,
+    @Param('docType') docType: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.inward.listAttachments(companyId, docType, id);
+  }
+
+  @Post('attachments')
+  @RequirePermissions('items:edit')
+  addAttachment(
+    @Param('companyId') companyId: string,
+    @Body() dto: AttachmentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.inward.addAttachment(companyId, dto, user.sub);
   }
 
   @Get('rejection-reasons')
@@ -168,6 +199,17 @@ export class MaterialInwardController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.inward.submitGrn(companyId, id, user.sub);
+  }
+
+  @Post('grn/:id/reverse')
+  @RequirePermissions('items:edit')
+  reverseGrn(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.inward.reverseGrn(companyId, id, user.sub);
   }
 
   @Post('grn/:id/excess-decision')

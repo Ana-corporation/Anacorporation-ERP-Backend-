@@ -14,6 +14,8 @@ export const CreatePurchaseOrderSchema = z.object({
     warehouseId: z.string().trim().min(1),
     orderQty: qty,
     uomCode: z.string().trim().max(10).optional(),
+    stockUomCode: z.string().trim().max(10).optional(),
+    conversionFactor: z.number().positive().optional(),
     unitPrice: z.number().nonnegative().optional(),
     taxPct: z.number().nonnegative().optional(),
     qcRequired: z.boolean().optional(),
@@ -136,3 +138,13 @@ export class CreateReturnDto extends createZodDto(CreateReturnSchema) {}
 export class ConfirmPutawayDto extends createZodDto(ConfirmPutawaySchema) {}
 export class CreateLocationDto extends createZodDto(CreateLocationSchema) {}
 export class InvoiceMatchDto extends createZodDto(InvoiceMatchSchema) {}
+
+export const AttachmentSchema = z.object({
+  docType: z.string().trim().min(1).max(20),
+  docId: z.string().trim().min(1),
+  fileName: z.string().trim().min(1).max(255),
+  fileUrl: z.string().trim().min(1).max(500),
+  mimeType: z.string().trim().max(120).optional(),
+  category: z.enum(['DO', 'PACKING', 'QC_REPORT', 'PHOTO', 'EMAIL', 'RETURN_DOC']).optional(),
+});
+export class AttachmentDto extends createZodDto(AttachmentSchema) {}

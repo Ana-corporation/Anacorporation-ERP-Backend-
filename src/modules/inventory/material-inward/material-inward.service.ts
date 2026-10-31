@@ -146,6 +146,7 @@ export class MaterialInwardService {
   ) {
     const qtyIn = params.qtyIn ?? 0;
     const qtyOut = params.qtyOut ?? 0;
+    await this.assertPeriodOpen(tx, params.companyId);
     const count = await tx.miInvLedger.count({ where: { companyId: params.companyId } });
     await tx.miInvLedger.create({
       data: {
@@ -197,19 +198,144 @@ export class MaterialInwardService {
   private async ensureLookups(companyId: string) {
     const company = parseBigIntId(companyId);
     const existing = await this.prisma.miRejectionReason.count({ where: { companyId: company } });
-    if (existing > 0) return;
-    await this.prisma.miRejectionReason.createMany({
-      data: REASONS.map(([reasonCode, reasonName]) => ({ companyId: company, reasonCode, reasonName })),
+    if (existing === 0) {
+      await this.prisma.miRejectionReason.createMany({
+        data: REASONS.map(([reasonCode, reasonName]) => ({ companyId: company, reasonCode, reasonName })),
+      });
+      await this.prisma.miResolutionType.createMany({
+        data: RESOLUTIONS.map(([resolutionCode, resolutionName, affectsStock, requiresQc]) => ({
+          companyId: company,
+          resolutionCode,
+          resolutionName,
+          affectsStock,
+          requiresQc,
+        })),
+      });
+    }
+    const controls = await this.prisma.miCfgTolerance.count({ where: { companyId: company } });
+    if (controls > 0) return;
+    const now = new Date();
+    await this.prisma.miCfgTolerance.create({
+      data: { companyId: company, scopeType: 'COMPANY', scopeId: 0n, overReceiptPct: D(2), priceVariancePct: D(0), taxVariancePct: D(0) },
     });
-    await this.prisma.miResolutionType.createMany({
-      data: RESOLUTIONS.map(([resolutionCode, resolutionName, affectsStock, requiresQc]) => ({
-        companyId: company,
-        resolutionCode,
-        resolutionName,
-        affectsStock,
-        requiresQc,
+    await this.prisma.miCfgNotifyRule.createMany({
+      data: [
+        { companyId: company, eventCode: 'QC_PENDING', thresholdHours: 24, escalateToRole: 'QC_SUPERVISOR' },
+        { companyId: company, eventCode: 'SUPPLIER_RESPONSE', thresholdHours: 48, escalateToRole: 'PURCHASE_MANAGER' },
+        { companyId: company, eventCode: 'REPLACEMENT_OVERDUE', thresholdHours: 72, escalateToRole: 'BUYER' },
+      ],
+    });
+    await this.prisma.miCfgPeriod.create({
+      data: { companyId: company, periodYear: now.getFullYear(), periodMonth: now.getMonth() + 1, inventoryStatus: 'OPEN' },
+    });
+    await this.prisma.miCfgMatchPolicy.create({ data: { companyId: company, matchQtyBasis: 'ACCEPTED' } });
+    await this.prisma.miCfgNumberSeries.createMany({
+      data: ['GRN', 'QC', 'CASE', 'RET', 'PAW', 'LEDGER'].map((docType) => ({
+        companyId: company, docType, prefix: `${docType}-`, nextNumber: 1, padding: 6,
       })),
     });
+    await this.prisma.miUomConversion.create({
+      data: { companyId: company, fromUomCode: 'BOX', toUomCode: 'PCS', factor: D(12) },
+    });
+    await this.prisma.miQcTemplate.create({
+      data: {
+        companyId: company,
+        templateCode: 'VISUAL',
+        templateName: 'Visual inspection',
+        sampleRule: 'FULL',
+        lines: { create: [{ checkCode: 'VISUAL', specText: 'No damage', resultType: 'PASS_FAIL', mandatory: false, sequenceNo: 10 }] },
+      },
+    });
+    const roleActions: Record<string, Array<[string, string]>> = {
+      ENTRY_CHECKER: [['GRN', 'CREATE'], ['GRN', 'SUBMIT']],
+      QC: [['QC', 'INSPECT']],
+      QC_SUPERVISOR: [['QC', 'INSPECT']],
+      BUYER: [['CASE', 'RESOLVE'], ['GRN', 'APPROVE_EXCESS'], ['GRN', 'SHORT_CLOSE']],
+      STOREKEEPER: [['PUTAWAY', 'PUTAWAY']],
+      FINANCE: [['INVOICE', 'MATCH']],
+      PURCHASE_MANAGER: [['GRN', 'REVERSE'], ['CONFIG', 'POST_CLOSED']],
+      ADMIN: [['GRN', 'CREATE'], ['GRN', 'SUBMIT'], ['GRN', 'REVERSE'], ['QC', 'INSPECT'], ['CASE', 'RESOLVE'], ['PUTAWAY', 'PUTAWAY'], ['INVOICE', 'MATCH'], ['CONFIG', 'POST_CLOSED']],
+    };
+    for (const [roleCode, actions] of Object.entries(roleActions)) {
+      await this.prisma.miSecRole.create({
+        data: {
+          companyId: company,
+          roleCode,
+          roleName: roleCode.replaceAll('_', ' '),
+          actions: { create: actions.map(([moduleCode, actionCode]) => ({ moduleCode, actionCode })) },
+        },
+      });
+    }
+  }
+
+  private async tolerancePct(tx: Tx, companyId: bigint, itemId: bigint, supplierId: bigint) {
+    const limits = await this.toleranceLimits(tx, companyId, itemId, supplierId);
+    return limits.over;
+  }
+
+  private async toleranceLimits(tx: Tx, companyId: bigint, itemId: bigint | null, supplierId: bigint | null) {
+    const rows = await tx.miCfgTolerance.findMany({ where: { companyId } });
+    const pick = (scopeType: string, scopeId: bigint) => rows.find((row) => row.scopeType === scopeType && row.scopeId === scopeId);
+    const chosen = (itemId && pick('ITEM', itemId))
+      || (supplierId && pick('SUPPLIER', supplierId))
+      || pick('COMPANY', 0n);
+    return {
+      over: num(chosen?.overReceiptPct),
+      price: num(chosen?.priceVariancePct),
+      tax: num(chosen?.taxVariancePct),
+    };
+  }
+
+  private async conversionFactor(tx: Tx, companyId: bigint, itemId: bigint, fromUom: string, toUom: string) {
+    if (fromUom === toUom) return 1;
+    const specific = await tx.miUomConversion.findFirst({
+      where: { companyId, itemId, fromUomCode: fromUom, toUomCode: toUom, active: true },
+    });
+    const general = specific || await tx.miUomConversion.findFirst({
+      where: { companyId, itemId: null, fromUomCode: fromUom, toUomCode: toUom, active: true },
+    });
+    return general ? num(general.factor) : 1;
+  }
+
+  private async assertPeriodOpen(tx: Tx, companyId: bigint) {
+    const now = new Date();
+    const period = await tx.miCfgPeriod.findUnique({
+      where: {
+        companyId_periodYear_periodMonth: {
+          companyId,
+          periodYear: now.getFullYear(),
+          periodMonth: now.getMonth() + 1,
+        },
+      },
+    });
+    if (period?.inventoryStatus === 'CLOSED') this.fail('Inventory period is closed', 'PERIOD_CLOSED');
+  }
+
+  private async escalate(companyId: bigint) {
+    const rules = await this.prisma.miCfgNotifyRule.findMany({ where: { companyId, active: true } });
+    const byEvent = new Map(rules.map((rule) => [rule.eventCode, rule]));
+    const open = await this.prisma.miTask.findMany({ where: { companyId, status: 'OPEN', escalated: false } });
+    const now = Date.now();
+    for (const task of open) {
+      const event = task.taskType === 'QC_INSPECT' ? 'QC_PENDING' : task.taskType === 'SUPPLIER_CASE' ? 'SUPPLIER_RESPONSE' : null;
+      const rule = event ? byEvent.get(event) : undefined;
+      if (!rule) continue;
+      const ageHours = (now - task.createdAt.getTime()) / 36e5;
+      if (ageHours < rule.thresholdHours) continue;
+      await this.prisma.miTask.update({
+        where: { id: task.id },
+        data: { escalated: true, escalatedAt: new Date() },
+      });
+      await this.prisma.miNotification.create({
+        data: {
+          companyId,
+          roleCode: rule.escalateToRole,
+          taskId: task.id,
+          title: `Escalated: ${task.title}`,
+          body: `${task.title} is still open after ${rule.thresholdHours} hours`,
+        },
+      });
+    }
   }
 
   async reasons(companyId: string) {
@@ -286,6 +412,8 @@ export class MaterialInwardService {
               orderQty: D(line.orderQty),
               outstandingQty: D(line.orderQty),
               uomCode: line.uomCode || 'PCS',
+              stockUomCode: line.stockUomCode || 'PCS',
+              conversionFactor: D(line.conversionFactor ?? 1),
               unitPrice: D(line.unitPrice ?? 0),
               taxPct: D(line.taxPct ?? 0),
               qcRequired: line.qcRequired ?? true,
@@ -440,6 +568,9 @@ export class MaterialInwardService {
         if (poLine.serialControlled && (line.serials?.length ?? 0) !== line.receivedQty) {
           this.fail('Serial count must equal the received quantity', 'SERIAL_COUNT_MISMATCH');
         }
+        const factor = num(poLine.conversionFactor) !== 1
+          ? num(poLine.conversionFactor)
+          : await this.conversionFactor(tx, company, poLine.itemId, poLine.uomCode, poLine.stockUomCode);
         const createdLine = await tx.miGrnLine.create({
           data: {
             companyId: company,
@@ -452,6 +583,9 @@ export class MaterialInwardService {
             outstandingQtySnapshot: poLine.outstandingQty,
             receivedQty: D(line.receivedQty),
             uomCode: poLine.uomCode,
+            purchaseUomCode: poLine.uomCode,
+            inventoryUomCode: poLine.stockUomCode,
+            conversionFactor: D(factor),
             remarks: line.remarks,
           },
         });
@@ -500,9 +634,10 @@ export class MaterialInwardService {
       for (const line of grn.lines) {
         const poLine = await tx.miPurchaseOrderLine.findUniqueOrThrow({ where: { id: line.poLineId } });
         const received = num(line.receivedQty);
-        const outstanding = num(poLine.outstandingQty);
-        const excess = grn.receiptType === 'REPLACEMENT' ? 0 : Math.max(0, received - outstanding);
-        const posted = grn.receiptType === 'REPLACEMENT' ? received : Math.min(received, outstanding);
+        const tolerancePct = await this.tolerancePct(tx, company, poLine.itemId, grn.supplierId);
+        const allowedThis = Math.max(0, num(poLine.orderQty) * (1 + tolerancePct / 100) - num(poLine.receivedQty));
+        const excess = grn.receiptType === 'REPLACEMENT' ? 0 : Math.max(0, received - allowedThis);
+        const posted = grn.receiptType === 'REPLACEMENT' ? received : Math.min(received, allowedThis);
         const excessStatus = excess > 0 ? 'PENDING_APPROVAL' : 'NONE';
         if (excess > 0) needsApproval = true;
         if (poLine.qcRequired) needsQc = true;
@@ -510,9 +645,10 @@ export class MaterialInwardService {
           where: { id: line.id },
           data: {
             excessQty: D(excess),
-            shortQty: D(Math.max(0, outstanding - received)),
+            shortQty: D(Math.max(0, num(poLine.outstandingQty) - received)),
             excessStatus,
-            receivedQtyInv: D(posted),
+            tolerancePctApplied: D(tolerancePct),
+            receivedQtyInv: D(posted * num(line.conversionFactor)),
           },
         });
         if (posted > 0) {
@@ -527,7 +663,7 @@ export class MaterialInwardService {
             warehouseId: grn.warehouseId,
             locationId: dock.id,
             stockStatus: 'QC_HOLD',
-            qtyIn: posted,
+            qtyIn: posted * num(line.conversionFactor),
             uomCode: line.uomCode,
             refDocType: 'PO',
             refDocId: grn.poId,
@@ -590,6 +726,20 @@ export class MaterialInwardService {
       .filter((row) => row.qty > 0);
     if (!movable.length) return;
     const taskNo = await this.nextNo(tx, companyId, 'PAW', () => tx.miPutawayTask.count({ where: { companyId } }));
+    const lineCreates = [];
+    for (const row of movable) {
+      const rule = await tx.miItemPutawayRule.findFirst({
+        where: { companyId, itemId: row.line.itemId, warehouseId, active: true },
+        orderBy: { priority: 'asc' },
+      });
+      lineCreates.push({
+        grnLineId: row.line.id,
+        itemId: row.line.itemId,
+        qty: D(row.qty),
+        fromLocationId,
+        suggestedLocationId: rule?.preferredLocationId,
+      });
+    }
     const task = await tx.miPutawayTask.create({
       data: {
         companyId,
@@ -598,14 +748,7 @@ export class MaterialInwardService {
         qcId,
         warehouseId,
         source,
-        lines: {
-          create: movable.map((row) => ({
-            grnLineId: row.line.id,
-            itemId: row.line.itemId,
-            qty: D(row.qty),
-            fromLocationId,
-          })),
-        },
+        lines: { create: lineCreates },
       },
     });
     await this.task(tx, companyId, 'PUTAWAY', 'STOREKEEPER', 'PAW', task.id, `Put away ${taskNo}`);
@@ -1053,9 +1196,18 @@ export class MaterialInwardService {
     }));
   }
 
-  async tasks(companyId: string) {
+  async tasks(companyId: string, actorId?: string) {
+    const company = parseBigIntId(companyId);
+    await this.ensureLookups(companyId);
+    await this.escalate(company);
     const rows = await this.prisma.miTask.findMany({
-      where: { companyId: parseBigIntId(companyId), status: 'OPEN' },
+      where: {
+        companyId: company,
+        status: 'OPEN',
+        ...(actorId
+          ? { OR: [{ assigneeId: null }, { assigneeId: parseBigIntId(actorId) }] }
+          : {}),
+      },
       orderBy: { createdAt: 'desc' },
     });
     const counts = rows.reduce<Record<string, number>>((acc, row) => {
@@ -1157,11 +1309,21 @@ export class MaterialInwardService {
           where: { grnLineId: grnLine.id },
           _sum: { matchedQty: true },
         });
-        const openQty = num(grnLine.acceptedQty) - num(matchedSoFar._sum.matchedQty);
+        const policy = await tx.miCfgMatchPolicy.findUnique({ where: { companyId: company } });
+        const basis = policy?.matchQtyBasis || 'ACCEPTED';
+        const basisQty = basis === 'RECEIVED'
+          ? num(grnLine.receivedQtyInv)
+          : basis === 'PUTAWAY'
+            ? num(grnLine.putawayQty)
+            : num(grnLine.acceptedQty);
+        const openQty = basisQty - num(matchedSoFar._sum.matchedQty);
+        const limits = await this.toleranceLimits(tx, company, grnLine.itemId, null);
         const priceVariance = input.unitPrice - num(poLine.unitPrice);
+        const taxVariance = (input.taxPct ?? 0) - num(poLine.taxPct);
         const qtyVariance = input.qty - openQty;
         let matchStatus = 'MATCHED';
-        if (Math.abs(priceVariance) > 0.0001) matchStatus = 'PRICE_DIFF';
+        if (Math.abs(priceVariance) > limits.price + 0.0001) matchStatus = 'PRICE_DIFF';
+        if (Math.abs(taxVariance) > limits.tax + 0.0001) matchStatus = 'TAX_DIFF';
         if (input.qty > openQty + 0.0001) matchStatus = 'QTY_DIFF';
         if (matchStatus !== 'MATCHED') variance = true;
         total += input.qty * input.unitPrice;
@@ -1187,6 +1349,7 @@ export class MaterialInwardService {
             invoicePrice: D(input.unitPrice),
             priceVariance: D(priceVariance),
             qtyVariance: D(qtyVariance),
+            taxVariance: D(taxVariance),
             matchStatus,
           },
         });
@@ -1202,5 +1365,105 @@ export class MaterialInwardService {
       });
     });
     return serialize(invoice);
+  }
+
+  async reverseGrn(companyId: string, id: string, actorId: string) {
+    const company = parseBigIntId(companyId);
+    const savedId = await this.prisma.$transaction(async (tx) => {
+      const grn = await tx.miGrnHeader.findFirst({
+        where: { id: parseBigIntId(id), companyId: company },
+        include: { lines: true },
+      });
+      if (!grn) throw new NotFoundException('GRN');
+      if (grn.status === 'DRAFT') this.fail('A draft GRN is deleted by editing, not reversed', 'GRN_NOT_POSTED');
+      if (grn.status === 'REVERSED') this.fail('This GRN is already reversed', 'GRN_ALREADY_REVERSED');
+      const qcDone = await tx.miQcInspection.count({ where: { grnId: grn.id, status: 'COMPLETED' } });
+      const putaway = await tx.miPutawayTask.count({ where: { grnId: grn.id, status: 'DONE' } });
+      if (qcDone || putaway) this.fail('Reverse the later QC or put-away before reversing this GRN', 'GRN_HAS_DOWNSTREAM');
+      const movements = await tx.miInvLedger.findMany({ where: { companyId: company, docType: 'GRN', docId: grn.id } });
+      for (const move of movements) {
+        await this.post(tx, {
+          companyId: company,
+          actorId,
+          txnType: 'GRN_REVERSAL',
+          docType: 'GRN',
+          docId: grn.id,
+          docLineId: move.docLineId ?? undefined,
+          itemId: move.itemId,
+          warehouseId: move.warehouseId,
+          locationId: move.locationId,
+          stockStatus: move.stockStatus,
+          qtyIn: num(move.qtyOut),
+          qtyOut: num(move.qtyIn),
+          uomCode: move.uomCode,
+          refDocType: 'GRN',
+          refDocId: grn.id,
+        });
+      }
+      if (grn.receiptType === 'NORMAL') {
+        for (const line of grn.lines) {
+          const poLine = await tx.miPurchaseOrderLine.findUniqueOrThrow({ where: { id: line.poLineId } });
+          const postedPurchase = num(line.conversionFactor) > 0 ? num(line.receivedQtyInv) / num(line.conversionFactor) : num(line.receivedQtyInv);
+          const newReceived = Math.max(0, num(poLine.receivedQty) - postedPurchase);
+          const newOutstanding = Math.max(0, num(poLine.orderQty) - newReceived - num(poLine.shortClosedQty));
+          await tx.miPurchaseOrderLine.update({
+            where: { id: poLine.id },
+            data: {
+              receivedQty: D(newReceived),
+              outstandingQty: D(newOutstanding),
+              lineStatus: newOutstanding === 0 ? 'CLOSED' : newReceived === 0 ? 'OPEN' : 'PARTIAL',
+              updatedAt: new Date(),
+            },
+          });
+        }
+      }
+      await tx.miGrnHeader.update({
+        where: { id: grn.id },
+        data: { status: 'REVERSED', updatedAt: new Date(), updatedBy: parseBigIntId(actorId) },
+      });
+      await this.closeTasks(tx, company, 'GRN', grn.id);
+      await this.closeTasks(tx, company, 'QC', grn.id);
+      await this.log(tx, company, 'GRN', grn.id, actorId, `Reversed ${grn.grnNo}`, grn.status, 'REVERSED');
+      return grn.id;
+    });
+    return this.getGrn(companyId, savedId.toString());
+  }
+
+  async listAttachments(companyId: string, docType: string, docId: string) {
+    return serialize(await this.prisma.miAttachment.findMany({
+      where: { companyId: parseBigIntId(companyId), docType: docType.toUpperCase(), docId: parseBigIntId(docId) },
+      orderBy: { createdAt: 'asc' },
+    }));
+  }
+
+  async addAttachment(companyId: string, dto: { docType: string; docId: string; fileName: string; fileUrl: string; mimeType?: string; category?: string }, actorId: string) {
+    return serialize(await this.prisma.miAttachment.create({
+      data: {
+        companyId: parseBigIntId(companyId),
+        docType: dto.docType.toUpperCase(),
+        docId: parseBigIntId(dto.docId),
+        fileName: dto.fileName,
+        fileUrl: dto.fileUrl,
+        mimeType: dto.mimeType,
+        category: dto.category || 'DO',
+        uploadedBy: parseBigIntId(actorId),
+      },
+    }));
+  }
+
+  async config(companyId: string) {
+    await this.ensureLookups(companyId);
+    const company = parseBigIntId(companyId);
+    const [tolerances, notifyRules, periods, matchPolicy, roles, conversions, templates, putawayRules] = await Promise.all([
+      this.prisma.miCfgTolerance.findMany({ where: { companyId: company } }),
+      this.prisma.miCfgNotifyRule.findMany({ where: { companyId: company } }),
+      this.prisma.miCfgPeriod.findMany({ where: { companyId: company }, orderBy: [{ periodYear: 'desc' }, { periodMonth: 'desc' }] }),
+      this.prisma.miCfgMatchPolicy.findUnique({ where: { companyId: company } }),
+      this.prisma.miSecRole.findMany({ where: { companyId: company }, include: { actions: true } }),
+      this.prisma.miUomConversion.findMany({ where: { companyId: company, active: true } }),
+      this.prisma.miQcTemplate.findMany({ where: { companyId: company }, include: { lines: true } }),
+      this.prisma.miItemPutawayRule.findMany({ where: { companyId: company, active: true } }),
+    ]);
+    return serialize({ tolerances, notifyRules, periods, matchPolicy, roles, conversions, templates, putawayRules });
   }
 }
