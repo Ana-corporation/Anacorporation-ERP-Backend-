@@ -722,3 +722,25 @@ model MiNotification {
   @@index([companyId, roleCode, readAt])
   @@map("mi_notifications")
 }
+
+model MiEmailDispatch {
+  id          BigInt    @id @default(autoincrement()) @map("id")
+  companyId   BigInt    @map("company_id")
+  eventCode   String    @map("event_code") @db.VarChar(40)
+  docType     String    @map("doc_type") @db.VarChar(20)
+  docId       BigInt    @map("doc_id")
+  taskId      BigInt?   @map("task_id")
+  roleCode    String?   @map("role_code") @db.VarChar(30)
+  toEmail     String    @map("to_email") @db.VarChar(255)
+  subject     String    @db.VarChar(200)
+  body        String    @db.VarChar(2000)
+  status      String    @default("SCHEDULED") @db.VarChar(20)
+  scheduledAt DateTime  @map("scheduled_at")
+  sentAt      DateTime? @map("sent_at")
+  errorText   String?   @map("error_text") @db.VarChar(500)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([companyId, status, scheduledAt])
+  @@index([companyId, docType, docId])
+  @@map("mi_email_dispatches")
+}

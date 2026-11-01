@@ -17,13 +17,31 @@ import {
   SaveGrnDto,
   ShortCloseDto,
 } from './dto/material-inward.dto';
+import { MaterialInwardMailService } from './material-inward-mail.service';
 import { MaterialInwardService } from './material-inward.service';
 
 @ApiTags('Material Inward')
 @ApiBearerAuth()
 @Controller('companies/:companyId/material-inward')
 export class MaterialInwardController {
-  constructor(private readonly inward: MaterialInwardService) {}
+  constructor(
+    private readonly inward: MaterialInwardService,
+    private readonly inwardMail: MaterialInwardMailService,
+  ) {}
+
+  @Get('emails')
+  @RequirePermissions('items:view')
+  @ApiOperation({ summary: 'Sent and scheduled material-inward emails' })
+  emails(
+    @Param('companyId') companyId: string,
+    @Query('docType') docType: string | undefined,
+    @Query('docId') docId: string | undefined,
+    @Query('status') status: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.inwardMail.list(companyId, docType, docId, status);
+  }
 
   @Get('tasks/mine')
   @RequirePermissions('items:view')

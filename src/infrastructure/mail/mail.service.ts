@@ -17,7 +17,9 @@ export class MailService {
   constructor(private readonly configService: ConfigService) {}
 
   private getFromAddress(): string {
-    return this.configService.get<string>('mail.from') ?? 'noreply@erp.local';
+    const from = (this.configService.get<string>('mail.from') ?? 'noreply@erp.local').trim();
+    if (from.includes('<')) return from;
+    return `ERP <${from}>`;
   }
 
   private getTransporter(): Transporter | null {

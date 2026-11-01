@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { MaterialInwardMailService } from './material-inward-mail.service';
 import { BusinessException, NotFoundException } from '@/common/exceptions/business.exception';
 import { parseBigIntId, serialize } from '@/common/utils/bigint.util';
 import {
@@ -46,7 +47,15 @@ const RESOLUTIONS = [
 
 @Injectable()
 export class MaterialInwardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inwardMail: MaterialInwardMailService,
+  ) {}
+
+  /** Remote SQL often spends several seconds inside one receipt, QC, or put-away transaction. */
+  private run<T>(work: (tx: Tx) => Promise<T>) {
+    return this.prisma.$transaction(work, { maxWait: 15_000, timeout: 30_000 });
+  }
 
   private fail(message: string, code: string, status = HttpStatus.BAD_REQUEST): never {
     throw new BusinessException(message, status, undefined, code);
@@ -220,9 +229,9 @@ export class MaterialInwardService {
     });
     await this.prisma.miCfgNotifyRule.createMany({
       data: [
-        { companyId: company, eventCode: 'QC_PENDING', thresholdHours: 24, escalateToRole: 'QC_SUPERVISOR' },
-        { companyId: company, eventCode: 'SUPPLIER_RESPONSE', thresholdHours: 48, escalateToRole: 'PURCHASE_MANAGER' },
-        { companyId: company, eventCode: 'REPLACEMENT_OVERDUE', thresholdHours: 72, escalateToRole: 'BUYER' },
+        { companyId: company, eventCode: 'QC_PENDING', thresholdHours: 4, escalateToRole: 'QC_SUPERVISOR' },
+        { companyId: company, eventCode: 'SUPPLIER_IDLE', thresholdHours: 48, escalateToRole: 'BUYER' },
+        { companyId: company, eventCode: 'REPLACEMENT_OVERDUE', thresholdHours: 72, escalateToRole: 'PURCHASE_MANAGER' },
       ],
     });
     await this.prisma.miCfgPeriod.create({
@@ -392,7 +401,7 @@ export class MaterialInwardService {
       where: { vendorId: parseBigIntId(dto.supplierId), companyId: company, deletedAt: null },
     });
     if (!supplier) throw new NotFoundException('Vendor');
-    const po = await this.prisma.$transaction(async (tx) => {
+    const po = await this.run(async (tx) => {
       const count = await tx.miPurchaseOrder.count({ where: { companyId: company } });
       const created = await tx.miPurchaseOrder.create({
         data: {
@@ -512,7 +521,7 @@ export class MaterialInwardService {
       include: { lines: true },
     });
     if (!po) throw new NotFoundException('Purchase order');
-    const headerId = await this.prisma.$transaction(async (tx) => {
+    const headerId = await this.run(async (tx) => {
       let headerId: bigint;
       if (grnId) {
         const existing = await tx.miGrnHeader.findFirst({
@@ -619,7 +628,7 @@ export class MaterialInwardService {
 
   async submitGrn(companyId: string, id: string, actorId: string) {
     const company = parseBigIntId(companyId);
-    const savedId = await this.prisma.$transaction(async (tx) => {
+    const savedId = await this.run(async (tx) => {
       const grn = await tx.miGrnHeader.findFirst({
         where: { id: parseBigIntId(id), companyId: company },
         include: { lines: true },
@@ -700,7 +709,9 @@ export class MaterialInwardService {
       }
       return grn.id;
     });
-    return this.getGrn(companyId, savedId.toString());
+    const saved = await this.getGrn(companyId, savedId.toString());
+    await this.inwardMail.afterGrnSubmitted(companyId, savedId.toString());
+    return saved;
   }
 
   private async openPutaway(
@@ -756,7 +767,7 @@ export class MaterialInwardService {
 
   async excessDecision(companyId: string, id: string, dto: ExcessDecisionDto, actorId: string) {
     const company = parseBigIntId(companyId);
-    const grnId = await this.prisma.$transaction(async (tx) => {
+    const grnId = await this.run(async (tx) => {
       const grn = await tx.miGrnHeader.findFirst({
         where: { id: parseBigIntId(id), companyId: company },
         include: { lines: true },
@@ -837,12 +848,13 @@ export class MaterialInwardService {
       where: { id: qc.id },
       data: { status: 'IN_PROGRESS', inspectorId: parseBigIntId(actorId), updatedAt: new Date() },
     });
+    await this.inwardMail.cancelQcPending(companyId, id);
     return serialize(updated);
   }
 
   async completeQc(companyId: string, id: string, dto: CompleteQcDto, actorId: string) {
     const company = parseBigIntId(companyId);
-    return this.prisma.$transaction(async (tx) => {
+    const savedQcId = await this.run(async (tx) => {
       const qc = await tx.miQcInspection.findFirst({
         where: { id: parseBigIntId(id), companyId: company },
       });
@@ -946,8 +958,13 @@ export class MaterialInwardService {
         await this.task(tx, company, 'SUPPLIER_CASE', 'BUYER', 'CASE', supplierCase.id, `Resolve ${caseNo}`);
       }
       await tx.miGrnHeader.update({ where: { id: grn.id }, data: { status: 'QC_DONE', updatedAt: new Date() } });
-      return serialize(await tx.miQcInspection.findUnique({ where: { id: qc.id }, include: { lines: { include: { checks: true } } } }));
+      return qc.id;
     });
+    await this.inwardMail.afterQcCompleted(companyId, savedQcId.toString());
+    return serialize(await this.prisma.miQcInspection.findUnique({
+      where: { id: savedQcId },
+      include: { lines: { include: { checks: true } } },
+    }));
   }
 
   async listCases(companyId: string) {
@@ -999,12 +1016,13 @@ export class MaterialInwardService {
         eventText: 'Resolution split saved',
       },
     });
+    await this.inwardMail.afterCaseLines(companyId, id, dto.lines.map((line) => line.resolutionType));
     return this.listCases(companyId).then((rows) => (rows as unknown as { id: string }[]).find((row) => row.id === id) ?? serialize(supplierCase));
   }
 
   async useAsIs(companyId: string, caseId: string, lineId: string, actorId: string) {
     const company = parseBigIntId(companyId);
-    return this.prisma.$transaction(async (tx) => {
+    return this.run(async (tx) => {
       const line = await tx.miSupplierCaseLine.findFirst({
         where: { id: parseBigIntId(lineId), caseId: parseBigIntId(caseId) },
       });
@@ -1052,8 +1070,8 @@ export class MaterialInwardService {
     const supplierCase = await this.prisma.miSupplierCase.findUniqueOrThrow({ where: { id: caseLine.caseId } });
     const grnLine = await this.prisma.miGrnLine.findUniqueOrThrow({ where: { id: caseLine.grnLineId } });
     const grn = await this.prisma.miGrnHeader.findUniqueOrThrow({ where: { id: supplierCase.grnId } });
-    const quarantine = await this.prisma.$transaction((tx) => this.location(tx, company, grn.warehouseId, 'quarantine', actorId));
-    const created = await this.prisma.$transaction(async (tx) => {
+    const quarantine = await this.run((tx) => this.location(tx, company, grn.warehouseId, 'quarantine', actorId));
+    const created = await this.run(async (tx) => {
       const returnNo = await this.nextNo(tx, company, 'RET', () => tx.miReturnHeader.count({ where: { companyId: company } }));
       return tx.miReturnHeader.create({
         data: {
@@ -1083,7 +1101,7 @@ export class MaterialInwardService {
 
   async postReturn(companyId: string, id: string, actorId: string) {
     const company = parseBigIntId(companyId);
-    return this.prisma.$transaction(async (tx) => {
+    return this.run(async (tx) => {
       const header = await tx.miReturnHeader.findFirst({
         where: { id: parseBigIntId(id), companyId: company },
         include: { lines: true },
@@ -1130,7 +1148,7 @@ export class MaterialInwardService {
 
   async confirmPutaway(companyId: string, id: string, dto: ConfirmPutawayDto, actorId: string) {
     const company = parseBigIntId(companyId);
-    return this.prisma.$transaction(async (tx) => {
+    return this.run(async (tx) => {
       const task = await tx.miPutawayTask.findFirst({
         where: { id: parseBigIntId(id), companyId: company },
         include: { lines: true },
@@ -1285,7 +1303,7 @@ export class MaterialInwardService {
 
   async matchInvoice(companyId: string, dto: InvoiceMatchDto, actorId: string) {
     const company = parseBigIntId(companyId);
-    const invoice = await this.prisma.$transaction(async (tx) => {
+    const invoice = await this.run(async (tx) => {
       let total = 0;
       let variance = false;
       const header = await tx.miApInvoice.create({
@@ -1369,7 +1387,7 @@ export class MaterialInwardService {
 
   async reverseGrn(companyId: string, id: string, actorId: string) {
     const company = parseBigIntId(companyId);
-    const savedId = await this.prisma.$transaction(async (tx) => {
+    const savedId = await this.run(async (tx) => {
       const grn = await tx.miGrnHeader.findFirst({
         where: { id: parseBigIntId(id), companyId: company },
         include: { lines: true },
