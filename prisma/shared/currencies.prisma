@@ -17,6 +17,8 @@ model Currency {
 
   companies            Company[]
   userCompaniesDefault UserCompany[] @relation("UserCompanyDefaultCurrency")
+  purchaseOrders       PurchaseOrder[]
+  purchaseApprovalRules PurchaseApprovalRule[]
 
   @@map("currencies")
 }

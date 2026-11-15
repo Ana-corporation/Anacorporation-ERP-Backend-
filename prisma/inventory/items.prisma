@@ -75,6 +75,8 @@ model Item {
   inventoryDocumentLines InventoryDocumentLine[]
   stockBalances          StockBalance[]
   stockLedgerEntries     StockLedgerEntry[]
+  purchaseRequirements   PurchaseRequirement[]
+  purchaseOrderLines     PurchaseOrderLine[]
 
   @@unique([companyId, itemCode])
   @@index([companyId])

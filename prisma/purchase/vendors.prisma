@@ -24,8 +24,10 @@ model Vendor {
   rowVersion   Int       @default(1) @map("row_version")
 
   company         Company                @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
-  preferredItems  Item[]
-  formInvitations VendorFormInvitation[]
+  preferredItems               Item[]
+  formInvitations              VendorFormInvitation[]
+  suggestedPurchaseRequirements PurchaseRequirement[] @relation("RequirementSuggestedVendor")
+  purchaseOrders               PurchaseOrder[]
 
   @@unique([companyId, vendorCode])
   @@index([companyId])

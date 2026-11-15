@@ -34,8 +34,9 @@ model Role {
   company            Company?            @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   rolePermissions    RolePermission[]
   rolePermissionSets RolePermissionSet[]
-  userRoles          UserRole[]
-  tabAccess          CompanyTabAccess[]
+  userRoles              UserRole[]
+  tabAccess              CompanyTabAccess[]
+  purchaseApprovalRules  PurchaseApprovalRule[]
 
   @@unique([companyId, roleCode])
   @@index([companyId])

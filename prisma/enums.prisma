@@ -338,3 +338,68 @@ enum StockMovementType {
 
   @@map("stock_movement_type")
 }
+
+enum PurchaseRequirementSourceType {
+  SHORTAGE
+  REPLENISHMENT
+
+  @@map("purchase_requirement_source_type")
+}
+
+enum PurchaseRequirementStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  PARTIALLY_CONVERTED
+  FULLY_CONVERTED
+  CANCELLED
+
+  @@map("purchase_requirement_status")
+}
+
+enum PurchaseOrderType {
+  PRODUCTION
+  REPLENISHMENT
+
+  @@map("purchase_order_type")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  CLOSED
+  REJECTED
+  CANCELLED
+
+  @@map("purchase_order_status")
+}
+
+enum PurchaseOrderSendStatus {
+  NOT_SENT
+  QUEUED
+  SENT
+  FAILED
+
+  @@map("purchase_order_send_status")
+}
+
+enum PurchaseApprovalAction {
+  SUBMIT
+  APPROVE
+  REJECT
+  WITHDRAW
+
+  @@map("purchase_approval_action")
+}
+
+enum PurchaseEmailStatus {
+  QUEUED
+  SENT
+  FAILED
+
+  @@map("purchase_email_status")
+}
