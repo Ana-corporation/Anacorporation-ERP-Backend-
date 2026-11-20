@@ -22,17 +22,20 @@ import {
 import { memoryStorage } from 'multer';
 import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
 import { ITEM_ATTACHMENT_MAX_BYTES } from './item-attachments.constants';
 import {
   CreateItemDto,
+  ItemListQueryDto,
+  ItemLookupQueryDto,
   UpdateItemDto,
   UpdateItemSettingsDto,
+  CreateItemStagesDto,
   UpsertItemWarehouseStockDto,
 } from './dto/item.dto';
-import { ItemsService } from './items.service';
+import { ITEM_IMAGE_MAX_BYTES, ItemsService } from './items.service';
+import { ItemsLookupService } from './items-lookup.service';
 
 type UploadedMulterFile = {
   fieldname: string;
@@ -46,14 +49,29 @@ type UploadedMulterFile = {
 @ApiBearerAuth()
 @Controller('companies/:companyId/items')
 export class ItemsController {
-  constructor(private readonly itemsService: ItemsService) {}
+  constructor(
+    private readonly itemsService: ItemsService,
+    private readonly itemsLookupService: ItemsLookupService,
+  ) {}
+
+  @Get('lookup')
+  @ApiOperation({ summary: 'Light item picker: active items with UOM, group, store, procurement type' })
+  @RequirePermissions('items:view')
+  lookup(
+    @Param('companyId') companyId: string,
+    @Query() query: ItemLookupQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.itemsLookupService.lookup(companyId, query);
+  }
 
   @Get()
   @ApiOperation({ summary: 'List item master records' })
   @RequirePermissions('items:view')
   findAll(
     @Param('companyId') companyId: string,
-    @Query() query: PaginationQueryDto,
+    @Query() query: ItemListQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     assertCompanyAccess(companyId, user);
@@ -97,6 +115,19 @@ export class ItemsController {
     return this.itemsService.create(companyId, dto, user.sub);
   }
 
+  @Post(':id/stages')
+  @RequirePermissions('items:create')
+  @ApiOperation({ summary: 'Create the missing process part of a raw-material item (RM + PLT/MCN/… = two part numbers)' })
+  createStages(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @Body() dto: CreateItemStagesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.itemsService.createMissingStages(companyId, id, dto.processCategoryCode, user.sub);
+  }
+
   @Post(':id/attachments')
   @ApiOperation({ summary: 'Upload one or more item attachment files' })
   @ApiConsumes('multipart/form-data')
@@ -132,6 +163,47 @@ export class ItemsController {
     assertCompanyAccess(companyId, user);
     const files = [...(uploaded?.files ?? []), ...(uploaded?.file ?? [])];
     return this.itemsService.uploadAttachments(id, companyId, files, user.sub);
+  }
+
+  @Post(':id/image')
+  @ApiOperation({ summary: 'Upload / replace the item picture (PNG, JPG, WEBP, max 5 MB)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { image: { type: 'string', format: 'binary' } } } })
+  @RequirePermissions('items:edit')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'image', maxCount: 1 },
+        { name: 'file', maxCount: 1 },
+      ],
+      { storage: memoryStorage(), limits: { fileSize: ITEM_IMAGE_MAX_BYTES } },
+    ),
+  )
+  uploadImage(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @UploadedFiles() uploaded: { image?: UploadedMulterFile[]; file?: UploadedMulterFile[] },
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    const file = uploaded?.image?.[0] ?? uploaded?.file?.[0];
+    return this.itemsService.uploadImage(id, companyId, file, user.sub);
+  }
+
+  @Get(':id/image/url')
+  @ApiOperation({ summary: 'Signed URL of the item picture' })
+  @RequirePermissions('items:view')
+  getImageUrl(@Param('companyId') companyId: string, @Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    assertCompanyAccess(companyId, user);
+    return this.itemsService.getImageUrl(id, companyId);
+  }
+
+  @Delete(':id/image')
+  @ApiOperation({ summary: 'Remove the item picture' })
+  @RequirePermissions('items:edit')
+  deleteImage(@Param('companyId') companyId: string, @Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    assertCompanyAccess(companyId, user);
+    return this.itemsService.deleteImage(id, companyId, user.sub);
   }
 
   @Get(':id/attachments/:fileAssetId/url')

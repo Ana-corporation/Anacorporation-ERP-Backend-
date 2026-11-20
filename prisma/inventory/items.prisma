@@ -43,6 +43,19 @@ model Item {
   stockDioDays     Int?      @map("stock_dio_days")
   contractItemsFor String?   @map("contract_items_for") @db.VarChar(120)
 
+  // Store (part-number series segment); set once, never changed after
+  storeCategoryId BigInt? @map("store_category_id")
+  // Masters (optional; itemGroup / inventory.uomName text stay for companies not using them)
+  itemGroupId     BigInt? @map("item_group_id")
+  inventoryUomId  BigInt? @map("inventory_uom_id")
+  /// file_assets.id of the item picture (reference only; the file lives in storage)
+  imageFileAssetId String? @map("image_file_asset_id") @db.Uuid
+
+  /// Manufacturing stage of a made part: RM (raw) -> SF (semi-finished) -> FF (finished). CHECK in SQL.
+  materialStage       String? @map("material_stage") @db.VarChar(2)
+  /// The item this one is made from (SF -> its RM, FF -> its SF); one next stage per item
+  previousStageItemId BigInt? @unique @map("previous_stage_item_id")
+
   // Purchasing / inventory quick-filter columns
   preferredVendorId      BigInt?  @map("preferred_vendor_id")
   valuationMethod        String?  @map("valuation_method") @db.VarChar(30)
@@ -71,16 +84,27 @@ model Item {
 
   company                Company                 @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   preferredVendor        Vendor?                 @relation(fields: [preferredVendorId], references: [vendorId])
+  storeCategory          StoreCategory?          @relation(fields: [storeCategoryId], references: [storeCategoryId], onDelete: SetNull)
+  itemGroupRef           ItemGroup?              @relation(fields: [itemGroupId], references: [itemGroupId], onDelete: SetNull)
+  inventoryUom           Uom?                    @relation(fields: [inventoryUomId], references: [uomId], onDelete: SetNull)
+  previousStageItem      Item?                   @relation("ItemStageChain", fields: [previousStageItemId], references: [itemId], onDelete: SetNull)
+  nextStageItem          Item?                   @relation("ItemStageChain")
   warehouseStock         ItemWarehouseStock[]
   inventoryDocumentLines InventoryDocumentLine[]
   stockBalances          StockBalance[]
   stockLedgerEntries     StockLedgerEntry[]
+  bomsAsParent           Bom[]                   @relation("BomParentItem")
+  bomLinesAsComponent    BomLine[]               @relation("BomComponentItem")
+  machine                Machine?
 
   @@unique([companyId, itemCode])
   @@index([companyId])
   @@index([companyId, status])
   @@index([companyId, itemGroup])
   @@index([companyId, brandName])
+  @@index([companyId, storeCategoryId])
+  @@index([companyId, itemGroupId])
+  @@index([inventoryUomId])
   @@map("items")
 }
 

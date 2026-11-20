@@ -1,7 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma, UserAuditAction } from '@prisma/client';
 import { AuditService } from '@/infrastructure/audit/audit.service';
-import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import {
   BusinessException,
   ConflictException,
@@ -14,6 +13,7 @@ import {
   BIN_BULK_LIMIT,
   BulkCreateStorageBinsDto,
   CreateStorageBinDto,
+  StorageBinListQueryDto,
   UpdateStorageBinDto,
 } from './dto/storage-bin.dto';
 import { StorageBinsRepository } from './storage-bins.repository';
@@ -21,6 +21,10 @@ import { StorageBinsRepository } from './storage-bins.repository';
 export const BIN_ERROR_CODES = {
   CODE_DUPLICATE: 'BIN_CODE_DUPLICATE',
   IN_USE: 'BIN_IN_USE',
+  HAS_STOCK: 'BIN_HAS_STOCK',
+  HAS_HISTORY: 'BIN_HAS_HISTORY',
+  HAS_DRAFT: 'BIN_HAS_DOCUMENT_LINES',
+  SYSTEM_LOCKED: 'BIN_SYSTEM_LOCKED',
   BULK_LIMIT: 'BIN_BULK_LIMIT',
 } as const;
 
@@ -66,7 +70,7 @@ export class StorageBinsService {
     throw error;
   }
 
-  async findAll(companyId: string, query: PaginationQueryDto) {
+  async findAll(companyId: string, query: StorageBinListQueryDto) {
     const { items, total, page, limit } = await this.repository.findManyByCompany(companyId, query);
     const mapped = items.map((item) => this.mapBin(serialize(item) as Record<string, unknown>));
     const withAudit = await this.auditService.withAuditList(mapped);
@@ -219,6 +223,15 @@ export class StorageBinsService {
     const existing = await this.repository.findById(id, companyId);
     if (!existing) throw new NotFoundException('Storage bin');
 
+    if (existing.isSystem && dto.binCode !== undefined && dto.binCode.trim().toUpperCase() !== existing.binCode) {
+      throw new BusinessException(
+        'System bins cannot be renamed',
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'binCode', message: 'UNASSIGNED and other system bins are locked' }],
+        BIN_ERROR_CODES.SYSTEM_LOCKED,
+      );
+    }
+
     if (dto.binCode) {
       const code = dto.binCode.trim().toUpperCase();
       await this.assertCodeFree(existing.warehouseId.toString(), code, id);
@@ -235,6 +248,7 @@ export class StorageBinsService {
       action: UserAuditAction.update,
       entityName: 'StorageBin',
       entityId: id,
+      oldValue: { status: existing.status, isActive: existing.isActive, binCode: existing.binCode },
       newValue: dto as Record<string, unknown>,
     });
 
@@ -242,11 +256,34 @@ export class StorageBinsService {
   }
 
   async remove(id: string, companyId: string, actorId: string) {
-    if (!(await this.repository.findById(id, companyId))) throw new NotFoundException('Storage bin');
-    if (await this.repository.isReferenced(id)) {
+    const existing = await this.repository.findById(id, companyId);
+    if (!existing) throw new NotFoundException('Storage bin');
+    if (existing.isSystem) {
+      throw new BusinessException(
+        'System bins cannot be deleted',
+        HttpStatus.BAD_REQUEST,
+        undefined,
+        BIN_ERROR_CODES.SYSTEM_LOCKED,
+      );
+    }
+
+    const usage = await this.repository.usage(id);
+    if (usage.hasStock) {
       throw new ConflictException(
-        'Bin has stock or inventory documents; deactivate it instead',
-        BIN_ERROR_CODES.IN_USE,
+        'Bin still holds stock; transfer or issue it out first',
+        BIN_ERROR_CODES.HAS_STOCK,
+      );
+    }
+    if (usage.hasLedger) {
+      throw new ConflictException(
+        'Bin has stock history; set status to Inactive instead of deleting',
+        BIN_ERROR_CODES.HAS_HISTORY,
+      );
+    }
+    if (usage.hasDocumentLines) {
+      throw new ConflictException(
+        'Bin is referenced by an inventory document (including drafts); remove those lines first',
+        BIN_ERROR_CODES.HAS_DRAFT,
       );
     }
 

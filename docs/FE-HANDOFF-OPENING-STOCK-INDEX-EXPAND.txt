@@ -1,0 +1,106 @@
+================================================================================
+OPENING STOCK — INDEX + EXPAND
+BE work vs FE work (Ana Electrical go-live)
+Date:       2026-11-20 (BE support shipped)
+Design ref: Downloads “Opening stock_ index and expand.html”
+================================================================================
+
+GOAL
+--------------------------------------------------------------------------------
+  Index:  one row per part → bins + serials summary + total qty
+  Expand: same part’s lines → Bin + Qty + Serial
+  Post:   stock by Part + Store + Bin; serials on document only
+
+
+================================================================================
+BACKEND — DONE (use now)
+================================================================================
+
+1) Opening Stock GET / create / update / post responses include partIndex
+--------------------------------------------------------------------------------
+  GET|POST|PUT|POST …/inventory/opening-stock[/:id|/post]
+
+  New field on OPENING_STOCK document only:
+
+  partIndex: [
+    {
+      itemId, partNumber, partName, uom,
+      inventoryLocationId, locationCode, locationName,
+      totalQuantity,          // "10.000000" string
+      lineCount,
+      lineIds: ["…", "…"],    // expand = filter lines by these ids
+      bins: [{ storageBinId, binCode }],
+      serialNumbers: ["123", "234"],
+      serialCount
+    }
+  ]
+
+  Flat `lines[]` unchanged — still the source of truth for PUT body.
+
+
+2) Storage bins list (picker) — higher limit + natural sort
+--------------------------------------------------------------------------------
+  GET …/storage-bins?inventoryLocationId={els001Id}&limit=500&sortBy=binCode&sortOrder=asc
+
+  - limit: default 20, **max 500** (was global max 200 — blocked full ELS list)
+  - When filtered by store + sortBy=binCode: **natural order** A1-01 … A1-200
+    (not string order where A1-100 appears before A1-20)
+  - Default sort for this endpoint: binCode asc
+
+
+3) Unchanged rules (still apply)
+--------------------------------------------------------------------------------
+  One line = one storageBinId + optional one serialNo
+  Bin required when store binManagement = true
+  No serial stock balances / no multi-bin on one line
+
+
+================================================================================
+FRONTEND — CHANGE THIS
+================================================================================
+
+1) Opening Stock document UI
+--------------------------------------------------------------------------------
+  [ ] Index rows: render `partIndex` (or group lines client-side as fallback)
+  [ ] Click index → expand lines where lineId in partIndex[].lineIds
+      (or same itemId + inventoryLocationId)
+  [ ] Edit still updates flat lines[]; PUT sends full lines[] array
+  [ ] Add line under a part = push another lines[] entry (same itemId/store)
+  [ ] Add part = item search only (not serial/bin allocation list)
+  [ ] Validate: qty > 0; bin required; avoid duplicate bin for same part
+  [ ] Post via existing POST …/post
+
+2) Bin picker
+--------------------------------------------------------------------------------
+  [ ] GET storage-bins?inventoryLocationId=&limit=500&sortBy=binCode&sortOrder=asc
+  [ ] Use codes A1-01 … A1-200 (zero-padded)
+
+3) Do not
+--------------------------------------------------------------------------------
+  [ ] Comma multi-bin / multi-serial on one line
+  [ ] Expect BE to return stock serials for a part on first Opening Stock
+
+
+================================================================================
+EXAMPLE partIndex (Servo × 10 across 5 bins)
+================================================================================
+  partIndex[0] = {
+    partNumber: "ANAELC00010",
+    totalQuantity: "10.000000",
+    lineCount: 5,
+    bins: [{ binCode: "A1-01" }, … { binCode: "A1-05" }],
+    serialNumbers: ["123","234","456","567","891"],
+    lineIds: ["…","…","…","…","…"]
+  }
+  lines = 5 objects with storageBinId + quantity + serialNo each
+
+
+DONE WHEN
+--------------------------------------------------------------------------------
+  BE  [x] partIndex on Opening Stock responses
+      [x] bins list max 500 + natural binCode sort per store
+  FE  [ ] Index from partIndex + expand to lines
+      [ ] Bin picker limit=500 / sortBy=binCode
+      [ ] PUT flat lines[]; post works
+
+================================================================================

@@ -17,7 +17,7 @@ export class AuthRepository {
    * Bump SECURITY_ORG_SEED_VERSION when backfill codes expand so running
    * Node processes re-attach new ADMIN packs without a full redeploy dance.
    */
-  private static readonly SECURITY_ORG_SEED_VERSION = 2;
+  private static readonly SECURITY_ORG_SEED_VERSION = 6;
   private static securityOrgSeedReadyVersion = 0;
   private static securityOrgSeedInFlight: Promise<void> | null = null;
 

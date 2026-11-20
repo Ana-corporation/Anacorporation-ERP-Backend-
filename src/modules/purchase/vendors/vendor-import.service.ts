@@ -26,6 +26,13 @@ const VENDOR_HEADER_ALIASES: Record<string, string[]> = {
   country: ['Country', 'country'],
   taxId: ['Tax ID', 'TaxId', 'taxId', 'tax_id', 'GSTIN', 'VAT'],
   isActive: ['Is Active', 'Active', 'isActive', 'is_active'],
+  isJobWorkVendor: [
+    'Is Job Work Vendor',
+    'Job Work Vendor',
+    'isJobWorkVendor',
+    'is_job_work_vendor',
+    'Job Work',
+  ],
 };
 
 const REQUIRED_FIELDS = ['supplierType', 'name'] as const;
@@ -50,6 +57,7 @@ export class VendorImportService {
       'Country',
       'Tax ID',
       'Is Active',
+      'Is Job Work Vendor',
     ];
     const sample = [
       'RM Supplier',
@@ -61,6 +69,7 @@ export class VendorImportService {
       'India',
       '',
       'TRUE',
+      'FALSE',
     ];
     const buffer = await this.excelParser.buildTemplate(headers, sample);
     return { buffer, fileName: 'vendor-import-template.xlsx' };
@@ -230,18 +239,12 @@ export class VendorImportService {
       return header ? (raw[header] ?? '').trim() : '';
     };
 
-    const isActiveRaw = get('isActive').toLowerCase();
-    let isActive: boolean | undefined;
-    if (isActiveRaw === 'true' || isActiveRaw === '1' || isActiveRaw === 'yes' || isActiveRaw === 'y') {
-      isActive = true;
-    } else if (
-      isActiveRaw === 'false' ||
-      isActiveRaw === '0' ||
-      isActiveRaw === 'no' ||
-      isActiveRaw === 'n'
-    ) {
-      isActive = false;
-    }
+    const parseBool = (raw: string): boolean | undefined => {
+      const v = raw.toLowerCase();
+      if (v === 'true' || v === '1' || v === 'yes' || v === 'y') return true;
+      if (v === 'false' || v === '0' || v === 'no' || v === 'n') return false;
+      return undefined;
+    };
 
     return {
       supplierType: get('supplierType'),
@@ -252,7 +255,8 @@ export class VendorImportService {
       city: get('city') || undefined,
       country: get('country') || undefined,
       taxId: get('taxId') || undefined,
-      isActive,
+      isActive: parseBool(get('isActive')),
+      isJobWorkVendor: parseBool(get('isJobWorkVendor')),
     };
   }
 
@@ -340,6 +344,7 @@ export class VendorImportService {
       country: data.country ? String(data.country) : undefined,
       taxId: data.taxId ? String(data.taxId) : undefined,
       isActive: typeof data.isActive === 'boolean' ? data.isActive : undefined,
+      isJobWorkVendor: typeof data.isJobWorkVendor === 'boolean' ? data.isJobWorkVendor : undefined,
     } as CreateVendorDto;
   }
 }

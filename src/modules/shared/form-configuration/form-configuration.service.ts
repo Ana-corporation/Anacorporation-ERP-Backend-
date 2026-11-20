@@ -18,7 +18,9 @@ import {
   isBuiltInRegistrationConfigurable,
   isSupportedFormConfigurationEntity,
   lookupOverride,
+  resolveBuiltInLabel,
   resolveBuiltInRegistrationVisibility,
+  resolveBuiltInRequired,
   resolveBuiltInVisibility,
   resolveCustomRegistrationVisibility,
   fieldHasOverride,
@@ -48,12 +50,18 @@ export interface FormConfigurationFieldItem {
   registrationConfigurable: boolean;
   displayOrder: number;
   fieldId?: string;
+  defaultLabel?: string;
+  defaultRequired?: boolean;
+  /** Mandatory switch can be changed (configurable built-ins). */
+  requiredConfigurable?: boolean;
 }
 
 export interface FieldOverrideMaps {
   visibility: Map<string, boolean>;
   registration: Map<string, boolean>;
   order: Map<string, number>;
+  required?: Map<string, boolean>;
+  label?: Map<string, string>;
 }
 
 export interface FormConfigurationSection {
@@ -184,9 +192,38 @@ export class FormConfigurationService {
       for (const alias of field.aliases ?? []) {
         await this.repository.deleteOverride(companyId, resolvedEntity, alias);
       }
+
+      if (row.isRequired !== undefined || row.label !== undefined) {
+        await this.saveFieldSettings(companyId, resolvedEntity, field, row, overrides);
+      }
     }
 
     return this.getConfiguration(companyId, resolvedEntity);
+  }
+
+  /** Mandatory flag (configurable fields only) and label; values equal to the default are not stored. */
+  private async saveFieldSettings(
+    companyId: string,
+    entityType: CustomFieldEntityType,
+    field: BuiltInFieldDefinition,
+    row: { isRequired?: boolean; label?: string | null },
+    overrides: FieldOverrideMaps,
+  ) {
+    if (row.isRequired !== undefined && !field.configurable && row.isRequired !== field.required) {
+      throw new BusinessException(
+        `${field.label} is a protected field; its mandatory setting cannot change.`,
+        HttpStatus.BAD_REQUEST,
+        [{ field: 'isRequired', message: `${field.label} is a protected field` }],
+        'PROTECTED_FIELD_REQUIRED_LOCKED',
+      );
+    }
+    const currentRequired = overrides.required?.get(field.fieldKey) ?? null;
+    const isRequired =
+      row.isRequired === undefined ? currentRequired : row.isRequired === field.required ? null : row.isRequired;
+    const currentLabel = overrides.label?.get(field.fieldKey) ?? null;
+    const nextLabel = row.label === undefined ? currentLabel : row.label?.trim() || null;
+    const label = nextLabel && nextLabel !== field.label ? nextLabel : null;
+    await this.repository.saveFieldSettings(companyId, entityType, field.fieldKey, { isRequired, label });
   }
 
   /** Each listed section must be a full permutation of its built-in + custom fields. */
@@ -301,14 +338,18 @@ export class FormConfigurationService {
     const visibility = new Map<string, boolean>();
     const registration = new Map<string, boolean>();
     const order = new Map<string, number>();
+    const required = new Map<string, boolean>();
+    const label = new Map<string, string>();
     for (const row of rows) {
       if (typeof row.isVisible === 'boolean') visibility.set(row.fieldKey, row.isVisible);
       if (typeof row.isRegistrationVisible === 'boolean') {
         registration.set(row.fieldKey, row.isRegistrationVisible);
       }
       if (typeof row.displayOrder === 'number') order.set(row.fieldKey, row.displayOrder);
+      if (typeof row.isRequired === 'boolean') required.set(row.fieldKey, row.isRequired);
+      if (typeof row.label === 'string' && row.label) label.set(row.fieldKey, row.label);
     }
-    return { visibility, registration, order };
+    return { visibility, registration, order, required, label };
   }
 
   async loadOverrideMap(companyId: string, entityType: CustomFieldEntityType) {
@@ -319,13 +360,13 @@ export class FormConfigurationService {
     const visible = resolveBuiltInVisibility(field, overrides.visibility);
     return {
       key: field.fieldKey,
-      label: field.label,
+      label: resolveBuiltInLabel(field, overrides.label),
       fieldType: field.fieldType,
       sectionKey: field.sectionKey,
       apiKey: getBuiltInApiKey(field),
       source: 'BUILT_IN' as const,
       visible,
-      required: field.required,
+      required: resolveBuiltInRequired(field, visible, overrides.required),
       configurable: field.configurable,
       ...this.registrationState(field, overrides),
       storage: field.storage,
@@ -367,22 +408,30 @@ export class FormConfigurationService {
     });
 
     const items: FormConfigurationFieldItem[] = [
-      ...registry.map((field) => ({
-        fieldKey: field.fieldKey,
-        label: field.label,
-        sectionKey: field.sectionKey,
-        fieldType: field.fieldType,
-        apiKey: getBuiltInApiKey(field),
-        visible: resolveBuiltInVisibility(field, overrides.visibility),
-        required: field.required,
-        configurable: field.configurable,
-        source: 'BUILT_IN' as const,
-        hasOverride:
-          fieldHasOverride(field, overrides.visibility) ||
-          fieldHasOverride(field, overrides.registration),
-        ...this.registrationState(field, overrides, isRegistrationTab(field.sectionKey)),
-        displayOrder: orders.get(fieldOrderKey('BUILT_IN', field.fieldKey)) ?? 0,
-      })),
+      ...registry.map((field) => {
+        const visible = resolveBuiltInVisibility(field, overrides.visibility);
+        return {
+          fieldKey: field.fieldKey,
+          label: resolveBuiltInLabel(field, overrides.label),
+          defaultLabel: field.label,
+          sectionKey: field.sectionKey,
+          fieldType: field.fieldType,
+          apiKey: getBuiltInApiKey(field),
+          visible,
+          required: resolveBuiltInRequired(field, visible, overrides.required),
+          defaultRequired: field.required,
+          requiredConfigurable: field.configurable,
+          configurable: field.configurable,
+          source: 'BUILT_IN' as const,
+          hasOverride:
+            fieldHasOverride(field, overrides.visibility) ||
+            fieldHasOverride(field, overrides.registration) ||
+            fieldHasOverride(field, overrides.required ?? new Map()) ||
+            Boolean(overrides.label?.has(field.fieldKey)),
+          ...this.registrationState(field, overrides, isRegistrationTab(field.sectionKey)),
+          displayOrder: orders.get(fieldOrderKey('BUILT_IN', field.fieldKey)) ?? 0,
+        };
+      }),
       ...customDefs.map((def) => {
         const sectionKey = customFieldSectionKey(def);
         const tabOn = isRegistrationTab(sectionKey);

@@ -1,0 +1,547 @@
+SALES QUOTATION - BACKEND PLAN (v3, global SaaS)
+=================================================
+Source : Sales_Quotation_LLD_UI_Design.pdf (v1.0 draft) + review notes
+Pair   : docs/SALES-QUOTATION-FRONTEND-PLAN.txt (FE side of the same phases;
+         v3 section 13 lists the 7 backend additions folded into this plan)
+Scope  : Sales Quotation only. Sales Order, BOM, stock reservation and
+         invoicing are out of scope.
+Status : Phase 0 + Phase 1 BUILT (DEV only, 2026-10-29). Phase 2/4/7 pending.
+
+Tags:  [REQUIRED] before go-live   [LATER] after go-live
+       [IF ANA]   only if ANA confirms
+
+
+0a. BUILT SO FAR (2026-10-29, migration 20261029120000_sales_quotation_masters,
+    applied on DEV Erp_test_db only - LIVE needs explicit approval)
+--------------------------------------------------------------------------
+DB (prisma + handwritten SQL):
+- companies: country_code, region_code, locale, fiscal_year_start_month,
+  prices_include_tax, rounding_mode (HALF_UP/HALF_EVEN/DOWN), rounding_stage
+  (LINE/DOCUMENT), default_paper_size, default_document_language,
+  exchange_rate_source, tax_provider_code, default_quotation_validity_days
+  (FE addition #1; default 30, CHECK 1-365).
+- company_tax_identifiers: generic id_type/id_label/id_value/region_code,
+  UNIQUE(company_id, id_type, id_value).
+- customers + customer_tax_identifiers + customer_addresses (BILL_TO/SHIP_TO,
+  region + region_code + country_code) + customer_contacts. Soft delete,
+  row_version, UNIQUE(company_id, customer_code).
+- payment_terms: code/name/days, soft delete, UNIQUE(company_id, code).
+- number series: enum values CUSTOMER + SALES_QUOTATION + FISCAL_YEAR reset,
+  pattern VARCHAR(60) on configs, number_series_counters with period_key
+  ('' / '2026' / '2026-27'), UNIQUE(config_id, period_key). ITEM untouched.
+- idempotency_keys: UNIQUE(company_id, idempotency_key, endpoint) (table only;
+  interceptor comes with Phase 4 actions).
+
+Code:
+- DocumentNumberService (number-series module): atomic INSERT..ON CONFLICT..
+  RETURNING counter reserve + previewNext; pattern tokens {PREFIX} {FY}
+  {YYYY} {YY} {MM} {SEQ}; defaults CUSTOMER=CUS+5 NEVER, SALES_QUOTATION=
+  QT/{FY}/{SEQ} 4 FISCAL_YEAR; auto-creates config on first use; locks config.
+  Smoke-tested on DEV: QT/2026-27/0001..0003, rollback clean.
+- Number series service/DTO/preview extended: pattern field, FISCAL_YEAR,
+  non-ITEM types forced to segmentSource NONE, counter-based preview
+  (existing GET :documentType/preview reused - FE addition #7).
+- Customers module (src/modules/crm/customers, old scaffold replaced; crm
+  removed from tsconfig excludes; CrmModule registered in app.module):
+  GET list (rows carry primaryTaxType/primaryTaxId/primaryCity - FE addition
+  #2), GET lookup, GET registration-lookup (GSTIN via gstinapi.in; other id
+  types 422 REGISTRATION_LOOKUP_UNSUPPORTED), GET :id, POST (code from
+  CUSTOMER series when omitted), PATCH (rowVersion -> 409 CUSTOMER_CONFLICT;
+  child arrays replace-all), DELETE (soft). Error codes: CUSTOMER_NOT_FOUND,
+  CUSTOMER_CODE_EXISTS, CUSTOMER_TAX_ID_EXISTS, CUSTOMER_CONFLICT.
+- Payment terms module (src/modules/shared/payment-terms): CRUD, in-use guard
+  (PAYMENT_TERM_IN_USE when customers reference it).
+- Permissions: catalogue + aliases for customers:* and sales_quotations:*
+  (module crm; crm:{action} alias like supply-chain) incl.
+  sales_quotations:override_exchange_rate (FE addition #3); payment_terms:*
+  under shared; SECURITY_ORG_SEED_VERSION bumped to 3 so ADMIN roles backfill
+  on next login.
+
+Still open from the FE additions: #4 isExpired on quotation list (Phase 2),
+#5 Idempotency-Key honoured on issue/respond/cancel (Phase 4), #6 item tax
+classifications + tax-codes search (Phase 7), new-quotation defaults endpoint
+(Phase 2; company settings exposure for the new columns also pending).
+
+
+0. CURRENT STATE (checked in code)
+----------------------------------
+- src/modules/sales/quotations : empty (.gitkeep only).
+- src/modules/crm/customers    : old scaffold, excluded in tsconfig.build.json,
+                                 no Prisma model. There is NO customer master.
+- Global route prefix is already api/v1 (main.ts setGlobalPrefix). Controllers
+  stay companies/:companyId/... (do NOT add another /v1).
+- Company table already has: timezone (default UTC), default_currency_id
+  (= base currency), country / state as free text, single tax_number.
+- Currency table already has decimal_places (default 2).
+- Number Series: prefix + segment + serial, separator NONE / HYPHEN / SLASH,
+  reset NEVER / YEARLY, one lastNumber per line (no period key).
+  Only doc type ITEM. ANA LIVE part numbers run on it.
+- No idempotency handling and no server-side translation exist today.
+- Reuse: Item, UOM, Currency, Branch, Number Series generator, audit
+  (withAuditList), custom fields, form configuration, tab access, vendor
+  attachments pattern, GSTIN lookup service, resolveOrderBy tieBreaker,
+  BusinessException codes.
+
+
+1. GLOBAL SAAS PRINCIPLES  [REQUIRED]
+-------------------------------------
+  1. Country-specific behaviour sits behind an INTERFACE or a SETTING.
+     No country columns on core tables (pan, gstin, state_code) and no
+     if (country === 'IN') branches in quotation code.
+  2. Core tables hold generic data (tax identifiers, region, postal code,
+     tax breakdown). Country rules live in providers and settings.
+  3. Money precision comes from currency.decimal_places, never a hard-coded 2.
+  4. Store UTC timestamps. valid_until is a company-local DATE, read in the
+     company timezone.
+  5. Error codes and enum values are English and fixed in DB and API.
+     FE turns codes into text. Server-side translation is [LATER].
+  6. India GST is the first TaxProvider, not the design.
+
+
+2. RULES  [REQUIRED]
+--------------------
+- Server calculates totals, status and permissions. Ignore client totals.
+- Prisma Decimal for money / qty. No JS float maths.
+- Routes: companies/:companyId/... (global api/v1 prefix) +
+  assertCompanyAccess + RequirePermissions.
+- Sent / Accepted versions read-only. Changes = new revision.
+- No hard delete after issue. Cancel = status + reason.
+- Every PATCH / action takes rowVersion. Stale => 409 ROW_VERSION_CONFLICT.
+- Status actions (issue, response, cancel) are safe to repeat: status check +
+  rowVersion. If the quotation is already in the target status, return it
+  unchanged (no second event).
+- send-email needs an Idempotency-Key header (see 4.8). Same key = first
+  result, no second email.
+- A Sent quotation past valid_until cannot be accepted or issued again.
+  Checked on read and on response, independent of the daily job.
+- Numbers reserved from Number Series inside the same transaction
+  (never count()+1).
+- Multi-row writes (header + lines + status history + audit) in one
+  transaction.
+- Migrations: DEV (Erp_test_db) first, then LIVE (Ana_corporation_db) only
+  with user approval. Every migration has a rollback note (down script or
+  manual steps) and is reviewed before LIVE.
+
+
+3. MINIMUM GO-LIVE (backend)
+----------------------------
+  Phase 0 + Phase 1 required + Phase 2 required + Phase 4 required +
+  Phase 7 (tax provider for the go-live country; India for ANA).
+  Right after: Phase 5 revise, Phase 3 approval [IF ANA].
+  Note: v2 adds Phase 0 and more required items, so go-live takes longer
+  than v1. These are the parts that are hard to change later.
+
+
+4. PHASE 0 - COMPANY SETTINGS  [REQUIRED]
+-----------------------------------------
+4.1 Reuse (already exist, no change)
+    companies.timezone, companies.default_currency_id (base currency),
+    currencies.decimal_places.
+
+4.2 Add to companies
+    country_code   CHAR(2) ISO 3166-1 (keep old free-text country for now)
+    region_code    VARCHAR(10) (state / province code, e.g. India "33" or
+                   "TN"; India GST needs it)
+    locale                    VARCHAR(10)  e.g. en-IN, en-GB
+    fiscal_year_start_month   SMALLINT 1-12 (India 4)
+    prices_include_tax        BOOLEAN default false
+    rounding_mode             HALF_UP / HALF_EVEN / DOWN  default HALF_UP
+    rounding_stage            LINE / DOCUMENT             default DOCUMENT
+    default_paper_size        A4 / LETTER                 default A4
+    default_document_language VARCHAR(10) default en
+    exchange_rate_source      MANUAL / PROVIDER           default MANUAL
+    tax_provider_code         NONE / IN_GST / ...         default NONE
+    Backfill ANA: country_code IN, region_code from state, locale en-IN,
+    fiscal_year_start_month 4, tax_provider_code IN_GST (switch on in Phase 7).
+
+4.3 Company tax identifiers   company_tax_identifiers
+    id, company_id, id_type (GSTIN, PAN, VAT, EIN, ABN, OTHER ...), id_value,
+    country_code, is_primary.
+    Migrate existing companies.tax_number into one row (keep the old column
+    until all readers move).
+
+4.4 Exchange rate on documents: rate, direction (1 foreign = x base),
+    rate_date, source; user may override only with permission.
+
+
+5. PHASE 1 - MASTERS
+--------------------
+5.1 [REQUIRED] Customer master   prisma/crm/customers.prisma
+  customers
+    customer_id BIGINT PK, uuid, company_id FK,
+    customer_code (from Number Series CUSTOMER),
+    name (req), legal_name, customer_type, email, phone (raw, E.164 when
+    possible), website, country_code (ISO alpha-2), currency_id (req),
+    language_code, payment_terms_id, delivery_terms_id,
+    price_list_id (null, later), salesperson_user_id, credit_limit DECIMAL,
+    is_active (req), notes, anonymized_at (null),
+    created_by/at, updated_by/at, deleted_by/at, row_version.
+    UNIQUE (company_id, customer_code) among non-deleted rows.
+  customer_tax_identifiers
+    id, customer_id, id_type (GSTIN, PAN, VAT, EIN, ABN, OTHER ...),
+    id_value, country_code, is_primary, verified_at (null).
+    UNIQUE (customer_id, id_type, id_value).
+  customer_addresses
+    address_id, customer_id, type BILL_TO / SHIP_TO, line1, line2, city,
+    region, region_code, postal_code, country_code (req), is_default.
+    At least one BILL_TO with country_code. Region required only where the
+    country address rule says so (setting, not code).
+  customer_contacts
+    contact_id, customer_id, name, designation, email, phone, is_primary.
+
+  API  companies/:companyId/customers
+    GET    /        list: search (code, name, email, phone, tax id), filters
+                    (isActive, customerType, salesperson, country), sort,
+                    paging, tieBreaker customerId
+    GET    /:id     with addresses + contacts + tax identifiers
+    POST   /        create (addresses, contacts, tax identifiers nested)
+    PATCH  /:id     update (rowVersion)
+    DELETE /:id     soft delete; block if used on a quotation
+    GET    /lookup?search=   light list for selectors (id, code, name,
+                    currency, default terms, default addresses)
+    POST   /registration-lookup   { idType, idValue, country } -> name,
+                    address (RegistrationLookupProvider, India GSTIN first)
+    [LATER] POST /:id/anonymize   privacy erase (GDPR / India DPDP): blank
+                    personal contact data, set anonymized_at; issued
+                    quotations keep their snapshots as legal records.
+  Permissions: customers:view / create / edit / delete (+ anonymize LATER).
+  Remove or replace the old excluded crm/customers scaffold.
+  Error codes: CUSTOMER_NAME_REQUIRED, BILL_TO_REQUIRED, COUNTRY_REQUIRED,
+               REGION_REQUIRED, CUSTOMER_CODE_EXISTS, CUSTOMER_IN_USE,
+               TAX_ID_INVALID, TAX_ID_DUPLICATE.
+
+5.2 [REQUIRED] Payment Terms   payment_terms
+    id, company_id, code, name, days, description, is_active, audit cols.
+    API companies/:companyId/payment-terms (GET list, POST, PATCH, DELETE)
+
+5.3 [LATER] Delivery Terms   delivery_terms
+    id, company_id, code, name, incoterm, description, is_active.
+    Until built: quotation stores delivery terms as text.
+
+5.4 [LATER] T&C Templates   terms_templates
+    id, company_id, name, body, language_code, is_default, is_active.
+    Until built: quotation stores terms_text typed by the user.
+
+5.5 [REQUIRED] Number Series (extend, do not rewrite)
+    - Keep the ITEM generator exactly as it is (ANA LIVE part numbers).
+    - Add enum values SALES_QUOTATION and CUSTOMER
+      (migration on number_series_document_type).
+    - Add optional column pattern VARCHAR(60) on number_series_configs,
+      used only by new doc types. Tokens: {PREFIX} {FY} {YYYY} {MM} {SEQ}.
+      Example quotation: {PREFIX}/{FY}/{SEQ} -> QT/2026-27/0001.
+    - Add reset value FISCAL_YEAR (uses companies.fiscal_year_start_month).
+    - New table number_series_counters
+        id, number_series_config_id, company_id, period_key
+        ('' for NEVER, '2026' for YEARLY, '2026-27' for FISCAL_YEAR),
+        last_number, updated_at.
+        UNIQUE (number_series_config_id, period_key).
+      Each new period starts at start_from; old numbers are never reused.
+    - Generator for pattern series: lock / upsert the counter row in the
+      same transaction (same race-safe approach as the item generator).
+    - Scope: company (default); branch scope [LATER].
+    ANA defaults: quotations QT/2026-27/0001 reset FISCAL_YEAR;
+                  customers CUS00001 reset NEVER.
+
+5.6 [REQUIRED] Permissions seed
+    customers:view/create/edit/delete
+    sales_quotations:view/create/edit/delete/duplicate/submit/approve/
+    issue/cancel/revise/view_margin
+
+5.7 [REQUIRED] Provider interfaces (country-specific logic)
+    RegistrationLookupProvider: lookup(idType, idValue, country) -> name,
+      address. India GSTIN lookup (existing service) is the first one.
+    TaxProvider: see Phase 2 and Phase 7.
+    AddressRule (setting per country): which address fields are required
+      (India: region required).
+
+5.8 [REQUIRED] Idempotency table   idempotency_keys
+    id, company_id, user_id, idempotency_key, endpoint, request_hash,
+    response_status, response_body JSON, created_at, expires_at.
+    UNIQUE (company_id, idempotency_key, endpoint).
+    Used by send-email now; any later action can reuse it.
+    Same key + different request body => 422 IDEMPOTENCY_KEY_REUSED.
+
+
+6. PHASE 2 - QUOTATION DRAFT + PRICING (tax = 0 until Phase 7)
+--------------------------------------------------------------
+6.1 [REQUIRED] Tables   prisma/sales/quotations.prisma
+  Create ALL columns now (also for LATER features) so no table change later.
+
+  sales_quotations   (one row per version)
+    quotation_id, uuid, company_id, branch_id (null, FK branches),
+    quotation_no, version_no, root_quotation_id, previous_version_id,
+    is_current_version,
+    quotation_date (req), valid_until (req), customer_id (req), contact_id,
+    customer_reference, salesperson_user_id, currency_id (req),
+    exchange_rate, exchange_rate_date, exchange_rate_source,
+    document_language_code,
+    prices_include_tax, rounding_mode, rounding_stage
+      (copied from company settings at creation),
+    payment_terms_id, delivery_terms_id, delivery_terms_text,
+    bill_to_snapshot JSON, ship_to_snapshot JSON, customer_name_snapshot,
+    customer_tax_ids_snapshot JSON,
+    customer_notes, internal_notes, terms_text,
+    status, approval_status,
+    subtotal, line_discount_total, document_discount_percent,
+    document_discount_amount, charges_total, tax_total,
+    tax_breakdown JSON   -- [{ name, rate, taxable_base, amount }]
+    rounding_adjustment, grand_total, grand_total_base (in base currency),
+    cost_total, margin_amount, margin_percent,
+    source_type, source_id, lost_reason, revision_reason,
+    issued_at, issued_by, accepted_at, accepted_by_name,
+    rejected_at, cancelled_at, cancel_reason,
+    created_by/at, updated_by/at, deleted_at, row_version.
+    (No legal_entity_id until a legal entity table exists.)
+    UNIQUE (company_id, quotation_no, version_no).
+    INDEX (company_id, status), (company_id, customer_id),
+          (company_id, valid_until), (company_id, quotation_date),
+          (company_id, salesperson_user_id).
+    Search on customer_name_snapshot: ILIKE now; trigram index [LATER].
+
+  sales_quotation_lines
+    line_id, quotation_id, line_no, line_type ITEM / SECTION / TEXT / OPTIONAL,
+    item_id, item_code_snapshot, description_snapshot, customer_part_no,
+    quantity DECIMAL(19,6), uom_id, unit_price DECIMAL(19,6),
+    discount_percent DECIMAL(9,4), discount_amount, line_gross, line_net,
+    tax_code_id (null now), tax_percent (0 now), tax_amount (0 now),
+    tax_breakdown JSON (null now), tax_class_snapshot (null now),
+    unit_cost, line_cost, requested_delivery_date, remarks,
+    converted_qty (future), created_at, updated_at.
+
+  sales_quotation_charges   [LATER use, table now]
+    charge_id, quotation_id, charge_type FREIGHT / PACKING / INSURANCE / OTHER,
+    description, amount, tax_code_id (null).
+
+  sales_quotation_status_history
+    id, quotation_id, from_status, to_status, actor_id, reason, created_at.
+
+  sales_quotation_attachments   [IF ANA] (likely needed: drawings,
+    datasheets). Same pattern as vendor attachments. Confirm before go-live.
+
+  Enums: sales_quotation_status (DRAFT, PENDING_APPROVAL, APPROVED, SENT,
+         ACCEPTED, REJECTED, REVISED, EXPIRED, CANCELLED), line type,
+         charge type. Enum columns must use the schema's own enum types
+         (LIVE 42804 lesson).
+
+  Note: tax_breakdown as JSON is fine for quotations. Sales invoices later
+  must use a real tax lines table (GST returns need to query it).
+
+6.2 Services
+  [REQUIRED] QuotationPricingService (pure functions, Decimal)
+    Uses currency.decimal_places and the quotation's rounding_mode /
+    rounding_stage. No hard-coded 2.
+    line_gross = qty x unit_price
+    discount_amount = line_gross x discount_percent / 100
+    line_net = line_gross - discount_amount
+    document discount allocated by line_net
+    charges added            [LATER]
+    tax = TaxProvider.calculate(...), honours prices_include_tax
+          (inclusive: take tax out of the price; exclusive: add on top)
+    rounding_adjustment, grand_total, grand_total_base
+    cost / margin            [LATER] (columns exist)
+    SECTION / TEXT / OPTIONAL lines are not counted in totals.
+  [REQUIRED] TaxProvider interface
+      calculate(lines, company, customer, addresses, pricesIncludeTax)
+      -> per-line tax + tax_breakdown + header tax_total
+    NoTaxProvider now. IndiaGstProvider in Phase 7. More countries = new
+    providers, no schema change.
+  [REQUIRED] QuotationsService: create, update, get, list, validate,
+    duplicate, delete draft.
+    On create: reserve number, version 1, copy company settings (rounding,
+    tax inclusive, language), snapshot customer name / tax ids / addresses /
+    item code + description.
+
+6.3 [REQUIRED] API   companies/:companyId/sales/quotations
+    GET    /                  list: search (no, customer, reference), filters
+                              (status, customer, salesperson, date range),
+                              sort, paging, tieBreaker quotationId,
+                              only current versions by default
+    GET    /:id               header + lines + charges + totals +
+                              tax_breakdown + isExpired + allowedActions
+    POST   /                  create draft -> number, version 1, totals
+    PATCH  /:id               update draft (rowVersion), recalc totals
+    POST   /:id/validate      errors + warnings + approval trigger, no save
+    POST   /:id/duplicate     new draft, new number
+    DELETE /:id               Draft only, never issued
+    POST   /preview-totals    totals for unsaved payload (FE live totals)
+  Every response returns server totals + rowVersion + allowedActions[]
+  + currency decimal_places (FE formats with it).
+
+6.4 [REQUIRED] Validation error codes
+    CUSTOMER_REQUIRED, CUSTOMER_INACTIVE, CURRENCY_REQUIRED, LINES_REQUIRED,
+    ITEM_INVALID, QTY_MUST_BE_POSITIVE, UOM_INVALID, PRICE_NEGATIVE,
+    DISCOUNT_OUT_OF_RANGE, VALID_UNTIL_BEFORE_DATE, EXCHANGE_RATE_INVALID,
+    QUOTATION_LOCKED, INVALID_STATUS_TRANSITION, ROW_VERSION_CONFLICT (409).
+    Field errors as { field: "lines[0].quantity", code, message }.
+    message is English; FE shows its own text by code.
+
+6.5 [LATER] Margin fields (unit_cost, line_cost, cost_total, margin_*)
+    returned only with sales_quotations:view_margin.
+
+
+7. PHASE 3 - APPROVAL  [IF ANA]
+-------------------------------
+  If not needed: submit moves Draft -> Approved directly.
+  Table sales_quotation_approvals
+    id, quotation_id, version_no, trigger_reasons JSON, approver_id,
+    decision APPROVED / RETURNED / REJECTED, comment, decided_at.
+  Rule (start fixed): approval when max line discount % > 10.
+  [LATER] quotation_approval_rules per company: max line discount %,
+    document discount %, grand total limit (base currency), min margin %,
+    approver roles.
+  API
+    POST /:id/submit          Draft -> Pending Approval (or Approved)
+    POST /:id/approve         Pending -> Approved
+    POST /:id/return          Pending -> Draft (comment required)
+    POST /:id/reject          Pending -> Rejected (comment required)
+    GET  /approvals/pending   queue for current user
+  Approver cannot approve own quote (configurable). Admin is not an automatic
+  approver. Error codes: APPROVAL_NOT_ALLOWED, COMMENT_REQUIRED.
+  OPEN DECISION: is Rejected final or back to Draft? Default final.
+
+
+8. PHASE 4 - ISSUE / PDF / RESPONSE / CANCEL / EXPIRY
+-----------------------------------------------------
+  [REQUIRED] PDF from saved data, company template:
+    logo, address, company tax identifiers, customer, bill-to / ship-to,
+    number + version, date, valid until, lines, totals, tax_breakdown,
+    terms, customer notes, legal text. Never print internal notes or margin.
+    Paper size A4 / Letter; dates, numbers and money formatted by company
+    locale and currency decimal_places; tax disclosures from the TaxProvider.
+    [LATER] template per language.
+  [REQUIRED] GET  /:id/pdf              preview / download
+  [REQUIRED] POST /:id/issue            Approved -> Sent; issued_at,
+                                        issued_by; lock version. Repeat on
+                                        a Sent quote returns it unchanged.
+  [REQUIRED] POST /:id/response         ACCEPTED / REJECTED (+ lost_reason) /
+                                        REVISION_REQUESTED; exact version;
+                                        blocked if expired
+  [REQUIRED] POST /:id/cancel           reason required; from Draft /
+                                        Approved / Sent
+  [LATER]    POST /:id/send-email       PDF by email (reuse SMTP), logged;
+                                        Idempotency-Key required
+  [LATER]    POST /:id/extend-validity  new valid_until (may need approval)
+  [REQUIRED] Expiry check on read / response (isExpired in responses).
+  [LATER]    Daily job: Sent + valid_until passed -> Expired, per company
+             timezone, safe to re-run.
+  [LATER]    Expiry reminder notification.
+  Error codes: NOT_APPROVED, QUOTATION_EXPIRED, REASON_REQUIRED,
+               IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED.
+
+
+9. PHASE 5 - REVISIONS / HISTORY / REPORTS
+------------------------------------------
+  [REQUIRED soon after go-live]
+    POST /:id/revise      copy to new row, version_no + 1, same quotation_no,
+                          old row is_current_version = false (read-only),
+                          revision_reason required
+    GET  /:id/versions    all versions
+  [LATER] GET /:id/compare?with=   line / total differences
+  [LATER] GET /:id/activity        status history + audit + approvals + emails
+  [LATER] Reports: open quotations, expired / lost with reasons, approval
+          ageing, win rate by salesperson / customer. Amounts also in base
+          currency (grand_total_base).
+
+
+10. PHASE 6 - EXTRAS  [LATER]
+-----------------------------
+  - Price lists + quantity breaks; auto-fill unit_price on line.
+  - Stock + lead time on line (read current stock, info only).
+  - CRM lead / opportunity link (source_type / source_id), win / loss data.
+  - Machinery / BOM costing (company feature flag). For ANA the quoted item
+    is the finished machine (FG item, e.g. Zeta 700); machine items must
+    exist in the item master first.
+  - Branch scope for number series and branch selection on the quotation.
+  - Legal entity support (new table, then column on quotations).
+  - Server-side translated messages and PDF templates per language.
+
+
+11. PHASE 7 - TAX PROVIDERS  [REQUIRED for the go-live country]
+---------------------------------------------------------------
+  Generic part (all countries):
+    tax_codes: id, company_id, country_code, scheme (GST, VAT, SALES_TAX ...),
+      code, name, rate, effective_from, effective_to.
+    item_tax_classifications: item_id, country_code, scheme_code
+      (HSN / SAC / HS / commodity), code, tax_code_id, effective_from.
+      (No hsn_sac_code column on the item.)
+    Lines fill tax_code_id, tax_percent, tax_amount, tax_breakdown.
+    Header returns tax_breakdown [{ name, rate, base, amount }].
+  India (IndiaGstProvider, tax_provider_code = IN_GST):
+    - tax_codes loaded from the official GST portal HSN/SAC Excel
+      (no outside package / API at runtime).
+    - Company state = companies.region_code (Phase 0); place of supply =
+      customer ship-to (else bill-to) region_code.
+    - CGST + SGST same state, IGST other state, rupee round-off, Decimal.
+    - Breakdown names: CGST, SGST, IGST.
+  Other countries later: new provider + tax_codes data only.
+  No quotation table change (columns exist from Phase 2).
+
+
+12. STATUS FLOW (server enforced)
+---------------------------------
+  DRAFT --submit--> PENDING_APPROVAL --approve--> APPROVED --issue--> SENT
+  DRAFT --submit (no approval)--> APPROVED
+  PENDING_APPROVAL --return--> DRAFT
+  PENDING_APPROVAL --reject--> REJECTED
+  SENT --accept--> ACCEPTED
+  SENT --reject--> REJECTED (lost_reason)
+  SENT --revision requested--> REVISED (old) + new DRAFT version
+  SENT --valid_until passed--> EXPIRED
+  DRAFT / APPROVED / SENT --cancel--> CANCELLED
+
+
+13. DEFAULTS (change if ANA decides otherwise)
+----------------------------------------------
+  Quotation number QT/2026-27/0001 (slash, fiscal-year reset); customer code
+  CUS00001; approval only if ANA wants it (default rule discount > 10%);
+  approval reject is final; priced lines need an item; validity 30 days;
+  prices exclusive of tax; tax 0 until Phase 7.
+
+
+14. TESTS (unit + e2e)
+----------------------
+  Phase 0: currency with 0 / 2 / 3 decimals rounds correctly; fiscal year
+           start month changes the quotation number period.
+  Phase 1: missing name / bill-to / country blocked; duplicate code blocked;
+           list paging returns every row once; ITEM part numbers unchanged
+           after the number series change; FY rollover starts at 0001
+           without reusing old numbers.
+  Phase 2: totals exact (Decimal); qty 0 / bad item / no customer blocked;
+           stale rowVersion -> 409; concurrent creates get unique numbers;
+           non-ITEM lines not in totals; cross-company access denied;
+           tax-inclusive vs exclusive give the correct grand total.
+  Phase 3: rule hit -> Pending; non-approver blocked; return needs comment.
+  Phase 4: issue blocked before approval; repeated issue returns the same
+           Sent quote with one status event; send-email with the same
+           Idempotency-Key sends once; PDF has no internal notes; expired
+           Sent quote cannot be accepted even if the daily job has not run;
+           cancel needs reason.
+  Phase 5: revise keeps old version unchanged; sent / accepted not editable.
+  Phase 7: same state CGST + SGST; other state IGST; round-off; old quote
+           keeps old rate after a rate change; a stub VAT provider works
+           with no quotation table change.
+
+
+15. BUILD ORDER (backend)
+-------------------------
+  0  Phase 0 company settings + company tax ids                REQUIRED
+  1  Phase 1 customers, payment terms, provider interfaces,
+     number series extension, idempotency table, permissions   REQUIRED
+  2  Phase 2 tables, pricing, CRUD, validation                 REQUIRED
+  3  Phase 4 PDF, issue, response, cancel, expiry check        REQUIRED
+  4  Phase 7 tax provider for the go-live country (India GST)  REQUIRED
+     ---- GO-LIVE ----
+  5  Phase 5 revise + versions                                 REQUIRED soon after
+  6  Phase 3 approval                                          IF ANA
+  7  LATER items, Phase 6 extras, more tax providers           LATER
+  Each step: hand the API list + error codes to FE before FE starts that step.
+
+
+16. OPEN QUESTIONS FOR ANA
+--------------------------
+  1. Approval needed? Is Rejected final?
+  2. Customer codes from Number Series (default yes, CUS00001)?
+  3. Attachments needed on quotations (drawings, datasheets)?
+  4. Branch-wise quotation numbers, or one series for the company?
+  5. Prices tax-inclusive or exclusive (default exclusive)?
+  6. Quotation number format QT/2026-27/0001 and fiscal-year reset OK?

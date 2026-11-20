@@ -1,4 +1,9 @@
-import { PERMISSIONS, SUPPLY_CHAIN_RESOURCES } from '@/common/constants/permissions.constant';
+import {
+  CRM_RESOURCES,
+  MANUFACTURING_RESOURCES,
+  PERMISSIONS,
+  SUPPLY_CHAIN_RESOURCES,
+} from '@/common/constants/permissions.constant';
 import { ENTITLEMENT_ERROR_CODES } from '@/common/constants/entitlement.constants';
 import {
   ADMIN_MODULE_CODES,
@@ -65,6 +70,11 @@ const PERMISSION_CODE_ALIASES: Record<string, string[]> = {
   'users:create': ['platform_companies:edit', 'companies:edit'],
   'users:edit': ['platform_companies:edit', 'companies:edit'],
   'users:delete': ['platform_companies:edit', 'companies:edit'],
+  // Employee master used to sit on users:* ; keep those roles working
+  'employees:view': ['users:view'],
+  'employees:create': ['users:create'],
+  'employees:edit': ['users:edit'],
+  'employees:delete': ['users:delete'],
   'roles:view': ['platform_companies:view', 'companies:view'],
   'user_audit:view': ['platform_companies:view', 'companies:view', 'user_audit:view'],
   // Legacy module-level supply-chain:* still satisfies resource checks until roles migrate
@@ -73,6 +83,21 @@ const PERMISSION_CODE_ALIASES: Record<string, string[]> = {
       SUPPLY_CHAIN_RESOURCES.map((r) => [`${r.resource}:${action}`, [`supply-chain:${action}`]]),
     ),
   ),
+  // Module-level crm:* satisfies CRM resource checks (customers, sales_quotations)
+  ...Object.fromEntries(
+    PHASE1_PERMISSION_ACTIONS.flatMap((action) =>
+      CRM_RESOURCES.map((r) => [`${r.resource}:${action}`, [`crm:${action}`]]),
+    ),
+  ),
+  // Module-level manufacturing:* satisfies BOM resource checks
+  ...Object.fromEntries(
+    PHASE1_PERMISSION_ACTIONS.flatMap((action) =>
+      MANUFACTURING_RESOURCES.map((r) => [`${r.resource}:${action}`, [`manufacturing:${action}`]]),
+    ),
+  ),
+  'boms:release': ['manufacturing:approve'],
+  'boms:revise': ['manufacturing:edit'],
+  'boms:obsolete': ['manufacturing:approve'],
 };
 
 /** Legacy ERP API codes → resource-level catalogue codes (Supply Chain split). */

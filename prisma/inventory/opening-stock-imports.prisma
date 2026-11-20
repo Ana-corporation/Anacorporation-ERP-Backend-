@@ -1,0 +1,98 @@
+// inventory | opening stock import (Excel/CSV → review → approve → items + posted opening stock)
+
+/// One uploaded file. Nothing is created or posted until APPROVED; approve runs in one transaction
+/// (new items through Item Master create, then one posted Opening Stock document).
+model OpeningStockImportBatch {
+  batchId      BigInt                    @id @default(autoincrement()) @map("batch_id")
+  companyId    BigInt                    @map("company_id")
+  fileName     String                    @map("file_name") @db.VarChar(255)
+  /// sha256 of the file; a file already approved is flagged on upload
+  fileHash     String                    @map("file_hash") @db.VarChar(64)
+  status       OpeningStockImportStatus  @default(DRAFT)
+  documentDate DateTime                  @map("document_date") @db.Date
+  totalRows    Int                       @default(0) @map("total_rows")
+  matchedRows  Int                       @default(0) @map("matched_rows")
+  newRows      Int                       @default(0) @map("new_rows")
+  errorRows    Int                       @default(0) @map("error_rows")
+  totalValue   Decimal                   @default(0) @map("total_value") @db.Decimal(20, 6)
+  /// Posted Opening Stock document created by approve
+  documentId   BigInt?                   @map("document_id")
+  errorMessage String?                   @map("error_message") @db.Text
+  createdBy    BigInt?                   @map("created_by")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime?                 @map("updated_at")
+  approvedBy   BigInt?                   @map("approved_by")
+  approvedAt   DateTime?                 @map("approved_at")
+
+  company  Company                  @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  document InventoryDocument?       @relation(fields: [documentId], references: [documentId], onDelete: SetNull)
+  rows     OpeningStockImportRow[]
+
+  @@index([companyId, createdAt])
+  @@index([companyId, fileHash])
+  @@map("opening_stock_import_batches")
+}
+
+/// One file row: raw values, what they resolved to, match result and errors.
+/// Part Code / Material Grade / Size / Machine Model / Machine No / Category are reference only.
+model OpeningStockImportRow {
+  rowId            BigInt                  @id @default(autoincrement()) @map("row_id")
+  batchId          BigInt                  @map("batch_id")
+  companyId        BigInt                  @map("company_id")
+  rowNo            Int                     @map("row_no")
+  rawData          Json                    @map("raw_data")
+
+  storeText        String?                 @map("store_text") @db.VarChar(100)
+  storeCategoryId  BigInt?                 @map("store_category_id")
+  partNumber       String?                 @map("part_number") @db.VarChar(50)
+  partName         String?                 @map("part_name") @db.VarChar(255)
+  partCode         String?                 @map("part_code") @db.VarChar(80)
+  materialGrade    String?                 @map("material_grade") @db.VarChar(80)
+  size             String?                 @db.VarChar(80)
+  uomText          String?                 @map("uom_text") @db.VarChar(40)
+  uomId            BigInt?                 @map("uom_id")
+  statusText       String?                 @map("status_text") @db.VarChar(20)
+  locationCode     String?                 @map("location_code") @db.VarChar(80)
+  warehouseId      BigInt?                 @map("warehouse_id")
+  storageBinId     BigInt?                 @map("storage_bin_id")
+  quantity         Decimal?                @db.Decimal(18, 6)
+  unitPrice        Decimal?                @map("unit_price") @db.Decimal(18, 6)
+  revision         String?                 @db.VarChar(40)
+  machineModel     String?                 @map("machine_model") @db.VarChar(120)
+  machineNo        String?                 @map("machine_no") @db.VarChar(120)
+  category         String?                 @db.VarChar(120)
+  binText          String?                 @map("bin_text") @db.VarChar(40)
+  /// Sub Contractor Store rows: Vendor Code as typed, the vendor, and the Sub Contractor Store
+  vendorText         String?               @map("vendor_text") @db.VarChar(40)
+  vendorId           BigInt?               @map("vendor_id")
+  subcontractStoreId BigInt?               @map("subcontract_store_id")
+  batchNo          String?                 @map("batch_no") @db.VarChar(60)
+  serialNo         String?                 @map("serial_no") @db.VarChar(80)
+  remarks          String?                 @db.VarChar(255)
+  /// NEW rows: user confirmed the item may be created (legacy; import no longer creates items)
+  newItemConfirmed Boolean                 @default(false) @map("new_item_confirmed")
+  /// Matched zero-price rows: user confirmed zero valuation on the review screen
+  zeroPriceConfirmed Boolean               @default(false) @map("zero_price_confirmed")
+  /// Left out of the approve by the user
+  excluded         Boolean                 @default(false)
+  /// NEW rows: existing items with a similar name [{ itemId, itemCode, name, score }]
+  similarItems     Json?                   @map("similar_items")
+
+  matchStatus      OpeningStockImportMatch @default(ERROR) @map("match_status")
+  matchedItemId    BigInt?                 @map("matched_item_id")
+  /// Items the row could match when ambiguous (user picks one)
+  candidateItemIds Json?                   @map("candidate_item_ids")
+  itemGroupId      BigInt?                 @map("item_group_id")
+  /// [{ field, message }]
+  errorMessages    Json                    @default("[]") @map("error_messages")
+  /// Item created for a NEW row on approve
+  createdItemId    BigInt?                 @map("created_item_id")
+  updatedAt        DateTime?               @map("updated_at")
+
+  batch OpeningStockImportBatch @relation(fields: [batchId], references: [batchId], onDelete: Cascade)
+
+  @@unique([batchId, rowNo])
+  @@index([batchId, matchStatus])
+  @@index([companyId, partCode])
+  @@map("opening_stock_import_rows")
+}

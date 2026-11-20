@@ -1,0 +1,145 @@
+MACHINE MASTER + CUSTOMISED MACHINE - FE HANDOFF
+================================================
+Date   : 2026-11-04
+Status : Backend DONE on DEV (Erp_test_db) and LIVE DB (Ana_corporation_db).
+         Frontend screens already built in C:\ERP-Frontend (uncommitted) -
+         review / polish only.
+Plans  : docs/MACHINE-MASTER-BACKEND-PLAN.txt, docs/MACHINE-MASTER-FRONTEND-PLAN.txt
+Base   : /api/v1/companies/:companyId   (all IDs / codes are strings)
+
+
+1. IDEA IN ONE PARAGRAPH
+------------------------
+A machine (BS500, ZETA700) is its own master record, linked 1:1 to an item
+(created automatically in the "Machines" category MAC, e.g. ANAMAC00001).
+The BOM "Machine *" field picks from machines only. For a customer order,
+"Create customised machine" on BS500 with sales order SO00045 makes
+BS500-SO00045 + its item + a CUSTOMER BOM draft copied from BS500's
+released standard BOM.
+
+
+2. PERMISSIONS
+--------------
+  machines:view / create / edit / delete   (role catalogue, seed version 6 -
+                                            users get them after re-login)
+  Customised machine needs machines:create AND boms:create.
+  allowedActions on list / detail rows:
+    edit, delete, createVariant (BASE + ACTIVE), createBom (BASE)
+
+
+3. ENDPOINTS
+------------
+GET  /machine-settings                         machines:view
+     -> { configured, settings: { itemGroupId, uomId, itemGroup {..}, uom {..} } | null }
+PUT  /machine-settings                         machines:edit
+     body { itemGroupId, uomId }
+
+GET  /machines                                 machines:view
+     query: page, limit, search (code, name, series, SO no, part no),
+            status (active|inactive), type (BASE|ORDER), baseMachineId,
+            customerId, sortBy, sortOrder
+     row: machineId, machineCode, name, series, model, machineType, status,
+          salesOrderNo, item {itemId, itemCode, oldCode, inventoryUom},
+          baseMachine {machineId, machineCode}, customer {..},
+          variantCount, currentBom {bomId, bomNumber, version, status} | null,
+          allowedActions, rowVersion, audit fields
+
+GET  /machines/lookup?search=&type=&limit=20   machines:view
+     BOM Machine dropdown. ACTIVE machines only.
+     -> { items: [{ machineId, machineCode, name, machineType, salesOrderNo,
+                    baseMachineCode, itemId, itemCode, oldCode, uom,
+                    currentBom }] }
+
+POST /machines                                 machines:create
+     body { machineCode*, name*, series, model, description, remarks,
+            linkItemId }   linkItemId = attach an existing item instead
+                           of creating one (used once for BS500)
+     -> machine detail (same as GET /machines/:id)
+
+GET    /machines/:id                           machines:view
+       detail: row fields + item {.., storeCategory, itemGroupRef},
+       baseMachine, customer, variants [..], boms [{bomId, bomNumber,
+       version, status, bomScope, bomType, isCurrentVersion}],
+       allowedActions
+PATCH  /machines/:id                           machines:edit
+       body { rowVersion*, name, series, model, description, remarks,
+              status ACTIVE|INACTIVE }   code + type never change;
+       name / status are copied to the linked item
+DELETE /machines/:id                           machines:delete
+       blocked (MACHINE_IN_USE) when it has BOMs or customised machines
+
+GET  /machines/:id/variants                    machines:view   (list shape)
+POST /machines/:id/variants                    machines:create + boms:create
+     header Idempotency-Key* (8-80 chars, new key per confirm click)
+     body { salesOrderNo* "SO00045", customerId, remarks }
+     -> new machine detail + createdBom { bomId, bomNumber, version }
+        -> open the BOM editor on createdBom.bomId
+
+
+4. BOM CHANGES
+--------------
+  POST /boms  accepts machineId (backend maps it to the machine's item);
+              parentItemId still works.
+  BOM detail: machine { machineId, machineCode, name, machineType,
+              salesOrderNo, baseMachineId, baseMachineCode } | null,
+              customer {..} | null, baseBom { bomId, bomNumber, version } | null
+  BOM list row: machine block + bomScope (STANDARD | CUSTOMER).
+  A customised machine's BOM is made only by the variant endpoint; creating
+  it directly -> MACHINE_VARIANT_BOM_VIA_VARIANT.
+  GET /items/lookup: excludeMachines=true (component pickers),
+                     onlyMachines=true.
+
+
+5. ERROR CODES
+--------------
+  MACHINE_NOT_FOUND (404)        MACHINE_CODE_EXISTS (409)
+  MACHINE_CODE_INVALID           A-Z, 0-9, "-" up to 40, e.g. BS500
+  MACHINE_SETTINGS_MISSING       ask admin to set Machine settings
+  MACHINE_IN_USE (409)           has BOMs / customised machines
+  SALES_ORDER_NO_INVALID         SO + 5 digits
+  VARIANT_EXISTS (409)           BS500-SO00045 already exists - open it
+  BASE_BOM_NOT_RELEASED (409)    release the base machine's BOM first
+  VARIANT_OF_VARIANT             only base machines can be customised
+  ITEM_ALREADY_LINKED (409)      item belongs to another machine
+  ITEM_NOT_FOUND / CUSTOMER_NOT_FOUND (404)
+  ROW_VERSION_CONFLICT (409)     changed by someone else - reload
+  IDEMPOTENCY_KEY_REQUIRED / _REUSED / _INVALID
+
+
+6. FRONTEND FILES (built)
+-------------------------
+  New:  src/lib/api/machines-api.ts
+        src/components/machine-picker/machine-picker.tsx
+        src/app/dashboard/manufacturing/machines/{page, new/page, [id]/page}.tsx
+        src/sections/manufacturing/machines/machine-list-view.tsx
+        src/sections/manufacturing/machines/machine-form-view.tsx
+        src/sections/manufacturing/machines/machine-settings-dialog.tsx
+        src/sections/manufacturing/machines/machine-variant-dialog.tsx
+  Changed: paths.ts, config-navigation.ts, module-access-guard.tsx,
+        unwrap.ts (MACHINE_* texts), items-api.ts (excludeMachines),
+        boms-api.ts (machine / customer / baseBom), bom-form.ts (machineId),
+        bom-editor-view.tsx (MachinePicker, ?machineId= prefill, subtitle),
+        bom-list-view.tsx (machine code + Customised chip, machine filter),
+        bom-line-dialog.tsx (excludeMachines), bom/new + bom/[id] pages
+        (Suspense for useSearchParams)
+  Not built yet: machine image upload.
+
+
+7. ANA DATA
+-----------
+  DEV : MAC category, series line, settings, BS500 -> ANAMAC00001 (done)
+  LIVE: done - migration applied, BS500 linked to the existing ANAASSY00012
+        (BOM00001 stays attached).
+  BOM00001 must be RELEASED before BS500 can be customised.
+
+
+8. QA
+-----
+  [ ] Machines menu visible with machines:view (re-login after deploy)
+  [ ] Create ZETA700 -> linked item ANAMAC0000x shown
+  [ ] BOM Machine dropdown lists machines only
+  [ ] Add MAIN / sub-material pickers do not list machines
+  [ ] Machine page "Create BOM" -> new BOM with the machine filled in
+  [ ] BS500 -> Customise SO00045 -> BS500-SO00045 + BOM draft (same groups)
+  [ ] Same SO again -> VARIANT_EXISTS; double click -> one variant
+  [ ] Delete a machine that has a BOM -> MACHINE_IN_USE

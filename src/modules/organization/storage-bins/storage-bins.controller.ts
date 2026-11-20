@@ -2,10 +2,14 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
-import { BulkCreateStorageBinsDto, CreateStorageBinDto, UpdateStorageBinDto } from './dto/storage-bin.dto';
+import {
+  BulkCreateStorageBinsDto,
+  CreateStorageBinDto,
+  StorageBinListQueryDto,
+  UpdateStorageBinDto,
+} from './dto/storage-bin.dto';
 import { StorageBinsService } from './storage-bins.service';
 
 @ApiTags('Storage Bins')
@@ -16,10 +20,14 @@ export class StorageBinsController {
 
   @Get()
   @RequirePermissions('warehouses:view')
-  @ApiOperation({ summary: 'List storage bins (Phase 1A — reuses warehouses:view)' })
+  @ApiOperation({
+    summary: 'List storage bins (Phase 1A — reuses warehouses:view)',
+    description:
+      'Filter by inventoryLocationId. limit max 500 (default 20). sortBy=binCode uses natural order (A1-01…A1-200).',
+  })
   findAll(
     @Param('companyId') companyId: string,
-    @Query() query: PaginationQueryDto,
+    @Query() query: StorageBinListQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     assertCompanyAccess(companyId, user);

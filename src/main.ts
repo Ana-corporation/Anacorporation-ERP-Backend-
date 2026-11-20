@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import { AppModule } from './app.module';
@@ -24,10 +25,13 @@ async function bootstrap() {
 
   logger.log('Creating Nest application');
   const createStarted = Date.now();
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: new SimpleLogger(),
   });
   logger.log(`Nest application created (${Date.now() - createStarted}ms)`);
+
+  // Default 100 KB is too small for 3,000-line inventory documents.
+  app.useBodyParser('json', { limit: '5mb' });
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const cookieParserMod = require('cookie-parser') as { default?: () => unknown } & (() => unknown);

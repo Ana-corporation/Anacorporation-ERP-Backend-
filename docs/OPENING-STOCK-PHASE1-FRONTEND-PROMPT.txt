@@ -1,0 +1,185 @@
+OPENING STOCK - PHASE 1 ENHANCEMENT - FRONTEND PROMPT
+====================================================
+Repo   : C:\ERP-Frontend (Next.js 16 App Router + React 18 + MUI 5 + Redux)
+Pair   : docs/OPENING-STOCK-PHASE1-BACKEND-PROMPT.txt (API, rules, error codes)
+Rule   : Keep the existing look and screen structure. Backend is the source
+         of truth for every rule and total; the UI only helps the user.
+         Nothing company-specific (no "ANA", no hard-coded categories).
+
+
+1. FILES TO CHANGE
+------------------
+  src/sections/inventory/stock/inventory-doc-view.tsx
+      shared by Opening Stock / Material Issue / Stock Adjustment.
+      New fields + layout apply to OPENING_STOCK only; the other two
+      screens must look and work exactly as today.
+  src/sections/inventory/stock/inventory-doc-list-view.tsx   (totals column)
+  src/sections/inventory/stock/add-items-from-store-dialog.tsx (fills Store)
+  src/sections/inventory/stock/stock-shared.tsx               (Item Type tag)
+  src/sections/inventory/stock/current-stock-view.tsx         ("At vendor")
+  src/sections/inventory/opening-import/opening-import-view.tsx
+  src/sections/inventory/opening-import/opening-import-review.tsx
+  src/sections/inventory/opening-import/opening-import-row-dialog.tsx
+  src/lib/api/inventory-api.ts              (new line/header fields, attachments)
+  src/lib/api/opening-stock-import-api.ts   (confirm-new, exclude, new row fields)
+  src/lib/api/unwrap.ts                     (error texts, section 6)
+  Inventory Location form (Inventory Setup -> locations)  (Vendor picker)
+
+
+2. NEW OPENING STOCK SCREEN
+---------------------------
+2.1 Header
+  Document No      read-only (auto on first save)
+  Opening Stock Date *
+  Status           read-only chip Draft / Posted
+  Store            optional default store (location picker)
+  Remarks
+  Attachments      upload / list / open / delete (delete only in Draft)
+
+  Header Store behaviour:
+  - Changing it fills Store on every line the user has not changed by hand
+    (track a per-line "storeTouched" flag). Clears those lines' Bin.
+  - Add Items From a Store and Add Line start with the header Store.
+
+2.2 Line grid - always visible columns (no horizontal scroll on desktop)
+  #  | Part Number * | Item Type | Store * | Qty * | Unit Price | Line Total | [More v] | [x]
+  - Part Name and UOM: second line under Part Number (read-only, from
+    Item Master).
+  - Item Type: coloured tag from the item's category code (RM, SF, FF,
+    BRG, FST ...). Colour comes from a small map with a default colour for
+    any other code - never a fixed list of allowed codes.
+  - Line Total = Qty x Unit Price (display only; backend recalculates).
+  - Changing Store clears Bin.
+
+2.3 "More fields" (expand per line)
+  Site / Branch
+  Storage Bin       (required when the store uses bins; list only bins of
+                     that store, active only)
+  Batch / Heat / Lot No.   (required when item manage_by = batch)
+  Serial No.               (required when item manage_by = serial; Qty = 1)
+  Revision                 (free text)
+  Line Remarks
+  Show a small dot on the "More" button when a required field inside is
+  empty or has an error, so the user sees it without opening every row.
+  Vendor locations: when the selected Store has a vendor, show
+  "At vendor: <name>" under the Store (read-only).
+
+2.4 Zero price
+  Unit Price empty / 0 -> amber warning on the line with a checkbox
+  "Zero value confirmed" (sends zeroPriceConfirmed = true). Without it the
+  backend rejects with OPENING_STOCK_ZERO_PRICE.
+
+2.5 Footer (sticky)
+  Total Lines | Total Quantity | Total Stock Value
+  Show the values returned by the backend after save; while editing show
+  the local sum marked "(not saved)".
+
+2.6 Buttons
+  Cancel | Save Draft | Save & Post
+  Save & Post = save (POST / PUT) then POST :id/post, after a confirmation
+  dialog:
+    Document No, Opening Stock Date, Total Lines, Total Quantity,
+    Total Stock Value, zero-price lines count
+    Warning: "This document will update inventory stock and cannot be
+    edited after posting. Please verify all quantities and values before
+    continuing."
+    [Cancel] [Post]
+  Disable the Post button while the request runs (no double click).
+
+2.7 Posted document
+  Everything read-only (even with edit permission). Attachments: view +
+  upload allowed, delete not. Show Posted By / Posted At, Created By /
+  Edited By, and "Imported from <file name>" with link to the import batch
+  when the document came from Excel.
+
+2.8 Permissions (from the session, same helper as today)
+  view: opening_stock:view; New / Save Draft: create / edit;
+  Delete draft: delete; Post / Save & Post / confirm zero price: approve.
+
+
+3. EXCEL IMPORT SCREENS
+-----------------------
+3.1 Upload (opening-import-view)
+  Download template (new columns + Instructions sheet from backend).
+  Show the location rule under the button:
+    "Store (Location Code) = location code only. Bin = bin code in that
+     location."
+
+3.2 Review (opening-import-review) - tabs with counts
+  Matched | New Item | Error | Excluded
+  Matched: read-only rows; Part Name / UOM / Item Type from Item Master.
+  New Item:
+    - Category (must be an allowed category - backend returns the list)
+    - Similar items warning: "Looks like ANARM00012 END SHAFT TOP (85%)"
+      with buttons [Use this item] (row becomes Matched) / [Keep new]
+    - Checkbox per row "Create this item" + bulk "Confirm all new items"
+      -> POST rows/confirm-new
+    - Exclude / include row -> POST rows/exclude
+  Error: reason per column, Download error report (Row, Part Number,
+    Column, Error, Suggested correction).
+  Header strip: file name, rows, matched, new (confirmed / total), errors,
+    total value.
+
+3.3 Approve
+  Enabled only when canApprove (no unconfirmed New rows). Confirmation
+  dialog: rows to post, new items to create, total quantity, total value,
+  zero-price rows (checkbox to confirm -> confirmZeroPrice). After success
+  open the posted Opening Stock document.
+
+
+4. OTHER SCREENS
+----------------
+  Inventory Location form: optional Vendor (active vendors only). Help
+    text: "Use for stock kept at a sub-contractor. Stock stays company-owned."
+  Current Stock: show "At vendor: <name>" for vendor locations; Vendor
+    filter (vendorId).
+  Opening Stock list: add Total Qty and Total Value columns.
+
+
+5. API (see backend prompt for full rules)
+------------------------------------------
+  Opening stock body adds:
+    header: defaultWarehouseId
+    line  : batchNo, serialNo, revision, remarks, zeroPriceConfirmed
+  Response adds: totalLines, totalQuantity, totalValue, line.lineTotal,
+    attachments[], importBatch, item.manageBy, item category code.
+  New endpoints:
+    POST/GET/DELETE /inventory/opening-stock/:id/attachments[...]
+    POST /inventory/opening-stock-imports/:id/rows/confirm-new
+    POST /inventory/opening-stock-imports/:id/rows/exclude
+  Approve body: { confirmZeroPrice }
+
+
+6. ERROR TEXTS (unwrap.ts)
+--------------------------
+  OPENING_STOCK_ZERO_PRICE          Unit price is 0 - tick "Zero value confirmed".
+  OPENING_STOCK_ALREADY_EXISTS      Opening stock already posted for this item and
+                                    location (doc {no}). Use Stock Adjustment.
+  TRANSACTION_BEFORE_OPENING_STOCK  Date is before the opening stock date ({date}).
+  BATCH_REQUIRED                    Batch / Heat / Lot No. is required for this item.
+  SERIAL_REQUIRED                   Serial No. is required for this item.
+  SERIAL_QTY_ONE                    Serial items must have quantity 1.
+  SERIAL_DUPLICATE                  This serial number already exists.
+  VENDOR_INACTIVE                   The vendor of this location is inactive.
+  OPENING_IMPORT_NEW_NOT_CONFIRMED  Confirm or exclude all new items first.
+  OPENING_IMPORT_CATEGORY_NOT_ALLOWED  New items are not allowed in this category.
+  OPENING_IMPORT_CATEGORY_MISMATCH  Category Code does not match the item.
+  Show field errors on the exact line / field (errors[].field = lines[i].x).
+
+
+7. QA CHECKLIST
+---------------
+  [ ] Material Issue and Stock Adjustment screens unchanged
+  [ ] Header Store fills untouched lines; changing a line Store clears Bin
+  [ ] Unit Price and Line Total visible without horizontal scroll (1366px)
+  [ ] Item Type tag shows for every line
+  [ ] Bin store: no bin -> error on the line; More shows the red dot
+  [ ] Zero price needs the confirm tick
+  [ ] Footer totals match backend after save
+  [ ] Save & Post shows summary + warning; double click posts once
+  [ ] Posted document read-only; attachments viewable
+  [ ] Import: wrong category = Error; SF / FF new row = Error;
+      nothing created before Approve; Approve disabled until new rows
+      confirmed; error report downloads
+  [ ] Vendor location shows "At vendor" in grid and Current Stock
+  [ ] Typecheck + lint clean; existing tests pass

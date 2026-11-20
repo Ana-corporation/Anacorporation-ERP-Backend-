@@ -1,0 +1,155 @@
+================================================================================
+FE HANDOFF — CATEGORY-BASED PART NUMBERS (Category Master)
+Date: 23-Oct-2026   Backend: ERP-Backend, branch development-anc
+Changes on top of: FE-HANDOFF-NUMBER-SERIES.txt, FE-HANDOFF-ITEM-MASTER-OPENING-IMPORT.txt
+================================================================================
+
+0) IN ONE MINUTE
+--------------------------------------------------------------------------------
+  Part number was   ANA + STORE code    + serial   → ANABO00001
+  Part number is    ANA + CATEGORY code + serial   → ANABRG00001 (Bearings), ANABLT00001 (Belts),
+                                                     ANARM00001 (Raw Materials), ANAASSY00001 ...
+  - Category master = the existing Item Group master + a Category Code (2-4 letters) +
+    Description (examples / scope). Each category belongs to one Store.
+  - Number Series "Segment source" now has: Category (Item Group) | Store | None.
+    ANA uses Category. Every category has its own counter.
+  - Item form: Store → Category (filtered by Store) → Part Number ... Both mandatory.
+    After the first save Store and Category are locked.
+  - Opening Stock import: new column "Category Code" (BRG, PLY ...). Store comes from it.
+  - Other companies: nothing changes unless their admin picks "Category" in Number Series.
+
+
+1) CATEGORY MASTER SCREEN (Item Groups API — same routes as before)
+--------------------------------------------------------------------------------
+  Menu label for ANA: "Category Master". Columns: Store | Category Code | Category | Examples / Scope
+    | Items | Active.
+  GET /api/v1/companies/:companyId/item-groups?storeCategoryId=&includeInactive=
+    new keys per row:
+      categoryCode            "BRG" | null
+      description             "Ball bearings, roller bearings" | null
+      effectiveCategoryCode   own code, or the nearest parent's (sub-groups) — use it in pickers
+      codeLocked              true = part numbers already use this code → make the code read-only
+  POST  { name, storeCategoryId, categoryCode?, description?, parentId?, sortOrder?, isActive? }
+  PATCH /:id { name?, categoryCode?, description?, sortOrder?, isActive?, parentId? }
+    categoryCode: 2-4 letters, sent in any case (backend uppercases); "" or null = no code.
+  Errors:
+    ITEM_GROUP_CODE_EXISTS   409  another category already uses the code (unique per company)
+    ITEM_GROUP_CODE_LOCKED   400  code used by part numbers — cannot change / remove
+    ITEM_GROUP_CODE_INVALID  400  not 2-4 letters
+  Sub-groups (optional): a sub-group without a code numbers with its parent's code
+  ("Ball Bearings" under Bearings → ANABRG...). Show effectiveCategoryCode in grey.
+  Saving a code also creates / updates the category's line in Number Series (no extra call).
+
+
+2) NUMBER SERIES SETTINGS
+--------------------------------------------------------------------------------
+  Segment source dropdown: "Category (Item Group)" = ITEM_GROUP | "Store" = STORE | "None" = NONE
+  (ITEM_GROUP is no longer rejected.)
+  GET /number-series/ITEM with segmentSource = ITEM_GROUP:
+    lines = one row per category that has a code:
+      { numberSeriesLineId, segmentRefId (= itemGroupId), segmentName (category),
+        storeCategoryId, storeName, segmentCode (= category code, READ-ONLY here),
+        startFrom, serialLength, lastNumber, isLocked, nextNumber }
+    Table columns: Category | Store | Segment Code | Start From | Serial Length | Last Number Used
+    Live preview: "Next number for Bearings: ANABRG00001" (line.nextNumber or
+      GET /number-series/ITEM/preview?segmentRefId=<itemGroupId>).
+  PUT /number-series/ITEM  lines: [{ segmentRefId: <itemGroupId>, startFrom?, serialLength? }]
+    segmentCode is ignored (edit it in the Category master). Lines for coded categories not
+    sent are created with defaults. Switching source (only while unlocked) rebuilds the lines.
+  Locks (unchanged rules): after the first number → prefix, segment source, separator, serial
+    length and the category codes are locked; Start From can only go up, above Last Number Used.
+  New field on every line (all sources): storeCategoryId, storeName.
+
+
+3) ITEM FORM
+--------------------------------------------------------------------------------
+  ANA order (from form-schema): Store* → Category* → Part Number → Part Name* → Inventory Item
+    | Inventory UOM* → Status | Remarks | Attachments.
+  The Category field (fieldKey itemGroupId, now in the header section) — options:
+    GET /item-groups/tree?storeCategoryId=<store>   (show "BRG — Bearings")
+  Changing Store clears Category. Part Number shows "Auto-generated on save" and, after a
+  Category is picked, optionally the preview (number_series:view; ignore 403).
+  After first save: Store and Category read-only, tooltip "Part number is based on the category".
+  Errors:
+    ITEM_STORE_REQUIRED       400  storeCategoryId
+    ITEM_CATEGORY_REQUIRED    400  itemGroupId (Category-based series)
+    ITEM_GROUP_STORE_MISMATCH 400  category of another store
+    NUMBER_SERIES_NOT_CONFIGURED 400 field itemGroupId — category has no code / no series line
+    ITEM_CATEGORY_LOCKED      400  category change after first save
+    ITEM_STORE_LOCKED         400  store change after first save
+
+
+4) OPENING STOCK IMPORT
+--------------------------------------------------------------------------------
+  Template columns: Store, Category Code, Part Number, Part Name, ... (Category Code is new).
+  Category-based companies: "Category Code" column is required; Store is optional (if filled it
+  must match the category's store).
+  New items get Store + Category from the code, so the "Set Item Group" step is not needed
+  (newRowsWithoutGroup stays 0). Rows show data.categoryCode and itemGroupId.
+  Row errors (field categoryCode): unknown code, category inactive, code missing on a new item,
+  category without a Number Series line. Valid rows still post. Approve = one transaction.
+
+
+5) STATUS (23-Oct-2026)
+--------------------------------------------------------------------------------
+  DEV  (Erp_test_db): migrated; ANA has 25 categories (Standard Category Master sheet 1),
+       store codes BO ES FF GS OS RM SF (+ new Semi-Finished Store), series = Category, 5 digits.
+  LIVE (Ana_corporation_db) — DONE 23-Oct 14:40:
+       migration 20261023100000_item_group_category_code applied (all migrations up to date,
+       every enum column in Ana_corporation_db's own schema);
+       stores RM SP FF BO ES GS OS + new Semi-Finished Store (SF);
+       25 categories with codes; series ANA / Category / no separator / 5 digits, 25 lines;
+       ANA item form: Store → Category → Part Number → Part Name → Inventory Item | UOM → Status;
+       UOMs NOS KG MTR LTR SET PAIR. Local backend (3002, LIVE) restarted.
+       Check: generated in a rolled-back transaction → ANABRG00001, ANABRG00002 (counter still 0,
+       so the first real Bearings item gets ANABRG00001).
+  Cloud Run: not deployed yet (backend code not pushed).
+  No API change since the 23-Oct handoff.
+
+
+6) UPDATE 26-Oct — ELECTRICAL MATERIAL MASTER + 3 NEW CATEGORIES (data only)
+--------------------------------------------------------------------------------
+  No API / contract change. New data the screens will show for ANA (company 28):
+
+  6.1 New categories 23-Oct (DEV + LIVE)
+      LBL Labels and Stickers, RMT Rubber Mats (Bought-Out), PNT Paints (Oil Store).
+      (LBL then moved to Electrical Store, see 6.2.)
+
+  6.2 Electrical Material Master (sheet "Material_Category_Master-Electrical - 23.10.2026")
+      Categories — all in Electrical Store (ES), each with its own 5-digit counter:
+        new:     ELC Electrical Control & Panel Components   MOT Electric Motors
+                 GBX Gearboxes & Gear Drives                  SNS Sensors & Temperature Sensing
+                 ELD Spark / Welding Electrodes               HTR Industrial Heating Elements
+                 CBL Electrical Wires & Cables                PNE Pneumatic Components & Fittings
+                 TUB Tubes, Hoses & Flexible Pipes            CAX Cable Accessories & Terminations
+                 MCH Machine / Assembly Parts
+        moved + renamed (were unused):
+                 LBL  Labels and Stickers (Bought-Out)  → Machine Labels & Stickers (Electrical)
+                 PNL  Panels (Fully Finished)           → Panel Hardware & Ventilation Accessories
+                 TLS  Tools (Bought-Out)                → Tooling Sleeves & Accessories
+                 MEC  Mechanical Keys (Bought-Out)      → General Mechanical / Machine Components
+        Category description = the sheet's "Material Type" (e.g. Bought-Out Electrical Component).
+        MOT (Electrical) and MTR Motors (Bought-Out), ELC and ELT Electrical Components both exist.
+      Items — 370 (371 rows, "POUCH MAIN STICKER" listed twice → created once):
+        Store = Electrical Store, Category = sheet code, UOM = NOS, Status = Active,
+        Inventory item = yes. Part numbers in sheet order, e.g.
+          VFD - 1PH-1HP → ANAELC00001 … ANAELC00123
+          FLANGE MOTOR-0.5HP/0.37KW → ANAMOT00001
+          ELC 123 · PNE 66 · HTR 36 · PNL 24 · CBL 24 · LBL 24 · ELD 19 · CAX 17 · SNS 10 ·
+          TUB 10 · TLS 6 · MOT 5 · GBX 3 · MCH 2 · MEC 1
+        The next new item in a category continues the counter (e.g. ANAELC00124).
+
+  6.3 What to check on the screens
+      [ ] Category Master: Electrical Store lists the 15 categories above; codes of categories
+          with items show codeLocked = true (read-only code).
+      [ ] Number Series (Category): new lines with Last Number Used = item count
+          (ELC 123 → next ANAELC00124).
+      [ ] Item list: filter Store = Electrical Store / Category = ELC → 123 items.
+      [ ] Cables (CBL) are NOS; change UOM per item if they should be MTR.
+
+  6.4 Status
+      DEV:  done.
+      LIVE: done 26-Oct 12:45 — 15 categories, 370 items (ANAELC00001 …), re-run finds nothing new.
+      Same process for other stores: scripts/import-ana-material-master.ts (sheet columns
+      Sl. No. | Part Name | Category Code | Material Category | Material Type).
+================================================================================

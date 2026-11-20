@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Opening Stock — index → expand (bin / serial) UI mock</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222c;
+      --panel2: #232d3a;
+      --line: #2e3a48;
+      --text: #e8eef4;
+      --muted: #8b9aab;
+      --accent: #3d8bfd;
+      --ok: #3ecf8e;
+      --warn: #e6a23c;
+      --bad: #f07178;
+      --input: #121820;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.45;
+    }
+    h1 { font-size: 1.2rem; margin: 0 0 6px; font-weight: 600; }
+    .sub { color: var(--muted); font-size: 0.85rem; margin: 0 0 20px; max-width: 920px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 18px;
+      margin-bottom: 16px;
+      max-width: 980px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.68rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #243044;
+      color: var(--accent);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .tag.ok { color: var(--ok); background: #1a2e26; }
+    .tag.bad { color: var(--bad); background: #2e1a1c; }
+    .rule {
+      font-size: 0.82rem;
+      color: var(--muted);
+      border-left: 3px solid var(--accent);
+      padding: 8px 12px;
+      background: var(--panel2);
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 14px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 500;
+      padding: 8px 8px;
+      border-bottom: 1px solid var(--line);
+    }
+    td {
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    .index-row {
+      cursor: pointer;
+      background: var(--panel2);
+    }
+    .index-row:hover { background: #2a3545; }
+    .index-row td { border-bottom-color: transparent; }
+    .part { font-weight: 600; }
+    .part span { display: block; font-weight: 400; color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip {
+      background: var(--input);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 0.72rem;
+      color: #b8c9dc;
+    }
+    .qty { color: var(--ok); font-weight: 600; font-size: 0.95rem; }
+    .hint { color: var(--muted); font-size: 0.72rem; }
+    .chev {
+      display: inline-block;
+      transition: transform 0.15s;
+      color: var(--accent);
+      margin-right: 6px;
+    }
+    .index-row.open .chev { transform: rotate(90deg); }
+    .detail {
+      display: none;
+      background: var(--bg);
+    }
+    .detail.show { display: table-row; }
+    .detail td { padding: 0 8px 12px; border-bottom: 1px solid var(--line); }
+    .detail-inner {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 0 0 4px 22px;
+    }
+    .detail-inner table { font-size: 0.8rem; }
+    .detail-inner th { background: #15202b; }
+    .detail-inner td { border-bottom: 1px solid var(--line); }
+    .detail-inner tr:last-child td { border-bottom: 0; }
+    .note {
+      margin-top: 10px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .note strong { color: var(--text); }
+    .strike { text-decoration: line-through; opacity: 0.7; }
+    ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 0.82rem; }
+    code { font-size: 0.78rem; color: #9ecbff; }
+  </style>
+</head>
+<body>
+  <h1>Opening Stock UI mock — index, then click for bin + serial list</h1>
+  <p class="sub">
+    What we agreed: <strong>save as separate lines</strong> (one bin / qty each).
+    FE may show a <strong>summary index row</strong>; click expands the same part’s lines (bin + serial).
+    This file is a mock only — open in browser.
+  </p>
+
+  <!-- ========== CORRECT ========== -->
+  <div class="card">
+    <div class="tag ok">Recommended — FE index + expand</div>
+    <div class="rule">
+      <strong>BE truth:</strong> 5 Opening Stock lines (same part, different bins).<br />
+      <strong>FE index:</strong> one row with total qty + bin chips.<br />
+      <strong>Click:</strong> list of that component with bin, qty, serial (or remarks).
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36%"></th>
+          <th>Store</th>
+          <th>Bins (summary)</th>
+          <th>Total qty</th>
+          <th>Serials (summary)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- INDEX ROW -->
+        <tr class="index-row" id="indexRow" onclick="toggleDetail()">
+          <td>
+            <span class="chev">▶</span>
+            <span class="part">
+              ANAELC00010
+              <span>SERVO DRIVE · NOS</span>
+            </span>
+            <div class="hint" style="margin-top:4px;margin-left:22px">Click row to show / hide line detail</div>
+          </td>
+          <td>ELS-001 — Electrical</td>
+          <td>
+            <div class="chips">
+              <span class="chip">A1-01</span>
+              <span class="chip">A1-02</span>
+              <span class="chip">A1-03</span>
+              <span class="chip">A1-04</span>
+              <span class="chip">A1-05</span>
+            </div>
+          </td>
+          <td><span class="qty">10</span></td>
+          <td>
+            <div class="chips">
+              <span class="chip">123</span>
+              <span class="chip">234</span>
+              <span class="chip">456</span>
+              <span class="chip">567</span>
+              <span class="chip">891</span>
+            </div>
+            <div class="hint">from line serial / remarks — not stock balances</div>
+          </td>
+        </tr>
+
+        <!-- DETAIL (expanded) -->
+        <tr class="detail" id="detailRow">
+          <td colspan="5">
+            <div class="detail-inner">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Part</th>
+                    <th>Bin</th>
+                    <th>Qty</th>
+                    <th>Serial No.</th>
+                    <th>Line remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>1</td>
+                    <td>ANAELC00010</td>
+                    <td>A1-01</td>
+                    <td>2</td>
+                    <td>123</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td>2</td>
+                    <td>ANAELC00010</td>
+                    <td>A1-02</td>
+                    <td>2</td>
+                    <td>234</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td>3</td>
+                    <td>ANAELC00010</td>
+                    <td>A1-03</td>
+                    <td>2</td>
+                    <td>456</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td>4</td>
+                    <td>ANAELC00010</td>
+                    <td>A1-04</td>
+                    <td>2</td>
+                    <td>567</td>
+                    <td></td>
+                  </tr>
+                  <tr>
+                    <td>5</td>
+                    <td>ANAELC00010</td>
+                    <td>A1-05</td>
+                    <td>2</td>
+                    <td>891</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="note">
+              After <strong>Post</strong>: Item Master ELS-001 <code>qtyOnHand = 10</code>.
+              Current Stock = 5 bin rows × 2. Serials stay on the document only (Phase 1).
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== WRONG ========== -->
+  <div class="card">
+    <div class="tag bad">Not possible as one BE line</div>
+    <div class="rule" style="border-color: var(--bad)">
+      Do <strong>not</strong> save one line like this and expect click to invent bin/serial stock.
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Part</th>
+          <th>Store</th>
+          <th>Bin</th>
+          <th>Qty</th>
+          <th>Serial</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <span class="part">ANAELC00010<span>SERVO DRIVE · NOS</span></span>
+          </td>
+          <td>ELS-001</td>
+          <td class="strike">A1-01,,,,,,</td>
+          <td>10</td>
+          <td class="strike">SN 123, 234, …</td>
+        </tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>BE allows <strong>one</strong> <code>storageBinId</code> and <strong>one</strong> <code>serialNo</code> string per line</li>
+      <li>Comma lists are text only — no expand to real stock rows</li>
+    </ul>
+  </div>
+
+  <!-- ========== RULES ========== -->
+  <div class="card">
+    <div class="tag">What this mock is saying</div>
+    <ul>
+      <li><strong>Index row</strong> = FE grouping of the same part (total qty + bin/serial chips)</li>
+      <li><strong>Click</strong> = show the underlying OS lines (bin + qty + serial)</li>
+      <li><strong>Entry</strong> = still add line per bin (or qty 1 per serial if you want SN on each line)</li>
+      <li><strong>Part Number click on empty stock</strong> = item search only — not “allocated serial/bin list” from inventory</li>
+    </ul>
+  </div>
+
+  <script>
+    function toggleDetail() {
+      const row = document.getElementById("indexRow");
+      const detail = document.getElementById("detailRow");
+      const open = detail.classList.toggle("show");
+      row.classList.toggle("open", open);
+    }
+    // Start expanded so the idea is obvious
+    toggleDetail();
+  </script>
+</body>
+</html>

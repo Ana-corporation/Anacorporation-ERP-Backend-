@@ -1,0 +1,100 @@
+ANA MACHINERY - PART NUMBER CHANGES (what was done, current state, issues)
+==========================================================================
+Company : ANA_MACHINERY_P_LTD (companyId 28)
+Database: LIVE (Ana_corporation_db) unless marked DEV
+Checked : 11-Nov-2026 (counts below are from LIVE today)
+
+
+1. HOW A PART NUMBER IS MADE
+----------------------------
+  ITEM number series: prefix ANA + category code + 5 digits, no separator.
+  Each category has its own counter:  ANA + RM + 00001 = ANARM00001
+  Old code (old_code) = the drawing / old part number from the BS500 sheet
+  (e.g. BS5017000010). Shown as "Old ..." next to the part number.
+
+
+2. WHAT WAS DONE, IN ORDER
+--------------------------
+  03-Nov  BS500 BOM sheet parts loaded into the Item Master (394 parts)
+          - New part number from the ANA series per category
+            (FST, BRG, PLY, RIN, CMP, BLT, ORG, MEC, ELD, ASSY ...)
+          - Sheet part number kept as Old code
+          - 264 in-house parts (process RM-SF-FF) first went into Plates /
+            Machined / Fabricated / Sheet-metal categories, then - on your
+            instruction - all moved to category RM and renumbered
+            ANARM00001 .. ANARM00264 (same day, nothing used them yet)
+          - 11 assembly rows -> ANAASSY00001 .. ANAASSY00011
+          - Machine row "BS500 MACHINE" (old BS5000000000A1) -> ANAASSY00012
+          - Fields procurementType / materialType / materialCategory set
+  04-Nov  BOM00001 (BS500, DRAFT) created from the sheet: 368 groups,
+          396 lines. Lines point to the part numbers above.
+  04-Nov  Machine master: machine BS500 created and linked to the existing
+          item ANAASSY00012 (no new part number on LIVE).
+          Category MAC (Machines) + its series line created, still empty.
+          DEV only: test machine BS500 made item ANAMAC00001.
+  11-Nov  Machine screens: part number ANAASSY00012 hidden; machine shown
+          only as BS500. Machine item hidden from the Material master list.
+          (Display only - no part number changed.)
+  11-Nov  RM -> SF -> FF stages:
+          - New categories SF "Semi-Finished Parts" (Semi-Finished Store)
+            and FF "Finished Parts" (Finished Goods Store) + series lines
+          - 264 SF items  ANASF00001 .. ANASF00264 (one per RM part)
+          - 238 FF items  ANAFF00001 .. ANAFF00238 (direct parts only;
+            the 26 sub-assembly parts get no FF)
+          - Link: SF -> its RM, FF -> its SF (items.previous_stage_item_id)
+          - New items copy name, old code and unit from the RM item
+          - BOM lines still point to the RM items
+          - BOM screen: MAIN parts show RM -> SF -> FF, SUB parts RM -> SF
+
+
+3. CURRENT STATE (LIVE, 11-Nov)
+-------------------------------
+  Category  Items  Range
+  --------  -----  ----------------------------
+  RM          264  ANARM00001 .. ANARM00264   (raw stage)
+  SF          264  ANASF00001 .. ANASF00264   (semi-finished stage)
+  FF          238  ANAFF00001 .. ANAFF00238   (finished stage)
+  ASSY         12  ANAASSY00001 .. ANAASSY00012 (11 assemblies + BS500 machine)
+  MAC           0  (machine category, unused on LIVE)
+  others          FST 63, BRG 19, PLY 12, RIN 8, CMP 8, BLT 4, ORG 1,
+                  MEC 4, ELC 123, ELD 20, PNE 66, ... (unchanged)
+
+  SF / FF items used anywhere yet: stock 0, stock documents 0, BOM lines 0
+
+
+4. WHAT IS MIXED UP
+-------------------
+4.1 FF numbers do not match the RM / SF numbers   <-- main problem
+    SF follows RM exactly (264 of 264 match).
+    FF does NOT: 227 of 238 differ, because the 26 sub-assembly parts get
+    no FF, so the FF counter falls behind after the first one.
+
+      RM          SF          FF
+      ANARM00011  ANASF00011  ANAFF00011   match
+      ANARM00012  ANASF00012  -            sub-assembly (no FF)
+      ANARM00013  ANASF00013  -            sub-assembly (no FF)
+      ANARM00014  ANASF00014  ANAFF00012   <- should be ANAFF00014
+      ANARM00016  ANASF00016  ANAFF00013   <- should be ANAFF00016
+      ...
+      ANARM00264  ANASF00264  ANAFF00238   <- should be ANAFF00264
+
+4.2 Same old code on 2-3 items
+    RM, SF and FF of one part all carry the same old code
+    (e.g. BS5018030020 on ANARM00012 and ANASF00012). 264 old codes are
+    now shared. Searching by old code returns 2-3 items.
+
+4.3 BS500 machine part number is ANAASSY00012 (ASSY category)
+    Kept on purpose (you chose to keep it in Assemblies). It is hidden on
+    machine screens and the Material master. Not wrong, just a note.
+
+
+5. PROPOSED FIX (not done - needs your OK)
+------------------------------------------
+  Fix 4.1: renumber the 238 FF items so FF number = RM number
+           ANAFF00012 -> ANAFF00014, ... ANAFF00238 -> ANAFF00264.
+           Safe now: FF items are not used anywhere yet (0 stock,
+           0 documents, 0 BOM lines). FF counter set to 264, so numbers
+           ANAFF00012, 00013, 00015 ... (the sub-assembly ones) stay unused.
+  Fix 4.2 (choose one):
+           a) keep the old code on all stages (as now)
+           b) old code only on the RM item; clear it on SF and FF

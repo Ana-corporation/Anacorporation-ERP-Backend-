@@ -1,0 +1,136 @@
+// manufacturing | bill of materials (one header per version, MAIN / SUB lines grouped by Common Key)
+
+/// One row per BOM version. All versions of one BOM share bomNumber and rootBomId.
+/// isCurrentVersion = the RELEASED version in use (a draft revision is false until released).
+/// Partial unique indexes (one released current STANDARD BOM per parent + type; one DRAFT per
+/// root) and CHECK constraints live in the migration SQL - Prisma cannot express them.
+model Bom {
+  bomId             BigInt        @id @default(autoincrement()) @map("bom_id")
+  uuid              String        @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId         BigInt        @map("company_id")
+  bomNumber         String        @map("bom_number") @db.VarChar(40)
+  parentItemId      BigInt        @map("parent_item_id")
+  bomType           BomType       @map("bom_type")
+  bomScope          BomScope      @default(STANDARD) @map("bom_scope")
+  baseQuantity      Decimal       @default(1) @map("base_quantity") @db.Decimal(19, 6)
+  /// Must equal the parent item's inventory UOM (v1).
+  uomId             BigInt        @map("uom_id")
+  version           Int           @default(1)
+  revisionLabel     String?       @map("revision_label") @db.VarChar(10)
+  /// Required when version > 1.
+  revisionReason    String?       @map("revision_reason")
+  rootBomId         BigInt?       @map("root_bom_id")
+  previousVersionId BigInt?       @map("previous_version_id")
+  isCurrentVersion  Boolean       @default(false) @map("is_current_version")
+  /// STANDARD only; no logic yet (alternate BOMs later).
+  isDefault         Boolean       @default(false) @map("is_default")
+  status            BomStatus     @default(DRAFT)
+  effectiveFrom     DateTime?     @map("effective_from") @db.Date
+  effectiveTo       DateTime?     @map("effective_to") @db.Date
+  /// Next Common Key for a new MAIN line; only grows (keys never reused), copied on revision.
+  nextCommonKey     Int           @default(1) @map("next_common_key")
+  sourceType        BomSourceType @default(MANUAL) @map("source_type")
+  sourceId          BigInt?       @map("source_id")
+
+  // Customer variant BOM (later phase; columns only, always null today)
+  baseBomId          BigInt?  @map("base_bom_id")
+  baseVersionNo      Int?     @map("base_version_no")
+  customerId         BigInt?  @map("customer_id")
+  sourceDocumentType String?  @map("source_document_type") @db.VarChar(40)
+  sourceDocumentId   BigInt?  @map("source_document_id")
+  customizationNotes String?  @map("customization_notes")
+
+  remarks        String?   @db.Text
+  releasedAt     DateTime? @map("released_at")
+  releasedBy     BigInt?   @map("released_by")
+  obsoletedAt    DateTime? @map("obsoleted_at")
+  obsoleteReason String?   @map("obsolete_reason")
+  cancelledAt    DateTime? @map("cancelled_at")
+  cancelReason   String?   @map("cancel_reason")
+  createdBy      BigInt?   @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedBy      BigInt?   @map("updated_by")
+  updatedAt      DateTime? @map("updated_at")
+  deletedBy      BigInt?   @map("deleted_by")
+  deletedAt      DateTime? @map("deleted_at")
+  rowVersion     Int       @default(1) @map("row_version")
+
+  company         Company            @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  parentItem      Item               @relation("BomParentItem", fields: [parentItemId], references: [itemId])
+  uom             Uom                @relation("BomUom", fields: [uomId], references: [uomId])
+  rootBom         Bom?               @relation("BomRoot", fields: [rootBomId], references: [bomId])
+  versions        Bom[]              @relation("BomRoot")
+  previousVersion Bom?               @relation("BomPrevious", fields: [previousVersionId], references: [bomId])
+  nextVersions    Bom[]              @relation("BomPrevious")
+  baseBom         Bom?               @relation("BomBase", fields: [baseBomId], references: [bomId])
+  variants        Bom[]              @relation("BomBase")
+  customer        Customer?          @relation(fields: [customerId], references: [customerId])
+  lines           BomLine[]
+  statusHistory   BomStatusHistory[]
+
+  @@unique([companyId, bomNumber, version])
+  @@index([companyId, parentItemId])
+  @@index([companyId, status])
+  @@index([companyId, rootBomId])
+  @@index([companyId, baseBomId])
+  @@map("boms")
+}
+
+/// MAIN: commonKey allocated by the backend, parentLineId null. SUB: copies its MAIN's commonKey,
+/// parentLineId = the MAIN line (same BOM). One MAIN per (bomId, commonKey) and the MAIN / SUB
+/// parent rule are enforced in the migration SQL (partial unique + CHECK).
+model BomLine {
+  bomLineId       BigInt      @id @default(autoincrement()) @map("bom_line_id")
+  companyId       BigInt      @map("company_id")
+  bomId           BigInt      @map("bom_id")
+  lineType        BomLineType @map("line_type")
+  /// Text so keys may later carry letters / leading zeros.
+  commonKey       String      @map("common_key") @db.VarChar(20)
+  parentLineId    BigInt?     @map("parent_line_id")
+  componentItemId BigInt      @map("component_item_id")
+  /// MAIN: per baseQuantity of the parent machine; SUB: per one of its MAIN.
+  quantity        Decimal     @db.Decimal(19, 6)
+  uomId           BigInt      @map("uom_id")
+  lineNumber      Int         @map("line_number")
+  findNumber      String?     @map("find_number") @db.VarChar(20)
+  scrapPercentage Decimal     @default(0) @map("scrap_percentage") @db.Decimal(9, 4)
+  remarks         String?     @db.VarChar(500)
+
+  // Filled at release only (null on drafts)
+  itemCodeSnapshot String? @map("item_code_snapshot") @db.VarChar(50)
+  itemNameSnapshot String? @map("item_name_snapshot") @db.VarChar(255)
+  uomCodeSnapshot  String? @map("uom_code_snapshot") @db.VarChar(20)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @map("updated_at")
+
+  company       Company   @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  bom           Bom       @relation(fields: [bomId], references: [bomId], onDelete: Cascade)
+  parentLine    BomLine?  @relation("BomLineParent", fields: [parentLineId], references: [bomLineId], onDelete: Cascade)
+  subLines      BomLine[] @relation("BomLineParent")
+  componentItem Item      @relation("BomComponentItem", fields: [componentItemId], references: [itemId])
+  uom           Uom       @relation("BomLineUom", fields: [uomId], references: [uomId])
+
+  @@unique([bomId, lineNumber])
+  @@index([companyId, componentItemId])
+  @@index([bomId, parentLineId])
+  @@map("bom_lines")
+}
+
+model BomStatusHistory {
+  bomStatusHistoryId BigInt     @id @default(autoincrement()) @map("bom_status_history_id")
+  companyId          BigInt     @map("company_id")
+  bomId              BigInt     @map("bom_id")
+  fromStatus         BomStatus? @map("from_status")
+  toStatus           BomStatus  @map("to_status")
+  actorId            BigInt?    @map("actor_id")
+  reason             String?
+  idempotencyKey     String?    @map("idempotency_key") @db.VarChar(80)
+  createdAt          DateTime   @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  bom     Bom     @relation(fields: [bomId], references: [bomId], onDelete: Cascade)
+
+  @@index([companyId, bomId])
+  @@map("bom_status_history")
+}

@@ -1,0 +1,81 @@
+================================================================================
+FE HANDOFF — SCROLL LOADING (INFINITE SCROLL) FOR ITEMS + VENDORS
+Date: 26-Oct-2026   Backend: ERP-Backend, branch development-anc
+================================================================================
+
+0) WHAT THE CLIENT WANTS
+--------------------------------------------------------------------------------
+  Today: "1–10 of 370" with Next / Previous.
+  Wanted: one long list; more rows load automatically while scrolling down.
+  No new API — the existing list APIs already do it. One backend fix (section 4).
+
+
+1) APIs (unchanged)
+--------------------------------------------------------------------------------
+  Items    GET /api/v1/companies/:companyId/items?page=&limit=&sortBy=&sortOrder=
+             filters: search, status, storeCategoryId, itemGroupId (incl. sub-groups),
+                      inventoryUomId
+             sortBy: itemCode | description | status | createdAt
+  Vendors  GET /api/v1/companies/:companyId/vendors?page=&limit=&sortBy=&sortOrder=
+             filters: search, isActive, supplierType, cf.<field>, includeCustomFields
+             sortBy: vendorCode | name | supplierType | createdAt
+  Response data: { items: [...], total, page, limit, totalPages }
+  limit: 1..200 per call. Use 50.
+
+
+2) HOW TO BUILD IT
+--------------------------------------------------------------------------------
+  State: rows[], page, total, loading, hasMore = rows.length < total
+  - First load:  page 1, limit 50 → rows = items, total = data.total
+  - Scroll:      a sentinel <div> after the last row + IntersectionObserver
+                 (rootMargin ~300px). When visible and hasMore and !loading →
+                 fetch page + 1 and APPEND items to rows.
+  - Filter / search / sort change → reset rows = [], page = 1, scroll to top, load again.
+    Debounce search ~300 ms. Ignore responses of an older request (request id / AbortController).
+  - Footer: "Loading…" while fetching; "All 370 items loaded" when !hasMore.
+  - Keep the header "Showing 150 of 370".
+  - Sticky table header; keep the existing row actions (view / edit / delete).
+  - After create / edit / delete: update the row in place (or reset the list), do not
+    re-fetch every loaded page.
+  - Auto-refresh: do NOT reload the whole list on the 10 s timer (see
+    FE-HANDOFF-AUTO-REFRESH-OFF.txt) — it would reset the scroll position.
+
+  Sketch:
+    const loadPage = async (p) => {
+      setLoading(true);
+      const res = await listItems(companyId, { ...filters, page: p, limit: 50,
+                                               sortBy: 'itemCode', sortOrder: 'asc' });
+      setRows(prev => (p === 1 ? res.items : [...prev, ...res.items]));
+      setTotal(res.total); setPage(p); setLoading(false);
+    };
+    useEffect(() => { loadPage(1); }, [filters]);            // reset on filter change
+    useIntersection(sentinelRef, () => hasMore && !loading && loadPage(page + 1));
+
+  Vendors screen: today it loads only page 1 / limit 100 and pages in the browser, so
+  vendor 101+ is never shown. Switch it to the same scroll loading (server paging).
+
+
+3) SORT
+--------------------------------------------------------------------------------
+  Recommended default: Items sortBy=itemCode asc (ANAELC00001, 00002 …),
+                       Vendors sortBy=vendorCode asc.
+  Any sortBy is safe now (section 4).
+
+
+4) BACKEND FIX DONE (26-Oct)
+--------------------------------------------------------------------------------
+  Items / Vendors lists now add the record id as a tie-breaker to the sort. Before, rows
+  with the same sort value (e.g. the 370 imported items share one createdAt) could repeat
+  or go missing between pages. Checked: 8 pages × 50 → 370 unique items, 0 repeats.
+  Takes effect after the backend is restarted / deployed.
+
+
+5) CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] Items: scroll loads 50 at a time until "All N items loaded"
+  [ ] Items: Store / Category / Status / search reset the list and start at the top
+  [ ] Vendors: all vendors reachable (not only the first 100)
+  [ ] No duplicate rows while scrolling; no jump to top after editing a row
+  [ ] Works with 5,000 rows (only loaded rows are in the DOM; add row virtualisation later
+      if the list gets slow)
+================================================================================

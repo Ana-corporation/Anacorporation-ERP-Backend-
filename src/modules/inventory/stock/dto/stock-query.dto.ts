@@ -24,11 +24,17 @@ const stockFilterShape = {
   itemId: bigintIdSchema.optional(),
   siteId: bigintIdSchema.optional(),
   branchId: bigintIdSchema.optional(),
+  inventoryLocationId: bigintIdSchema.optional(),
+  warehouseId: bigintIdSchema.optional(),
   storageBinId: bigintIdSchema.optional(),
 };
 
 export const CurrentStockQuerySchema = ListQuerySchema.extend({
   ...stockFilterShape,
+  /** Stock held at this vendor (sub-contractor locations) */
+  vendorId: bigintIdSchema.optional(),
+  /** All locations of one store (e.g. the Sub Contractor store = stock at all vendors) */
+  storeCategoryId: bigintIdSchema.optional(),
   /** Default false: rows at 0 are hidden */
   includeZero: booleanParam,
 });
@@ -42,3 +48,15 @@ export const StockLedgerQuerySchema = ListQuerySchema.extend({
 
 export class CurrentStockQueryDto extends createZodDto(CurrentStockQuerySchema) {}
 export class StockLedgerQueryDto extends createZodDto(StockLedgerQuerySchema) {}
+
+/** Single-bin available qty for Issue / Transfer line pickers. */
+export const AvailableQtyQuerySchema = z.object({
+  itemId: bigintIdSchema,
+  inventoryLocationId: bigintIdSchema.optional(),
+  warehouseId: bigintIdSchema.optional(),
+  storageBinId: bigintIdSchema.optional().nullable(),
+}).refine((q) => Boolean(q.inventoryLocationId || q.warehouseId), {
+  message: 'inventoryLocationId or warehouseId is required',
+  path: ['inventoryLocationId'],
+});
+export class AvailableQtyQueryDto extends createZodDto(AvailableQtyQuerySchema) {}

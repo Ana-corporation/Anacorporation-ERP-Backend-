@@ -1,0 +1,25 @@
+// shared | idempotency keys (Idempotency-Key header on side-effect endpoints: issue, send-email, respond, cancel)
+
+/// First call stores the response; a retry with the same key gets the stored response back.
+/// The same key on a different endpoint or with a different payload hash → 422 IDEMPOTENCY_KEY_REUSED.
+model IdempotencyKey {
+  idempotencyKeyId BigInt   @id @default(autoincrement()) @map("idempotency_key_id")
+  companyId        BigInt   @map("company_id")
+  userId           BigInt?  @map("user_id")
+  /// Normalized "METHOD path-template", e.g. "POST sales-quotations/:id/issue"
+  endpoint         String   @db.VarChar(120)
+  idempotencyKey   String   @map("idempotency_key") @db.VarChar(80)
+  /// SHA-256 of the request body — detects key reuse with a different payload
+  requestHash      String?  @map("request_hash") @db.VarChar(64)
+  responseStatus   Int?     @map("response_status")
+  responseBody     Json?    @map("response_body")
+  createdAt        DateTime @default(now()) @map("created_at")
+  /// Rows past this moment may be purged by a cleanup job
+  expiresAt        DateTime? @map("expires_at")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@unique([companyId, idempotencyKey, endpoint])
+  @@index([companyId, createdAt])
+  @@map("idempotency_keys")
+}

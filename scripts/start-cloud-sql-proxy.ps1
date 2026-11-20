@@ -49,5 +49,20 @@ $port = Get-EnvValue $envFile "GCP_SQL_PORT"
 if (-not $port) { $port = '5432' }
 
 Write-Host "Using env file: $(Split-Path -Leaf $envFile)"
+
+$listener = Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort ([int]$port) -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($listener) {
+  $owner = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+  if ($owner -and $owner.ProcessName -eq 'cloud-sql-proxy') {
+    Write-Host "Stopping the old Cloud SQL Auth Proxy on 127.0.0.1:$port (PID $($owner.Id))"
+    Stop-Process -Id $owner.Id -Force
+    $owner.WaitForExit(10000) | Out-Null
+    Start-Sleep -Milliseconds 500
+  } else {
+    $name = if ($owner) { "$($owner.ProcessName) (PID $($owner.Id))" } else { "PID $($listener.OwningProcess)" }
+    throw "Port $port is used by $name. Stop it or change GCP_SQL_PORT."
+  }
+}
+
 Write-Host "Starting Cloud SQL Auth Proxy for $instance on 127.0.0.1:$port"
 & $proxy --credentials-file $sa --address 127.0.0.1 --port $port $instance

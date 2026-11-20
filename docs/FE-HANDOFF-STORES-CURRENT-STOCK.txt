@@ -1,0 +1,70 @@
+================================================================================
+FE HANDOFF — Stores list → materials in that store (Current Stock)
+Date:       2026-11-19
+Audience:   ERP-Frontend
+Status:     Done in FE (local). No new BE endpoint required.
+================================================================================
+
+WHAT THE USER WANTS
+--------------------------------------------------------------------------------
+  Inventory → Setup → Stores: clicking a store opens the list of materials
+  (on-hand qty) for that store / location — not bins, not edit.
+
+
+WHAT WAS WRONG
+--------------------------------------------------------------------------------
+  Stores row click did nothing.
+  The only “view” action was Manage bins (when Bin Mgmt = Yes).
+  Current Stock could filter by location in the page dropdown, but had no
+  URL deep-link from Stores.
+
+
+BE (already exists — no change required for this)
+--------------------------------------------------------------------------------
+  GET /api/v1/companies/{companyId}/inventory/stock
+  Query: inventoryLocationId  (alias: warehouseId)
+         + search, siteId, storeCategoryId, storageBinId, vendorId,
+           includeZero, sortBy, sortOrder, page, limit
+  Permission: inventory_stock:view
+
+  Returns Current Stock rows for that location (empty [] if nothing posted).
+
+
+FE ROUTES
+--------------------------------------------------------------------------------
+  Stores list:     /dashboard/inventory/locations
+  Current Stock:   /dashboard/inventory/current-stock?location={warehouseId}
+
+  Path helper:
+    paths.dashboard.inventory.currentStockAtLocation(warehouseId)
+
+
+FE BEHAVIOUR (implemented)
+--------------------------------------------------------------------------------
+  Stores (LocationsPanel — inventory-setup-view.tsx)
+    - Click row → navigate to currentStockAtLocation(warehouse_id)
+    - Actions: box icon “Materials in this store” (same link)
+    - Edit / delete / manage bins: stopPropagation (do not open stock)
+
+  Current Stock (current-stock-view.tsx)
+    - Reads ?location= on load / when URL changes
+    - Sets Store filter = that inventoryLocationId
+    - Calls listCurrentStock({ inventoryLocationId: location })
+    - Page wrapped in Suspense (useSearchParams)
+
+
+QA
+--------------------------------------------------------------------------------
+  [ ] Stores → click RMS-001 → Current Stock opens with Store = Raw Material Store
+  [ ] Materials shown are only for that location (or empty if no stock posted)
+  [ ] Box icon in Actions does the same
+  [ ] Edit / Delete / Manage bins still work without opening Current Stock
+  [ ] Clearing the Store filter on Current Stock shows all locations again
+
+
+NOT IN THIS HANDOFF
+--------------------------------------------------------------------------------
+  Sub Contractor Store roll-up (sc:{storeCategoryId}) — separate pick path
+  Stock Ledger deep-link
+  Creating stock from Stores (use Opening Stock / GRN / Issue as today)
+================================================================================

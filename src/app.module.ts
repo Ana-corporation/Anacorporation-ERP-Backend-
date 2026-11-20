@@ -21,6 +21,8 @@ import { IamModule } from './modules/iam/iam.module';
 import { SubscriptionModule } from './modules/subscription/subscription.module';
 import { PurchaseModule } from './modules/purchase/purchase.module';
 import { InventoryMasterModule } from './modules/inventory/inventory-master.module';
+import { CrmModule } from './modules/crm/crm.module';
+import { ManufacturingModule } from './modules/manufacturing/manufacturing.module';
 import { HealthModule } from './modules/health/health.module';
 import { JobsModule } from './jobs/jobs.module';
 
@@ -41,6 +43,8 @@ import { JobsModule } from './jobs/jobs.module';
     SubscriptionModule,
     PurchaseModule,
     InventoryMasterModule,
+    CrmModule,
+    ManufacturingModule,
   ],
   providers: [
     { provide: APP_PIPE, useClass: ZodValidationPipe },

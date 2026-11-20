@@ -6,8 +6,9 @@ import { getPaginationParams } from '@/common/dto/pagination.dto';
 import { parseBigIntId, serialize } from '@/common/utils/bigint.util';
 import { toPaginatedResult } from '@/common/utils/pagination.util';
 import { DataAccessPoliciesService } from '@/modules/iam/data-access-policies/data-access-policies.service';
-import { CurrentStockQueryDto, StockLedgerQueryDto } from './dto/stock-query.dto';
+import { AvailableQtyQueryDto, CurrentStockQueryDto, StockLedgerQueryDto } from './dto/stock-query.dto';
 import { itemInventoryUom } from './inventory-line-resolver.service';
+import { StockPostingService } from './stock-posting.service';
 
 type LedgerRow = {
   entry_id: bigint;
@@ -58,7 +59,36 @@ export class StockQueryService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly dataAccessPoliciesService: DataAccessPoliciesService,
+    private readonly stockPosting: StockPostingService,
   ) {}
+
+  /** Available qty for one Part + Store + Bin (Issue / Transfer line picker). */
+  async availableQty(companyId: string, userId: string, query: AvailableQtyQueryDto) {
+    const company = parseBigIntId(companyId, 'companyId');
+    const warehouseId = BigInt((query.inventoryLocationId || query.warehouseId)!);
+    const scopeWarehouses = await this.scopedWarehouseIds(companyId, userId);
+    if (scopeWarehouses && !scopeWarehouses.map(String).includes(warehouseId.toString())) {
+      return {
+        itemId: query.itemId,
+        inventoryLocationId: warehouseId.toString(),
+        warehouseId: warehouseId.toString(),
+        storageBinId: query.storageBinId ?? null,
+        availableQuantity: '0.000000',
+      };
+    }
+    const qty = await this.stockPosting.availableQty(this.prisma as unknown as Prisma.TransactionClient, company, {
+      itemId: BigInt(query.itemId),
+      warehouseId,
+      storageBinId: query.storageBinId ? BigInt(query.storageBinId) : null,
+    });
+    return {
+      itemId: query.itemId,
+      inventoryLocationId: warehouseId.toString(),
+      warehouseId: warehouseId.toString(),
+      storageBinId: query.storageBinId ?? null,
+      availableQuantity: qty.toFixed(6),
+    };
+  }
 
   async currentStock(companyId: string, userId: string, query: CurrentStockQueryDto) {
     const company = parseBigIntId(companyId, 'companyId');
@@ -71,7 +101,15 @@ export class StockQueryService {
     const where: Prisma.StockBalanceWhereInput = {
       companyId: company,
       ...(query.itemId ? { itemId: BigInt(query.itemId) } : {}),
-      ...(branchId ? { warehouse: { branchId: BigInt(branchId) } } : {}),
+      ...(branchId || query.vendorId || query.storeCategoryId
+        ? {
+            warehouse: {
+              ...(branchId ? { branchId: BigInt(branchId) } : {}),
+              ...(query.vendorId ? { vendorId: BigInt(query.vendorId) } : {}),
+              ...(query.storeCategoryId ? { storeCategoryId: BigInt(query.storeCategoryId) } : {}),
+            },
+          }
+        : {}),
       ...(query.storageBinId ? { storageBinId: BigInt(query.storageBinId) } : {}),
       ...(query.includeZero ? {} : { quantity: { not: 0 } }),
       ...(search
@@ -107,6 +145,8 @@ export class StockQueryService {
               warehouseCode: true,
               name: true,
               branch: { select: { branchId: true, branchCode: true, name: true } },
+              vendor: { select: { vendorId: true, vendorCode: true, name: true } },
+              storeCategory: { select: { storeCategoryId: true, name: true, storeType: true } },
             },
           },
           storageBin: { select: { binCode: true, binName: true } },
@@ -128,6 +168,12 @@ export class StockQueryService {
       warehouseId: row.warehouseId,
       locationCode: row.warehouse.warehouseCode,
       locationName: row.warehouse.name,
+      locationVendor: row.warehouse.vendor
+        ? { vendorId: row.warehouse.vendor.vendorId, code: row.warehouse.vendor.vendorCode, name: row.warehouse.vendor.name }
+        : null,
+      storeCategoryId: row.warehouse.storeCategory?.storeCategoryId ?? null,
+      storeName: row.warehouse.storeCategory?.name ?? null,
+      storeType: row.warehouse.storeCategory?.storeType ?? 'NORMAL',
       storageBinId: row.storageBinId,
       binCode: row.storageBin?.binCode ?? null,
       binName: row.storageBin?.binName ?? null,

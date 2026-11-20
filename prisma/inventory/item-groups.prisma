@@ -1,0 +1,65 @@
+// inventory | item groups (tree per store category) + units of measure
+
+/// Item Group tree = Category master. Every group belongs to one store category; children inherit
+/// the parent's store. categoryCode (BRG, PLY, ASSY) is the part-number segment when the ITEM
+/// number series uses segment source ITEM_GROUP; a group without a code uses its nearest
+/// parent's code. Unique (company, store, parent, lower(name)) and (company, category_code)
+/// among non-deleted rows are partial indexes in the migration (not expressible in Prisma).
+model ItemGroup {
+  itemGroupId     BigInt    @id @default(autoincrement()) @map("item_group_id")
+  companyId       BigInt    @map("company_id")
+  storeCategoryId BigInt    @map("store_category_id")
+  parentId        BigInt?   @map("parent_id")
+  name            String    @db.VarChar(100)
+  categoryCode    String?   @map("category_code") @db.VarChar(4)
+  /// Examples / scope shown in the Category master
+  description     String?   @db.VarChar(255)
+  sortOrder       Int       @default(0) @map("sort_order")
+  /// New items of this category may be created from an Opening Stock import (after confirmation)
+  allowOpeningCreate Boolean @default(false) @map("allow_opening_create")
+  /// Made-part stage of this category: RM / SF / FF (one SF and one FF category per company). CHECK in SQL.
+  materialStage   String?   @map("material_stage") @db.VarChar(2)
+  isActive        Boolean   @default(true) @map("is_active")
+  createdBy       BigInt?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedBy       BigInt?   @map("updated_by")
+  updatedAt       DateTime? @map("updated_at")
+  deletedBy       BigInt?   @map("deleted_by")
+  deletedAt       DateTime? @map("deleted_at")
+
+  company       Company       @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  storeCategory StoreCategory @relation(fields: [storeCategoryId], references: [storeCategoryId], onDelete: Cascade)
+  parent        ItemGroup?    @relation("ItemGroupTree", fields: [parentId], references: [itemGroupId], onDelete: Cascade)
+  children        ItemGroup[]       @relation("ItemGroupTree")
+  items           Item[]
+  machineSettings MachineSettings[]
+
+  @@index([companyId, storeCategoryId])
+  @@index([parentId])
+  @@map("item_groups")
+}
+
+/// Company unit of measure (NOS, KG, MTR ...). Code is stored uppercase; unique per company
+/// among non-deleted rows (partial index).
+model Uom {
+  uomId     BigInt    @id @default(autoincrement()) @map("uom_id")
+  companyId BigInt    @map("company_id")
+  code      String    @db.VarChar(20)
+  name      String    @db.VarChar(80)
+  isActive  Boolean   @default(true) @map("is_active")
+  createdBy BigInt?   @map("created_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedBy BigInt?   @map("updated_by")
+  updatedAt DateTime? @map("updated_at")
+  deletedBy BigInt?   @map("deleted_by")
+  deletedAt DateTime? @map("deleted_at")
+
+  company  Company   @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  items    Item[]
+  boms            Bom[]             @relation("BomUom")
+  bomLines        BomLine[]         @relation("BomLineUom")
+  machineSettings MachineSettings[] @relation("MachineSettingsUom")
+
+  @@index([companyId])
+  @@map("uoms")
+}

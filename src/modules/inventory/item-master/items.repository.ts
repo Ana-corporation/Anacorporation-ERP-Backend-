@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { PaginationQueryDto, getPaginationParams } from '@/common/dto/pagination.dto';
+import { getPaginationParams } from '@/common/dto/pagination.dto';
 import { parseBigIntId } from '@/common/utils/bigint.util';
 import {
   buildListWhere,
@@ -10,6 +10,7 @@ import {
 } from '@/common/utils/prisma-filter.util';
 import {
   CreateItemDto,
+  ItemListQueryDto,
   UpdateItemDto,
   UpsertItemWarehouseStockDto,
 } from './dto/item.dto';
@@ -38,9 +39,43 @@ const ITEMS_LIST_FILTER: ListFilterOptions = {
   searchFields: ['itemCode', 'description', 'oldCode', 'barcode', 'brandName'],
   sortFields: ['itemCode', 'description', 'status', 'createdAt'],
   defaultSortField: 'createdAt',
+  tieBreaker: 'itemId',
 };
 
+const STORE_CATEGORY_INCLUDE = {
+  storeCategory: { select: { storeCategoryId: true, name: true, numberSeriesCode: true } },
+  itemGroupRef: { select: { itemGroupId: true, name: true, parentId: true } },
+  inventoryUom: { select: { uomId: true, code: true, name: true } },
+  previousStageItem: {
+    where: { deletedAt: null },
+    select: {
+      itemId: true,
+      itemCode: true,
+      materialStage: true,
+      itemGroupRef: { select: { categoryCode: true } },
+      previousStageItem: {
+        where: { deletedAt: null },
+        select: { itemId: true, itemCode: true, materialStage: true, itemGroupRef: { select: { categoryCode: true } } },
+      },
+    },
+  },
+  nextStageItem: {
+    where: { deletedAt: null },
+    select: {
+      itemId: true,
+      itemCode: true,
+      materialStage: true,
+      itemGroupRef: { select: { categoryCode: true } },
+      nextStageItem: {
+        where: { deletedAt: null },
+        select: { itemId: true, itemCode: true, materialStage: true, itemGroupRef: { select: { categoryCode: true } } },
+      },
+    },
+  },
+} satisfies Prisma.ItemInclude;
+
 const WAREHOUSE_STOCK_INCLUDE = {
+  ...STORE_CATEGORY_INCLUDE,
   warehouseStock: {
     include: {
       warehouse: {
@@ -81,10 +116,135 @@ function toDate(value: string | undefined): Date | null {
 export class ItemsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findManyByCompany(companyId: string, query: PaginationQueryDto) {
+  get db(): Prisma.TransactionClient {
+    return this.prisma as unknown as Prisma.TransactionClient;
+  }
+
+  transaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction((tx) => fn(tx as unknown as Prisma.TransactionClient));
+  }
+
+  private async itemGroupWithDescendants(companyId: bigint, itemGroupId: bigint): Promise<bigint[]> {
+    const rows = await this.prisma.$queryRaw<Array<{ item_group_id: bigint }>>`
+      WITH RECURSIVE tree AS (
+        SELECT item_group_id, 0 AS depth FROM item_groups
+        WHERE item_group_id = ${itemGroupId} AND company_id = ${companyId}
+        UNION ALL
+        SELECT g.item_group_id, t.depth + 1 FROM item_groups g
+        JOIN tree t ON g.parent_id = t.item_group_id
+        WHERE g.deleted_at IS NULL AND t.depth < 50
+      )
+      SELECT item_group_id FROM tree`;
+    return rows.map((r) => r.item_group_id);
+  }
+
+  findItemGroup(itemGroupId: string, companyId: string) {
+    return this.prisma.itemGroup.findFirst({
+      where: {
+        itemGroupId: parseBigIntId(itemGroupId, 'itemGroupId'),
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { itemGroupId: true, storeCategoryId: true },
+    });
+  }
+
+  findUom(uomId: string, companyId: string) {
+    return this.prisma.uom.findFirst({
+      where: {
+        uomId: parseBigIntId(uomId, 'inventoryUomId'),
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { uomId: true, code: true },
+    });
+  }
+
+  /** Live item with the same Old Code (drawing / previous PN), case-insensitive. */
+  findByOldCode(companyId: string, oldCode: string, excludeItemId?: string) {
+    return this.prisma.item.findFirst({
+      where: {
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        oldCode: { equals: oldCode.trim(), mode: 'insensitive' },
+        ...(excludeItemId ? { NOT: { itemId: parseBigIntId(excludeItemId) } } : {}),
+      },
+      select: { itemId: true, itemCode: true, oldCode: true },
+    });
+  }
+
+  /** Other live items in the same store with the same description (case-insensitive). */
+  findSameNameInStore(companyId: string, storeCategoryId: string, description: string, excludeItemId?: string) {
+    return this.prisma.item.findMany({
+      where: {
+        companyId: parseBigIntId(companyId),
+        storeCategoryId: parseBigIntId(storeCategoryId, 'storeCategoryId'),
+        deletedAt: null,
+        description: { equals: description.trim(), mode: 'insensitive' },
+        ...(excludeItemId ? { NOT: { itemId: parseBigIntId(excludeItemId) } } : {}),
+      },
+      select: { itemId: true, itemCode: true, description: true },
+      take: 5,
+    });
+  }
+
+  /** Stock on hand, any stock movement, or a line on a live inventory document. */
+  async isUsedInInventory(itemId: string): Promise<boolean> {
+    const id = parseBigIntId(itemId);
+    const [balance, ledger, line] = await Promise.all([
+      this.prisma.stockBalance.findFirst({ where: { itemId: id, quantity: { not: 0 } }, select: { stockBalanceId: true } }),
+      this.prisma.stockLedgerEntry.findFirst({ where: { itemId: id }, select: { entryId: true } }),
+      this.prisma.inventoryDocumentLine.findFirst({
+        where: { itemId: id, document: { deletedAt: null } },
+        select: { lineId: true },
+      }),
+    ]);
+    return Boolean(balance || ledger || line);
+  }
+
+  setImage(itemId: string, fileAssetId: string | null, updatedBy?: string) {
+    return this.prisma.item.update({
+      where: { itemId: parseBigIntId(itemId) },
+      data: {
+        imageFileAssetId: fileAssetId,
+        updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
+        updatedAt: new Date(),
+      },
+      select: { itemId: true, imageFileAssetId: true },
+    });
+  }
+
+  findStoreCategory(storeCategoryId: string, companyId: string) {
+    return this.prisma.storeCategory.findFirst({
+      where: {
+        storeCategoryId: parseBigIntId(storeCategoryId, 'storeCategoryId'),
+        companyId: parseBigIntId(companyId),
+        deletedAt: null,
+        isActive: true,
+      },
+      select: { storeCategoryId: true },
+    });
+  }
+
+  async findManyByCompany(companyId: string, query: ItemListQueryDto, recordIdFilter?: bigint[] | null) {
     const { skip, limit, page } = getPaginationParams(query);
+    if (recordIdFilter && recordIdFilter.length === 0) {
+      return { items: [], total: 0, page, limit };
+    }
+    const cid = parseBigIntId(companyId);
+    const groupIds = query.itemGroupId ? await this.itemGroupWithDescendants(cid, BigInt(query.itemGroupId)) : null;
     const where = buildListWhere(
-      { companyId: parseBigIntId(companyId), deletedAt: null },
+      {
+        companyId: cid,
+        deletedAt: null,
+        ...(recordIdFilter ? { itemId: { in: recordIdFilter } } : {}),
+        ...(query.storeCategoryId ? { storeCategoryId: BigInt(query.storeCategoryId) } : {}),
+        ...(query.inventoryUomId ? { inventoryUomId: BigInt(query.inventoryUomId) } : {}),
+        ...(groupIds ? { itemGroupId: { in: groupIds } } : {}),
+        ...(query.excludeMachines ? { machine: { is: null } } : {}),
+      },
       query,
       ITEMS_LIST_FILTER,
     ) as Prisma.ItemWhereInput;
@@ -96,6 +256,7 @@ export class ItemsRepository {
           skip,
           take: limit,
           orderBy: resolveOrderBy(query, ITEMS_LIST_FILTER),
+          include: STORE_CATEGORY_INCLUDE,
         }),
         this.prisma.item.count({ where }),
       ])
@@ -124,8 +285,8 @@ export class ItemsRepository {
   }
 
   /** Includes soft-deleted — needed for unique(companyId, itemCode) safety. */
-  findAnyByCode(companyId: string, itemCode: string) {
-    return this.prisma.item.findFirst({
+  findAnyByCode(companyId: string, itemCode: string, db: Prisma.TransactionClient = this.db) {
+    return db.item.findFirst({
       where: {
         companyId: parseBigIntId(companyId),
         itemCode,
@@ -180,9 +341,9 @@ export class ItemsRepository {
    * Next AUTO code for prefix (ITM-000001…). Scans all rows including soft-deleted
    * so DB unique(companyId, itemCode) cannot collide.
    */
-  async nextAutoItemCode(companyId: string, prefix: string) {
+  async nextAutoItemCode(companyId: string, prefix: string, db: Prisma.TransactionClient = this.db) {
     const p = prefix.trim().toUpperCase() || 'ITM';
-    const existing = await this.prisma.item.findMany({
+    const existing = await db.item.findMany({
       where: {
         companyId: parseBigIntId(companyId),
         itemCode: { startsWith: `${p}-` },
@@ -221,68 +382,99 @@ export class ItemsRepository {
     });
   }
 
-  create(companyId: string, dto: CreateItemDto, itemCode: string, createdBy?: string) {
-    return this.prisma.item.create({
-      data: {
-        companyId: parseBigIntId(companyId),
-        itemCode: itemCode.trim().toUpperCase(),
-        description: dto.description.trim(),
-        oldCode: dto.oldCode ?? null,
-        itemType: dto.itemType ?? 'item',
-        itemGroup: dto.itemGroup ?? null,
-        uomGroup: dto.uomGroup ?? null,
-        barcode: dto.barcode ?? null,
-        priceList: dto.priceList ?? null,
-        unitPrice: dto.unitPrice ?? null,
-        currencyCode: dto.currencyCode ?? null,
-
-        isInventoryItem: dto.isInventoryItem ?? true,
-        isSalesItem: dto.isSalesItem ?? true,
-        isPurchaseItem: dto.isPurchaseItem ?? true,
-
-        doNotApplyDiscountGroups: dto.doNotApplyDiscountGroups ?? false,
-        manufacturer: dto.manufacturer ?? null,
-        additionalIdentifier: dto.additionalIdentifier ?? null,
-        shippingType: dto.shippingType ?? null,
-        manageBy: dto.manageBy ?? 'none',
-        status: dto.status ?? 'active',
-        activeFrom: toDate(dto.activeFrom),
-        activeTo: toDate(dto.activeTo),
-
-        netWeightKg: dto.netWeightKg ?? null,
-        grossWeightKg: dto.grossWeightKg ?? null,
-        division: dto.division ?? null,
-        coreActivity: dto.coreActivity ?? null,
-        majorGroup: dto.majorGroup ?? null,
-        brandName: dto.brandName ?? null,
-        effectiveDate: toDate(dto.effectiveDate),
-        customerStockNo: dto.customerStockNo ?? null,
-        stockToBe: dto.stockToBe ?? null,
-        stockDioDays: dto.stockDioDays ?? null,
-        contractItemsFor: dto.contractItemsFor ?? null,
-
-        preferredVendorId: dto.preferredVendorId
-          ? parseBigIntId(dto.preferredVendorId, 'preferredVendorId')
-          : null,
-        valuationMethod: dto.valuationMethod ?? null,
-        itemCost: dto.itemCost ?? null,
-        manageStockByWarehouse: dto.manageStockByWarehouse ?? true,
-
-        remarks: dto.remarks ?? null,
-        purchaseJson: toJson(dto.purchase),
-        salesJson: toJson(dto.sales),
-        inventoryJson: toJson(dto.inventory),
-        planningJson: toJson(dto.planning),
-        productionJson: toJson(dto.production),
-        propertiesJson: toJson(dto.properties),
-        attachmentsJson: dto.attachments as Prisma.InputJsonValue | undefined,
-        metadata: toJson(dto.metadata),
-
-        isActive: dto.isActive ?? true,
-        createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
-      },
+  create(
+    companyId: string,
+    dto: CreateItemDto,
+    itemCode: string,
+    createdBy?: string,
+    db: Prisma.TransactionClient = this.db,
+  ) {
+    return db.item.create({
+      data: this.createData(companyId, dto, itemCode, createdBy),
       include: WAREHOUSE_STOCK_INCLUDE,
     });
+  }
+
+  /** One INSERT for many items (opening stock import); returns id + code per item. */
+  createMany(
+    db: Prisma.TransactionClient,
+    companyId: string,
+    rows: Array<{ dto: CreateItemDto; itemCode: string }>,
+    createdBy?: string,
+  ) {
+    return db.item.createManyAndReturn({
+      data: rows.map((r) => this.createData(companyId, r.dto, r.itemCode, createdBy)),
+      select: { itemId: true, itemCode: true, description: true },
+    });
+  }
+
+  private createData(
+    companyId: string,
+    dto: CreateItemDto,
+    itemCode: string,
+    createdBy?: string,
+  ): Prisma.ItemUncheckedCreateInput {
+    return {
+      companyId: parseBigIntId(companyId),
+      itemCode: itemCode.trim().toUpperCase(),
+      storeCategoryId: dto.storeCategoryId ? parseBigIntId(dto.storeCategoryId, 'storeCategoryId') : null,
+      itemGroupId: dto.itemGroupId ? parseBigIntId(dto.itemGroupId, 'itemGroupId') : null,
+      inventoryUomId: dto.inventoryUomId ? parseBigIntId(dto.inventoryUomId, 'inventoryUomId') : null,
+      description: dto.description.trim(),
+      oldCode: dto.oldCode ?? null,
+      itemType: dto.itemType ?? 'item',
+      itemGroup: dto.itemGroup ?? null,
+      uomGroup: dto.uomGroup ?? null,
+      barcode: dto.barcode ?? null,
+      priceList: dto.priceList ?? null,
+      unitPrice: dto.unitPrice ?? null,
+      currencyCode: dto.currencyCode ?? null,
+
+      isInventoryItem: dto.isInventoryItem ?? true,
+      isSalesItem: dto.isSalesItem ?? true,
+      isPurchaseItem: dto.isPurchaseItem ?? true,
+
+      doNotApplyDiscountGroups: dto.doNotApplyDiscountGroups ?? false,
+      manufacturer: dto.manufacturer ?? null,
+      additionalIdentifier: dto.additionalIdentifier ?? null,
+      shippingType: dto.shippingType ?? null,
+      manageBy: dto.manageBy ?? 'none',
+      status: dto.status ?? 'active',
+      activeFrom: toDate(dto.activeFrom),
+      activeTo: toDate(dto.activeTo),
+
+      netWeightKg: dto.netWeightKg ?? null,
+      grossWeightKg: dto.grossWeightKg ?? null,
+      division: dto.division ?? null,
+      coreActivity: dto.coreActivity ?? null,
+      majorGroup: dto.majorGroup ?? null,
+      brandName: dto.brandName ?? null,
+      effectiveDate: toDate(dto.effectiveDate),
+      customerStockNo: dto.customerStockNo ?? null,
+      stockToBe: dto.stockToBe ?? null,
+      stockDioDays: dto.stockDioDays ?? null,
+      contractItemsFor: dto.contractItemsFor ?? null,
+
+      preferredVendorId: dto.preferredVendorId
+        ? parseBigIntId(dto.preferredVendorId, 'preferredVendorId')
+        : null,
+      valuationMethod: dto.valuationMethod ?? null,
+      itemCost: dto.itemCost ?? null,
+      manageStockByWarehouse: dto.manageStockByWarehouse ?? true,
+
+      remarks: dto.remarks ?? null,
+      purchaseJson: toJson(dto.purchase),
+      salesJson: toJson(dto.sales),
+      inventoryJson: toJson(dto.inventory),
+      planningJson: toJson(dto.planning),
+      productionJson: toJson(dto.production),
+      propertiesJson: toJson(dto.properties),
+      attachmentsJson: dto.attachments as Prisma.InputJsonValue | undefined,
+      metadata: toJson(dto.metadata),
+
+      isActive: dto.isActive ?? true,
+      createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
+    };
   }
 
   update(id: string, dto: UpdateItemDto, updatedBy?: string) {
@@ -349,6 +541,17 @@ export class ItemsRepository {
             preferredVendorId: dto.preferredVendorId
               ? parseBigIntId(dto.preferredVendorId, 'preferredVendorId')
               : null,
+          }),
+          ...set(dto.storeCategoryId, {
+            storeCategoryId: dto.storeCategoryId
+              ? parseBigIntId(dto.storeCategoryId, 'storeCategoryId')
+              : null,
+          }),
+          ...set(dto.itemGroupId, {
+            itemGroupId: dto.itemGroupId ? parseBigIntId(dto.itemGroupId, 'itemGroupId') : null,
+          }),
+          ...set(dto.inventoryUomId, {
+            inventoryUomId: dto.inventoryUomId ? parseBigIntId(dto.inventoryUomId, 'inventoryUomId') : null,
           }),
           ...set(dto.valuationMethod, { valuationMethod: dto.valuationMethod }),
           ...set(dto.itemCost, { itemCost: dto.itemCost }),

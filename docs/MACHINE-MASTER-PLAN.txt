@@ -1,0 +1,97 @@
+MACHINE MASTER + CUSTOMISED MACHINE (SUFFIX) - PLAN
+===================================================
+Date   : 2026-11-04
+Status : Plan, waiting for approval. Nothing built.
+Pair   : docs/BOM-BACKEND-PLAN.txt, docs/FE-HANDOFF-BOM.txt
+
+DECISIONS SO FAR
+  - Separate Machine master. Each machine is linked to one Item Master item
+    behind the scenes (stock, quotation, production keep working).
+  - BOM "Machine" dropdown lists machines only (not materials / assemblies).
+  - Prefix = base machine model: BS500, ZETA700, ZETA750, ZETA800.
+  - Suffix = sales order number for a customised machine: BS500-SO00045.
+  - No standard option suffixes (e.g. -P) for now.
+
+1. CODES
+--------
+  Base machine     BS500                 standard design, STANDARD BOM
+                                         (revisions A, B ... = change for everyone)
+  Customised       BS500-SO00045         one customer order, separate CUSTOMER BOM
+                                         copied from the base BOM, then edited
+  Rule: revision = change for everyone (same code, new BOM version);
+        suffix   = change for one order (new code, own BOM).
+
+2. TABLES (new)
+---------------
+  machines
+    machine_id, company_id, machine_code (BS500 / BS500-SO00045, unique per
+    company), name, series (BS, ZETA), model_size (500), description,
+    image_file_asset_id, status (ACTIVE / INACTIVE),
+    item_id -> items (the linked item, created automatically),
+    base_machine_id -> machines (null for a base machine),
+    variant_type (BASE | ORDER), sales_order_id (later FK), source_document_no
+    (e.g. SO00045), customer_id -> customers,
+    audit columns, soft delete, row_version
+    UNIQUE (company_id, machine_code)
+  BOM: no new columns. boms.parent_item_id = machine.item_id;
+    customised machine BOM uses the existing columns bom_scope = CUSTOMER,
+    base_bom_id, base_version_no, customer_id, source_document_type =
+    'SALES_ORDER', source_document_id, source_type = CUSTOMER_COPY.
+
+3. LINKED ITEM (automatic)
+--------------------------
+  Creating a machine creates its item: Finished Goods store, a "Machines"
+  category (new item group code MCH or FG - to confirm), UOM NOS,
+  procurementType Make, materialType Finished Good, oldCode = machine code.
+  The item is hidden from material pickers (component picker excludes the
+  Machines category). Existing ANAASSY00012 BS500 MACHINE is linked to the
+  new machine BS500 (no data loss; BOM00001 stays as is).
+
+4. APIS
+-------
+  GET/POST/PATCH/DELETE /machines          base machines (+ variants list)
+  GET /machines/lookup                     BOM Machine dropdown (machines only)
+  POST /machines/{id}/variants             create customised machine
+       { salesOrderNo, customerId, remarks }  -> BS500-SO00045 + linked item
+       + CUSTOMER BOM DRAFT copied from the base machine's current released
+       BOM (same groups / keys). Idempotency-Key.
+  BOM create: parentMachineId accepted (server maps to the machine's item).
+
+5. SALES ORDER LINK (dependency)
+--------------------------------
+  The Sales Order module does not exist yet. Until it does:
+   - "Create customised machine" takes the order number typed by the user
+     (validated format, unique per base machine), and a customer.
+  When Sales Order is built:
+   - the order line picks a machine; "Customise" on the line calls the same
+     API with the real sales order id -> suffix filled automatically, and the
+     order line switches to BS500-SO00045 and its BOM.
+   - production / requirements read the order line's machine -> its current
+     released BOM.
+  Repeat order with the same customisation: user picks the existing variant
+  (BS500-SO00045) on the new order; no new code unless changes are needed.
+
+6. QUESTIONS
+------------
+  Q1 Sales order number format (SO00045? SO/2026-27/0045?) - a "/" in the
+     machine code is awkward; propose SO + 5 digits, e.g. BS500-SO00045.
+  Q2 Until sales orders exist: allow typing the order number manually?
+  Q3 Machines category for the linked items: new group "Machines" (code MCH)
+     in Finished Goods store?
+  Q4 Should a customised machine need its BOM released before the order can
+     go to production? (proposed: yes)
+
+6a. DECISIONS (2026-11-04)
+  Q1 Sales order number = SO + 5 digits -> suffix BS500-SO00045.
+  Q2 Until Sales Order exists, the order number is typed manually.
+  Q3 New category "Machines" in Finished Goods store. Code MCH is already
+     used by ANA ("Machine / Assembly Parts", Electrical store, 2 items),
+     so proposed code MAC -> linked item part numbers ANAMAC00001 ...
+  Q4 open (proposed: variant BOM must be released before production).
+
+7. PHASES
+---------
+  1 Machine master (table, CRUD, lookup, linked item), BOM dropdown switch,
+    link existing BS500.
+  2 Customised machine (variant + BOM copy) with manual order number.
+  3 Sales Order integration (when the Sales Order module exists).

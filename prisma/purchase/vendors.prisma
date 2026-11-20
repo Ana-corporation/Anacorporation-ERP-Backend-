@@ -14,6 +14,8 @@ model Vendor {
   country      String?   @db.VarChar(100)
   taxId        String?   @map("tax_id") @db.VarChar(80)
   isActive     Boolean   @default(true) @map("is_active")
+  /// Job-work / subcontract vendor — required when posting to the Sub Contractor Store
+  isJobWorkVendor Boolean @default(false) @map("is_job_work_vendor")
   metadata     Json?
   createdBy    BigInt?   @map("created_by")
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -26,6 +28,7 @@ model Vendor {
   company         Company                @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   preferredItems  Item[]
   formInvitations VendorFormInvitation[]
+  heldLocations   Warehouse[]
 
   @@unique([companyId, vendorCode])
   @@index([companyId])

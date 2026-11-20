@@ -1,0 +1,81 @@
+================================================================================
+FE HANDOFF — Employee master (ERP fields only)
+Date:       2026-10-30
+Audience:   ERP-Frontend
+Backend:    /api/v1/companies/{companyId}/employees
+Scope:      Fields ERP screens need: salesperson, store-keeper, approver,
+            shop-floor worker. NOT bank / IDs / payroll / medical / addresses.
+DB:         Migration 20261030120000_employee_erp_fields (apply DEV first).
+================================================================================
+
+PERMISSIONS
+  employees:view | create | edit | delete
+  Roles that already have users:* still work (alias). ADMIN gets employees:*
+  on next login. These are organization permissions — no HCM subscription
+  required (lookup must work for a company that only uses Supply Chain).
+
+NOT IN THIS DROP (HRMS later)
+  Addresses, emergency contacts, assignment history, identifiers, bank,
+  documents, skills, compensation, shift/leave, exit checklist.
+
+--------------------------------------------------------------------------------
+LOOKUP  (use this on quotation / GRN / approval pickers)
+--------------------------------------------------------------------------------
+GET /employees/lookup?search=&limit=20&departmentId=&designationId=&warehouseId=&branchId=&status=
+
+  Default status filter: active, on_leave, notice_period (not candidate /
+  inactive / terminated / exited / suspended). Pass status=active to narrow.
+
+  Response items (no email, phone, or sensitive fields):
+    employeeId, employeeCode, displayName, firstName, lastName, preferredName,
+    employmentStatus, employmentType,
+    department { departmentId, name } | null,
+    designation { designationId, name } | null,
+    branch { branchId, name } | null,
+    warehouse { warehouseId, name } | null   // assigned store / work location
+
+--------------------------------------------------------------------------------
+LIST / DETAIL / CREATE / UPDATE
+--------------------------------------------------------------------------------
+GET    /employees?page=&limit=&search=&status=&warehouseId=&sortBy=
+PATCH  /employees/{id}
+DELETE /employees/{id}     soft delete (status → inactive)
+
+POST   /employees
+  {
+    "employeeCode": "",          // omit/empty → EMP00001 from number series
+    "firstName": "Priya",        // required (legal first name)
+    "middleName": "",
+    "lastName": "Kumar",
+    "preferredName": "Priya",    // displayName uses this when set
+    "email": "priya@ana.com",    // work email
+    "mobile": "+91...",
+    "branchId": "1",
+    "warehouseId": "14",         // store / work location
+    "departmentId": "4",
+    "designationId": "2",
+    "reportingManagerId": "9",
+    "joiningDate": "2024-04-01",
+    "employmentType": "full_time",
+    "employmentStatus": "active"
+  }
+
+employmentType:
+  full_time | part_time | contract | intern | consultant | apprentice | daily_wage
+employmentStatus:
+  active | inactive | terminated | on_leave | candidate | suspended |
+  notice_period | exited
+
+displayName on list/detail = preferredName, else "firstName lastName".
+
+ERROR CODES
+  EMPLOYEE_NOT_FOUND 404 | EMPLOYEE_CODE_EXISTS 409 (field employeeCode)
+  | EMPLOYEE_SELF_MANAGER 409 (field reportingManagerId)
+
+--------------------------------------------------------------------------------
+NUMBER SERIES
+--------------------------------------------------------------------------------
+GET /number-series now also lists EMPLOYEE.
+GET /number-series/EMPLOYEE/preview  → { nextNumber: "EMP00001" }
+Default: prefix EMP, length 5, NEVER reset, no pattern.
+================================================================================

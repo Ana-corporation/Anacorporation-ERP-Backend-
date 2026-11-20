@@ -67,9 +67,17 @@ export const ITEM_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
     required: true,
     configurable: false,
   }),
+  // Store drives the part number (Number Series). Hidden by default; companies that use it
+  // switch it on and move it first with field order.
+  core('storeCategoryId', 'Store', 'header', 'storeCategoryId', 'select', 15, {
+    defaultVisible: false,
+  }),
+  // Category master (Item Group tree filtered by Store); drives category-based part numbers.
+  core('itemGroupId', 'Category', 'header', 'itemGroupId', 'tree-select', 16, {
+    defaultVisible: false,
+  }),
   core('itemType', 'Item type', 'header', 'itemType', 'select', 20, {
     required: true,
-    configurable: false,
   }),
   core('description', 'Description', 'header', 'description', 'text', 30, {
     required: true,
@@ -78,18 +86,18 @@ export const ITEM_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
   core('isInventoryItem', 'Inventory item', 'header', 'isInventoryItem', 'switch', 40, {
     configurable: false,
   }),
-  core('isSalesItem', 'Sales item', 'header', 'isSalesItem', 'switch', 50, {
-    configurable: false,
-  }),
-  core('isPurchaseItem', 'Purchase item', 'header', 'isPurchaseItem', 'switch', 60, {
-    configurable: false,
-  }),
+  core('isSalesItem', 'Sales item', 'header', 'isSalesItem', 'switch', 50),
+  core('isPurchaseItem', 'Purchase item', 'header', 'isPurchaseItem', 'switch', 60),
 
   // —— General ——
   core('oldCode', 'Old code', 'general', 'oldCode', 'text', 110),
   core('barcode', 'Bar code', 'general', 'barcode', 'text', 120),
   core('itemGroup', 'Item group', 'general', 'itemGroup', 'text', 130),
+  // UOM master picker. Hidden by default.
   core('uomGroup', 'UoM group', 'general', 'uomGroup', 'text', 140),
+  core('inventoryUomId', 'Inventory UoM (master)', 'general', 'inventoryUomId', 'select', 145, {
+    defaultVisible: false,
+  }),
   core('manufacturer', 'Manufacturer', 'general', 'manufacturer', 'text', 150),
   core('additionalIdentifier', 'Additional identifier', 'general', 'additionalIdentifier', 'text', 160),
   core('shippingType', 'Shipping type', 'general', 'shippingType', 'select', 170),
@@ -186,6 +194,12 @@ export const ITEM_BUILT_IN_FIELDS: BuiltInFieldDefinition[] = [
 
   // —— Remarks ——
   core('remarks', 'Remarks', 'remarks', 'remarks', 'multiline', 1310),
+
+  // —— Attachments ——
+  // Uploaded via POST /items/:id/image (PNG/JPG/WEBP, 5 MB). Hidden by default.
+  core('imageFileAssetId', 'Picture', 'attachments', 'imageFileAssetId', 'image', 1410, {
+    defaultVisible: false,
+  }),
 ];
 
 /** fieldKey → API path map (shared contract for FE). */

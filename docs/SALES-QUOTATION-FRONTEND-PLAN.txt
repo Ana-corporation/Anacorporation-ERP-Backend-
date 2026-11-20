@@ -1,0 +1,333 @@
+SALES QUOTATION - FRONTEND PLAN (v3, global SaaS)
+==================================================
+Source : Sales_Quotation_LLD_UI_Design.pdf (v1.0 draft) + review notes
+Pair   : docs/SALES-QUOTATION-BACKEND-PLAN.txt (APIs, tables, error codes)
+Scope  : Sales Quotation screens only. Tax display is Phase 7.
+Status : Plan. Start each phase only after its backend APIs are ready.
+
+Tags:  [REQUIRED] before go-live   [LATER] after go-live
+       [IF ANA]   only if ANA confirms
+       [CHANGED]  changed in v3     [DEPENDS] needs a backend addition first
+       (section 13 shows which dependencies are already in the backend plan)
+
+
+0. CURRENT STATE (checked in code)
+----------------------------------
+- src/sections/crm and app/dashboard/crm : empty placeholder.
+- No Customer, Quotation or Company Settings (tax / locale) screens exist.
+- [CHANGED] API base: NEXT_PUBLIC_API_URL already ends with /api/v1. Final
+  URL = /api/v1/companies/:companyId/... . Never add /v1 again in a path.
+- Reuse: useInfiniteList + InfiniteListFooter (scroll loading), S.No column
+  pattern (vendor / item lists), vendor form layout + GSTIN auto-fill button,
+  form configuration / tab access, API client + getApiErrorMessage, status
+  chip style from vendor / item lists, existing Number Series screen +
+  preview call (GET number-series/:documentType/preview).
+
+
+1. GLOBAL SAAS RULES  [REQUIRED]
+--------------------------------
+- No India-only fields in shared screens. Use generic labels with the
+  country value: "Tax ID" (type GSTIN / PAN / VAT ...), "Region"
+  (State in India), "Postal code" (PIN in India).
+- Money: format with the currency decimal_places returned by the API
+  (JPY 0, INR / USD 2, KWD 3) and the company locale (Intl.NumberFormat).
+  Never hard-code 2 decimals or the Rs symbol.
+- Dates: show in the company timezone and locale (Intl.DateTimeFormat).
+  valid_until is a date only (no time).
+- Error text: map error codes to text in the FE (one messages file per
+  language; English now). Do not show raw server messages to users when a
+  code mapping exists.
+- Tax: show the tax_breakdown list from the API (name, rate, amount).
+  Never build CGST / SGST / IGST labels in the FE.
+
+
+2. RULES  [REQUIRED]
+--------------------
+- Never calculate final totals in the browser. Show totals from the API
+  (preview-totals while editing, saved totals after save).
+- Always send rowVersion on update / actions. On 409 ROW_VERSION_CONFLICT show
+  "This quotation was changed by someone else. Reload?" and reload.
+- Show buttons from allowedActions[] returned by the API (server still checks).
+- Show field errors next to the field (path like "lines[0].quantity"), plus a
+  summary at the top. Keep user input on error.
+- Confirm dialog before Issue, Cancel, Reject.
+- Unsaved-change warning when leaving the editor.
+- Lists: S.No column, scroll loading (50 per page), server search / filters.
+- Hide margin columns unless the user has sales_quotations:view_margin.
+- [CHANGED] Idempotency-Key on EVERY state-changing action: Issue, Record
+  response, Cancel and Send-email.
+    * Create one UUID per button click and send it in the Idempotency-Key
+      header.
+    * Retry of the SAME click (network error, timeout) reuses that key.
+    * A new click creates a new key.
+    * Disable the button while the request is running.
+    * On IDEMPOTENCY_KEY_REUSED with a different payload, show the mapped
+      message and ask the user to reload.
+- [CHANGED] Show the "Expired" state from isExpired in the API list and
+  detail responses, never from a browser date check. Expired Sent
+  quotations cannot be recorded as Accepted (button disabled; the server
+  also blocks it with QUOTATION_EXPIRED).
+- [CHANGED] Never compute a base-currency total in the browser. Show it only
+  when the API returns grand_total_base.
+
+
+3. MINIMUM GO-LIVE (frontend)
+-----------------------------
+  Phase 0 settings + Phase 1 required screens + Phase 2 required screens +
+  Phase 4 required actions + Phase 7 tax display.
+  Right after: Phase 5 revise, Phase 3 approval [IF ANA].
+
+
+4. MENU
+-------
+  [REQUIRED] Sales > Customers
+  [REQUIRED] Sales > Quotations
+  [IF ANA]   Sales > Quotation Approvals
+  [REQUIRED] Setup > Company Settings > Regional & Tax (new section)
+  [REQUIRED] Setup > Payment Terms
+  [REQUIRED] Setup > Number Series: new doc types SALES_QUOTATION, CUSTOMER
+  [LATER]    Setup > Delivery Terms, T&C Templates, Quotation Approval Rules
+
+
+5. PHASE 0 - COMPANY SETTINGS  [REQUIRED]
+-----------------------------------------
+  Section "Regional & Tax" on the company settings screen:
+    Country (ISO list), Region / State (list for the country), Timezone
+    (existing field), Base currency (existing default currency), Locale,
+    Fiscal year starts in (month), Prices include tax (Yes / No),
+    Rounding mode, Rounding stage (Line / Document), Paper size (A4 / Letter),
+    Document language, Exchange rate source (Manual / Provider),
+    Default validity days (new, default 30), Tax provider
+    (None / India GST / ...).
+  [CHANGED] [DEPENDS] Company tax IDs: list of rows (Type, Value, Country,
+  Primary). Replaces the single "Tax number" field in the UI.
+    Needs backend: table company_tax_identifiers + company country and
+    region fields (the PDF header uses them).
+  Warn before changing Prices include tax / Rounding: "Applies to new
+  quotations only".
+
+
+6. PHASE 1 - MASTERS
+--------------------
+6.1 [REQUIRED] Customer list   API GET companies/:companyId/customers
+  Columns: S.No, Code, Name, Primary tax ID, Country, City, Phone, Email,
+  Salesperson, Active.
+  [CHANGED] [DEPENDS] Primary tax ID and city come from the list response
+  (backend returns primary_tax_id and primary_city). Do NOT make one extra
+  call per row.
+  Search (code, name, email, phone, tax id). Filters: Active, Type,
+  Salesperson, Country. Scroll loading. Row actions: View, Edit, Delete.
+
+6.2 [REQUIRED] Customer form   API POST / PATCH /customers(/:id)
+  Tab General : Name*, Legal name, Type, Code (auto, read-only), Country*,
+                Currency*, Language, Email, Phone, Website, Payment terms,
+                Salesperson, Credit limit, Active*, Notes.
+  Tab Tax IDs : rows of Type (GSTIN, PAN, VAT, EIN, ABN, Other), Value,
+                Country, Primary.
+                [CHANGED] [DEPENDS] "Fetch details" button next to a value
+                calls POST /customers/registration-lookup (India GSTIN works
+                first) and fills name + address. Hide the button for ID
+                types with no lookup provider.
+  Tab Addresses: rows of Bill-To / Ship-To with Line 1, Line 2, City,
+                 Region, Postal code, Country*. At least one Bill-To*.
+                 Region is required when the country needs it (India yes;
+                 API returns REGION_REQUIRED). Default per type.
+  Tab Contacts : Name, Designation, Email, Phone, Primary.
+  (* = required. Error codes: CUSTOMER_NAME_REQUIRED, BILL_TO_REQUIRED,
+     COUNTRY_REQUIRED, REGION_REQUIRED, CUSTOMER_CODE_EXISTS,
+     CUSTOMER_IN_USE, TAX_ID_INVALID, TAX_ID_DUPLICATE.)
+  [LATER] Anonymize customer action (privacy erase, needs permission,
+          confirm dialog).
+
+6.3 [REQUIRED] Payment Terms   list + add / edit dialog
+  Fields: Code, Name, Days, Description, Active.
+
+6.4 [REQUIRED] Number Series screen
+  For SALES_QUOTATION and CUSTOMER: Prefix, Pattern (tokens {PREFIX} {FY}
+  {YYYY} {MM} {SEQ}), Separator, Serial length, Start from, Reset
+  (Never / Yearly / Fiscal year).
+  [CHANGED] [DEPENDS] Live preview ("QT/2026-27/0001") comes from the
+  backend preview endpoint, which does NOT consume a number. The endpoint
+  already exists (GET number-series/:documentType/preview); the backend
+  extends it for pattern series. Do not build the preview in the browser.
+  Call it (debounced) when any field changes.
+  ITEM series screen stays as it is.
+
+6.5 [LATER] Delivery Terms (Code, Name, Incoterm, Description, Active) and
+  T&C Templates (Name, Language, Body, Default, Active) - list + dialog.
+
+
+7. PHASE 2 - QUOTATION LIST + EDITOR
+------------------------------------
+7.1 [REQUIRED] Quotation list   API GET /sales/quotations
+  Columns: S.No, Quotation No, Version, Date, Customer, Salesperson,
+           Valid Until, Status chip, Currency, Grand Total.
+  Search: number, customer, customer reference.
+  Filters: Status, Customer, Salesperson, Date range.
+  Row actions from allowedActions: Open, Edit, Copy, Delete (draft only).
+  [CHANGED] Show the "Expired" chip when the API field isExpired = true.
+
+7.2 [REQUIRED] Quotation editor   API POST / PATCH /sales/quotations(/:id)
+  Top bar: Quotation No + Version + Status chip; buttons from allowedActions
+           (Save, Submit, Issue, Print, Copy, Cancel ...).
+  Header panel
+    Customer* (search select, API /customers/lookup). On select, fill
+    currency, payment terms, bill-to, ship-to, contact from customer
+    defaults (user can change).
+    Contact, Bill-To, Ship-To, Customer reference, Quotation date*,
+    Valid until*, Salesperson, Currency*, Payment terms, Delivery terms
+    (text until the master exists, keep it editable).
+    [CHANGED] [DEPENDS] Valid until default: the backend returns it in the
+    new-quotation defaults response (company setting, 30 days). The FE only
+    displays it; it does not add 30 days itself.
+    [CHANGED] [DEPENDS] Exchange rate: shown only when currency is not the
+    base currency. Editable only with sales_quotations:override_exchange_rate,
+    otherwise read-only.
+    Badge: "Prices exclude tax" / "Prices include tax" (from the quotation).
+  Line grid (keyboard friendly: Enter = next cell, add row at end)
+    [REQUIRED] Item* (search by code / name), Description (from item,
+               editable), Qty*, UOM*, Unit price*, Disc %, Line net
+               (from API).
+    [LATER]    Add Section / Text / Optional line buttons;
+               Customer part no, Delivery date, Remarks columns;
+               Unit cost, Margin % columns (view_margin only).
+  [LATER] Charges block: Freight, Packing, Insurance, Other.
+  Totals panel (always visible, sticky)
+    Subtotal, Line discounts, Document discount, Charges, then one row per
+    tax_breakdown entry (empty until Phase 7), Round-off, Grand total.
+    [CHANGED] "Grand total in base currency" row only when the currency
+    differs from the base currency and the API returns grand_total_base
+    (backend plan includes it).
+    Values from POST /preview-totals, called on change (~400 ms debounce).
+  Tabs
+    [REQUIRED] Terms (text box), Customer notes, Internal notes
+               (label: "Not printed").
+    [IF ANA]   Attachments (drawings, datasheets).
+    [LATER]    Pick T&C template, History.
+
+7.3 [REQUIRED] Copy quotation   API POST /:id/duplicate -> open new draft.
+
+7.4 Error codes to map to text / fields
+  CUSTOMER_REQUIRED, CUSTOMER_INACTIVE, CURRENCY_REQUIRED, LINES_REQUIRED,
+  ITEM_INVALID, QTY_MUST_BE_POSITIVE, UOM_INVALID, PRICE_NEGATIVE,
+  DISCOUNT_OUT_OF_RANGE, VALID_UNTIL_BEFORE_DATE, EXCHANGE_RATE_INVALID,
+  QUOTATION_LOCKED (read-only banner), INVALID_STATUS_TRANSITION,
+  ROW_VERSION_CONFLICT (reload dialog).
+
+
+8. PHASE 3 - APPROVAL  [IF ANA]
+-------------------------------
+  - Submit button (API POST /:id/submit). If approval is needed, show a
+    banner with the reasons (from validate / submit response).
+  - Approval queue screen   API GET /approvals/pending
+    Columns: S.No, Quotation No, Customer, Salesperson, Amount (+ base
+    currency when the API returns it), Max disc %, Waiting since, Reason.
+  - Approval review screen: header summary, reasons, lines (margin if
+    allowed), comment box, Approve / Return / Reject (Return and Reject need
+    a comment). Error codes: APPROVAL_NOT_ALLOWED, COMMENT_REQUIRED.
+  - OPEN: is Rejected final or can it return to Draft? Approve and Return
+    can be built; do not build the Reject action until ANA decides.
+  - [LATER] Approval rules settings screen.
+
+
+9. PHASE 4 - ISSUE / PDF / RESPONSE / CANCEL
+--------------------------------------------
+  [REQUIRED] Preview / Print / Download PDF   API GET /:id/pdf
+  [REQUIRED] Issue button (confirm)            API POST /:id/issue
+             Idempotency-Key. After issue: editor read-only.
+  [REQUIRED] Record response dialog            API POST /:id/response
+             Idempotency-Key. Accepted (accepted by name) / Rejected (lost
+             reason required) / Revision requested. Disabled when isExpired.
+  [REQUIRED] Cancel dialog (reason required)   API POST /:id/cancel
+             Idempotency-Key.
+  [REQUIRED] Status chips:
+             Draft (grey), Pending Approval (orange), Approved (blue),
+             Sent (purple), Accepted (green), Rejected (red),
+             Revised (grey outline), Expired (dark orange),
+             Cancelled (red outline).
+  [LATER]    Send email dialog (to, cc, message)   API POST /:id/send-email
+             Idempotency-Key (see rules).
+  [LATER]    Extend validity dialog                API POST /:id/extend-validity
+  Error codes: NOT_APPROVED, QUOTATION_EXPIRED, REASON_REQUIRED,
+               IDEMPOTENCY_KEY_REQUIRED, IDEMPOTENCY_KEY_REUSED.
+
+
+10. PHASE 5 - REVISIONS / HISTORY / REPORTS
+-------------------------------------------
+  [REQUIRED soon after go-live]
+    Revise button (reason required)   API POST /:id/revise -> open new draft.
+    Versions tab: version, status, date, reason; click opens old version
+    read-only.                            API GET /:id/versions
+  [LATER] Compare view: old vs new side by side, changed cells highlighted.
+  [LATER] Activity timeline tab.           API GET /:id/activity
+  [LATER] Reports: Open quotations, Expired / Lost, Approval ageing,
+          Win rate - filters, base-currency totals, Excel export.
+
+
+11. PHASE 6 - EXTRAS  [LATER]
+-----------------------------
+  - Auto price from customer price list / quantity break on the line.
+  - Stock and lead time shown on the line (info only).
+  - CRM lead / opportunity selector on header.
+  - Machinery / BOM costing screen (only if the company feature is on).
+  - Branch selector on the quotation.
+  - Other UI languages (add messages files).
+
+
+12. PHASE 7 - TAX DISPLAY  [REQUIRED for the go-live country]
+-------------------------------------------------------------
+  - [CHANGED] [DEPENDS] Item master: Tax classification rows (Country,
+    Scheme HSN / SAC / HS, Code from tax codes search, Tax code / rate,
+    Effective from). Waits for backend endpoints GET / POST / PATCH on
+    item tax classifications and a tax-codes search endpoint.
+  - Customer form: tax IDs and address region already in Phase 1.
+  - Quotation line grid: Tax class code, Tax %, Tax amount columns
+    (from API).
+  - Totals panel: one row per tax_breakdown entry (India shows CGST + SGST
+    or IGST because the API sends those names), Round-off, Grand total.
+  - PDF shows the tax class code per line and the tax breakdown.
+
+
+13. BACKEND DEPENDENCIES TO CONFIRM BEFORE EACH PHASE
+-----------------------------------------------------
+  PLANNED = already in SALES-QUOTATION-BACKEND-PLAN.txt (v2)
+  EXISTS  = already in the code today
+  ADD     = must be added to the backend plan before that FE phase
+
+  Phase 0 : company_tax_identifiers table ........................ PLANNED
+            company country_code + region_code ................... PLANNED
+            default validity days setting ........................ ADD
+  Phase 1 : POST /customers/registration-lookup .................. PLANNED
+            customer list returns primary_tax_id + primary_city .. ADD
+            Number Series preview endpoint (no number consumed) .. EXISTS
+              (extend for pattern series ......................... PLANNED)
+            COUNTRY_REQUIRED, REGION_REQUIRED, TAX_ID_DUPLICATE .. PLANNED
+  Phase 2 : new-quotation defaults response (valid_until,
+            currency, terms) ..................................... ADD
+            isExpired on detail .................................. PLANNED
+            isExpired on list .................................... ADD
+            permission sales_quotations:override_exchange_rate ... ADD
+            grand_total_base ..................................... PLANNED
+  Phase 4 : Idempotency-Key honoured on issue, response, cancel .. ADD
+              (backend v2 required it only on send-email)
+            Idempotency-Key required on send-email ............... PLANNED
+            IDEMPOTENCY_KEY_REUSED code .......................... PLANNED
+  Phase 7 : item tax classification endpoints (GET/POST/PATCH) ... ADD
+            tax-codes search endpoint ............................ ADD
+              (tables tax_codes + item_tax_classifications ....... PLANNED)
+
+
+14. BUILD ORDER (frontend)
+--------------------------
+  0  Phase 0 Company Settings > Regional & Tax              REQUIRED
+  1  Phase 1 Customer list + form, Payment Terms,
+     Number Series for new doc types                        REQUIRED
+  2  Phase 2 Quotation list + editor + copy                 REQUIRED
+  3  Phase 4 PDF, Issue, Response, Cancel, status chips     REQUIRED
+  4  Phase 7 tax columns + breakdown                        REQUIRED
+     ---- GO-LIVE ----
+  5  Phase 5 Revise + versions tab                          REQUIRED soon after
+  6  Phase 3 Approval screens                               IF ANA
+  7  LATER items, Phase 6 extras                            LATER
+  Start each step only when the backend plan says that step's APIs are done
+  and the items in section 13 for that phase are PLANNED / EXISTS (not ADD).

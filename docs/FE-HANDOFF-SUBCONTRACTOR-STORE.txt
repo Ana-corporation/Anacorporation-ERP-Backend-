@@ -1,0 +1,100 @@
+FE HANDOFF - OPENING STOCK CHANGE 1: ONE "SUB CONTRACTOR STORE" + VENDOR
+=========================================================================
+Date    : 13-Nov-2026
+Status  : Backend DONE on DEV (Erp_test_db). NOT on LIVE yet (needs approval).
+          Migration 20261113100000_store_type_subcontractor
+Base    : /api/v1/companies/:companyId
+
+
+1. IDEA
+-------
+Users see ONE store for vendor-held material: the store whose Store Type is
+SUBCONTRACTOR (e.g. "Sub Contractor Store"). Picking it shows a required Vendor
+field. The backend keeps one internal location per vendor (auto-created, no
+site, no bins). Users never see or pick those vendor locations.
+
+
+2. STORE MASTER  (/store-categories)
+------------------------------------
+  New field storeType: 'NORMAL' | 'SUBCONTRACTOR' (create / update / response).
+  One SUBCONTRACTOR store per company   -> STORE_CATEGORY_SUBCONTRACTOR_EXISTS (409)
+  Store with own locations / bins cannot become SUBCONTRACTOR, and a store
+  holding vendor locations cannot go back to NORMAL
+                                        -> STORE_CATEGORY_STORE_TYPE_LOCKED
+  UI: "Store type" select on the Store form (Normal / Sub Contractor).
+
+  Locations (/warehouses):
+    - POST in a SUBCONTRACTOR store is refused -> LOCATION_SUBCONTRACTOR_AUTO
+    - GET ?excludeVendorLocations=true hides the per-vendor locations
+    - responses: storeCategory.storeType, vendor
+
+
+3. STORE PICKERS  (Opening Stock header, line "Change Store", Current Stock filter)
+----------------------------------------------------------------------------------
+  List = GET /warehouses?excludeVendorLocations=true
+       + ONE extra entry for the SUBCONTRACTOR store (from /store-categories,
+         storeType = 'SUBCONTRACTOR'), shown by its name.
+  Keep the picked value as either { warehouseId } or { subcontractStoreId }.
+
+
+4. OPENING STOCK  (/inventory/opening-stock)
+--------------------------------------------
+Request
+  header  defaultStoreCategoryId   when the header store is the Sub Contractor store
+                                   (then send defaultWarehouseId = null; not both)
+  line    storeCategoryId + vendorId   for a Sub Contractor line
+                                       (instead of inventoryLocationId; no storageBinId)
+          inventoryLocationId          for every other store (no vendorId)
+
+Response
+  header  defaultStoreCategoryId, defaultStore { storeCategoryId, name, storeType }
+  line    storeType ('NORMAL' | 'SUBCONTRACTOR'), storeCategoryId (Sub Contractor lines),
+          storeName, vendorId, locationVendor { vendorId, code, name }
+          -> for Sub Contractor lines show "Sub Contractor Store" + vendor name, never
+             the internal locationCode (SUB-001 ...)
+  When editing a saved draft send the Sub Contractor lines back as
+  storeCategoryId + vendorId (from the response).
+
+UI rules
+  - Header store = Sub Contractor -> every line shows Vendor (required).
+  - Line store changes to / from Sub Contractor -> clear Bin and Vendor.
+  - Sub Contractor lines: no Bin field.
+  - Vendor picker: active vendors of the company (Vendor Master).
+  - Red required marker on Vendor only for Sub Contractor lines.
+
+Error codes (field = lines[i].vendorId / storeCategoryId / defaultStoreCategoryId)
+  VENDOR_REQUIRED                  Vendor is required for the Sub Contractor store
+  VENDOR_NOT_ALLOWED               Vendor is only allowed for the Sub Contractor store
+  VENDOR_NOT_FOUND / VENDOR_INACTIVE
+  SUBCONTRACTOR_STORE_INVALID      store is not the active Sub Contractor store
+  INVENTORY_BIN_NOT_ALLOWED        bin sent for a Sub Contractor line
+  INVENTORY_DUPLICATE_LINE         "<part> is entered twice for vendor <name>"
+  OPENING_STOCK_ALREADY_EXISTS     "... at vendor <name> is already posted (OS-...)"
+  SUBCONTRACTOR_STOCK_NOT_ISSUABLE Material Issue from vendor-held stock
+
+
+5. CURRENT STOCK  (/inventory/stock)
+------------------------------------
+  Filters: ?storeCategoryId=<Sub Contractor store> (all vendors), ?vendorId=
+  Row: storeCategoryId, storeName, storeType, locationVendor
+  -> show "Sub Contractor Store · <vendor>" for SUBCONTRACTOR rows.
+
+
+6. EXCEL IMPORT
+---------------
+  New column "Vendor Code" (after Bin). Template Instructions sheet updated.
+  Location Code = the Sub Contractor store's code prefix (or its name) for
+  vendor-held rows; Vendor Code required there, empty for every other store,
+  Bin always empty for it.
+  Row errors (field vendorCode / binCode): required, unknown vendor, inactive
+  vendor, "Vendor Code is only for the Sub Contractor store", "never uses bins",
+  "Duplicate of row N (same part at vendor X)".
+  Approve creates the vendor location automatically when it does not exist.
+
+
+7. LIVE (pending)
+-----------------
+  1. Apply migration 20261113100000_store_type_subcontractor (approval).
+  2. Set Store Type = Sub Contractor on ANA's existing "Sub Contractor Store"
+     (Store Master screen or one approved update).
+  Do not restart the local API on new code before step 1.

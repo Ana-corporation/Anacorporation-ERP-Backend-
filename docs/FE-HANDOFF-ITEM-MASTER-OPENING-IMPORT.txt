@@ -1,0 +1,264 @@
+================================================================================
+FE HANDOFF — ANA ITEM MASTER + OPENING STOCK IMPORT
+Date: 22-Oct-2026   Backend: ERP-Backend, branch development-anc
+Pairs with: FE-HANDOFF-NUMBER-SERIES.txt (part numbers)
+================================================================================
+
+0) IN ONE MINUTE
+--------------------------------------------------------------------------------
+  - No new item screen. ANA uses the EXISTING Item Master; its layout comes from
+    Form Configuration (show/hide, order, mandatory, label) + Tab Access (hidden tabs).
+    Other companies see no change.
+  - New masters: Item Group (tree, per Store) and UOM.
+  - Items get: Store, Item Group, Inventory UOM, Picture, statuses Draft / Obsolete.
+  - New page: Opening Stock Import (Upload → Review → Approve → Result).
+  - All responses use the normal envelope { success, message, data, errors, code }.
+    Examples show only `data`. All ids are strings.
+
+
+1) ITEM FORM — DRIVEN BY FORM SCHEMA (no hard-coded fields)
+--------------------------------------------------------------------------------
+  GET /api/v1/companies/:companyId/entities/item/form-schema
+    resolvedSections[].fields[] already carry, per company:
+      key, label (company label, e.g. "Part Number"), visible, required, displayOrder,
+      fieldType, sectionKey
+    Hidden tabs (Tab Access) are already removed for the logged-in user.
+  Render sections in order, fields by displayOrder, label / required from the schema.
+  A field not in the schema = do not render and do not send.
+
+  New field types in the schema:
+    storeCategoryId   select       → Store master (GET /store-categories, active)
+    itemGroupId       tree-select  → Item Group tree filtered by the selected Store
+    inventoryUomId    select       → UOM master (GET /uoms, active)
+    imageFileAssetId  image        → picture upload (section "attachments", see 1.4)
+
+  ANA layout (company 28, set up through settings):
+    Header:   Store* → Part Number (read-only) → Part Name* → Inventory Item
+    General:  Item Group* → Inventory UOM* → Status
+    Remarks tab, Attachments tab (Picture). Every other item tab / field is hidden.
+    (* = mandatory)
+
+  1.1 Store
+    - First field for ANA. Required when Number Series is active.
+    - After first save: read-only (tooltip "Store can't be changed after the first save").
+      Backend: a different value → 400 ITEM_STORE_LOCKED.
+    - Changing Store on a NEW item clears Item Group.
+
+  1.2 Part Number (itemCode)
+    - Read-only, placeholder "Auto-generated on save". Never send it when the series is
+      active (see Number Series handoff). After save show data.itemCode.
+
+  1.3 Item Group
+    GET /api/v1/companies/:companyId/item-groups/tree?storeCategoryId=<store>
+      data: [{ itemGroupId, name, storeCategoryId, parentId, depth, path,
+               isActive, childCount, itemCount, children: [...] }]
+    Inactive groups are left out by default (?includeInactive=true to include them).
+    Backend rejects a group of another store → 400 ITEM_GROUP_STORE_MISMATCH.
+
+  1.4 Picture (after the item exists)
+    POST   /items/:id/image       multipart, field "image" (or "file"), PNG/JPG/WEBP ≤ 5 MB
+           → { imageFileAssetId, fileName, mimeType, fileSize }
+    GET    /items/:id/image/url   → { url }  (signed URL for display)
+    DELETE /items/:id/image
+    On a new item: save first, then upload. Bad type/size → 400 ITEM_IMAGE_INVALID.
+
+  1.5 Status
+    draft | active | inactive | obsolete   (advanced stays for other companies)
+
+  1.6 Duplicate Part Name warning (same Store)
+    POST/PATCH → 409 ITEM_NAME_DUPLICATE, message lists the existing codes.
+    Show "An item with this name already exists in this store (ANABO00007). Save anyway?"
+    Yes → resend the same body with "confirmDuplicateName": true.
+
+  1.7 Mandatory fields (backend also checks)
+    400 ITEM_REQUIRED_FIELDS, errors: [{ field: "itemGroupId", message: "Item Group is required" }, ...]
+    field = API key (storeCategoryId, itemGroupId, inventoryUomId, inventory.uomName ...).
+    Hidden fields are never required.
+
+  1.8 Delete
+    Item with stock / stock movements / inventory documents → 409 ITEM_IN_USE.
+    Show "This item has stock; set Status to Inactive instead."
+
+
+2) ITEM API CHANGES
+--------------------------------------------------------------------------------
+  POST /items, PATCH /items/:id — new body keys:
+    storeCategoryId, itemGroupId, inventoryUomId, confirmDuplicateName (boolean)
+    status: draft | active | inactive | obsolete | advanced
+  Picking inventoryUomId also sets inventory.uomName = UOM code (stock screens keep working).
+
+  GET /items, GET /items/:id — new keys on every item:
+    storeCategoryId, storeCategory { storeCategoryId, name, numberSeriesCode }
+    itemGroupId,     itemGroupRef  { itemGroupId, name, parentId }
+    inventoryUomId,  inventoryUom  { uomId, code, name }
+    imageFileAssetId
+  (null for items that don't have them)
+
+  GET /items list filters (new):
+    storeCategoryId, itemGroupId (includes its sub-groups), inventoryUomId
+    + existing: search (code / description / old code / barcode, case-insensitive), status, page, limit
+
+  List page for ANA: Part Number | Part Name | Store | Item Group | UOM | Status
+    filters: Store, Item Group (tree of that store), Status, search.
+
+
+3) MASTERS
+--------------------------------------------------------------------------------
+  Permissions: items:view (GET), items:create / items:edit / items:delete (writes).
+
+  3.1 Item Groups   /api/v1/companies/:companyId/item-groups
+    GET    ?storeCategoryId=&includeInactive=   flat list in tree order:
+           { items: [{ itemGroupId, name, storeCategoryId, storeCategoryName, parentId,
+                       depth, path: "Bearings / Ball", sortOrder, isActive,
+                       childCount, itemCount, createdBy, updatedAt ... }], total }
+    GET    /tree?storeCategoryId=               nested (see 1.3)
+    GET    /:id
+    POST   { name, storeCategoryId, parentId?, sortOrder?, isActive? }
+           sub-group: send parentId (store comes from the parent; storeCategoryId optional)
+    PATCH  /:id { name?, parentId? (null = top level), sortOrder?, isActive? }
+           the Store of a group cannot change
+    DELETE /:id   only when it has no sub-groups and no items
+    Errors: ITEM_GROUP_NAME_EXISTS (409, same name at the same level),
+            ITEM_GROUP_PARENT_INVALID (400: other store / under itself),
+            ITEM_GROUP_TOO_DEEP (400, max 10 levels), ITEM_GROUP_STORE_INVALID (400),
+            ITEM_GROUP_IN_USE (409), ITEM_GROUP_NOT_FOUND (404)
+
+  3.2 UOM   /api/v1/companies/:companyId/uoms
+    GET    → { items: [{ uomId, code, name, isActive, itemCount, ... }], total }  (not paged)
+    POST   { code, name, isActive? }  code is uppercased (NOS, KG, MTR, SQ.M ...)
+    PATCH  /:id { code?, name?, isActive? }
+    DELETE /:id   only when no item uses it
+    Errors: UOM_CODE_EXISTS (409), UOM_IN_USE (409), UOM_NOT_FOUND (404)
+    ANA starter list: NOS, KG, MTR, LTR, SET, PAIR
+
+
+4) FORM CONFIGURATION SETTINGS SCREEN (admin) — 2 new switches
+--------------------------------------------------------------------------------
+  GET /api/v1/companies/:companyId/form-configurations/item
+    each built-in field now also has:
+      label (company label), defaultLabel, required (effective), defaultRequired,
+      requiredConfigurable (false for protected fields)
+  PUT /api/v1/companies/:companyId/form-configurations/item
+    fields: [{ fieldKey, isVisible?, isRequired?, label? }]
+      isRequired — only when requiredConfigurable (else 400 PROTECTED_FIELD_REQUIRED_LOCKED)
+      label      — "" or null = back to defaultLabel
+  Show a "Mandatory" toggle and a "Label" text box per field. Works for every entity
+  that uses Form Configuration (Vendor too).
+
+
+5) OPENING STOCK IMPORT — PAGE WITH 4 STEPS
+--------------------------------------------------------------------------------
+  Base: /api/v1/companies/:companyId/inventory/opening-stock-imports
+  Permissions: opening_stock:view (read), opening_stock:create (upload / edit rows),
+               opening_stock:approve (Approve button)
+
+  Columns (template): Store*, Part Number, Part Name, Part Code, Material Grade, Size,
+    Inventory UOM, Status, Location Code*, Qty*, Unit Price, Revision Status,
+    Machine Model, Machine No, Category      (* = column must exist)
+  Total Price is NOT imported — show Qty × Unit Price.
+  Location Code = location code (BOS-001); a location with bins = BOS-001/A-01.
+  Part Number blank = new item. Part Code / Material Grade / Size / Revision go on the stock
+  line as reference; Machine Model / No / Category are kept on the import row only.
+
+  STEP 1 — Upload
+    GET  /template                      → .xlsx download
+    POST /   multipart: file (.xlsx/.csv ≤ 10 MB, ≤ 5,000 rows), documentDate (YYYY-MM-DD, optional)
+      → summary (see below) + duplicateOfBatchId
+         duplicateOfBatchId not null = this exact file was approved before → warn
+         ("Already imported in batch #12. Rows already posted will show as errors.")
+      Missing column → 400 OPENING_IMPORT_MISSING_COLUMNS (errors[] lists them).
+    5,000 rows take a few seconds: show a progress / busy state on Upload and Approve.
+
+  Summary (GET /:id, also returned by most actions):
+    { batchId, fileName, status: DRAFT|VALIDATED|APPROVED|FAILED, documentDate,
+      totalRows, matchedRows, newRows, errorRows,
+      itemsToCreate, newRowsWithoutGroup, stockLines, totalValue ("12500.00"),
+      canApprove, documentId, documentNumber, errorMessage, createdAt, approvedAt }
+
+  STEP 2 — Review
+    GET /:id/rows?matchStatus=MATCHED|NEW|ERROR&needsItemGroup=true&search=&page=&limit=
+      row: { rowId, rowNo, data: { store, partNumber, partName, partCode, materialGrade,
+             size, uom, status, locationCode, quantity, unitPrice, revision,
+             machineModel, machineNo, category },
+             matchStatus, matchedItem { itemId, itemCode, description } | null,
+             candidates [ { itemId, itemCode, description } ]   (ambiguous rows),
+             pickedItemId, itemGroupId, needsItemGroup, storeCategoryId,
+             quantity, unitPrice, totalPrice ("300.000000"), errors [{ field, message }] }
+    Tabs / filters: Matched | New items | Errors. Batch total = summary.totalValue.
+
+    Edit a row (editable grid):
+      PATCH /:id/rows/:rowId  { data?: { <any column above> }, itemGroupId?, pickedItemId? }
+        → { row, summary }   (the whole batch is re-checked)
+      Ambiguous row ("Ambiguous: matches ANABO00003, ANABO00009") → let the user pick one of
+      `candidates` → send pickedItemId.
+    Bulk "Set Item Group" for NEW rows:
+      POST /:id/rows/item-group { itemGroupId, rowIds? }
+        rowIds omitted = every NEW row of that group's store that has no group yet
+        → { updated, skippedOtherStore, summary }
+      Item Group picker filtered by the row's store (storeCategoryId on the row).
+    Re-check after master changes (e.g. new UOM added): POST /:id/validate → summary
+
+    Matching (backend, same company):
+      1. Part Number exact (case-insensitive)
+      2. Part Code of earlier approved imports
+      3. Part Name + Size in the same Store (earlier imports; Part Name alone when Size blank)
+      No match = NEW. Several = ERROR "Ambiguous" until picked.
+    Row errors (do not block other rows): unknown/missing Store, unknown UOM, Qty missing /
+      not a number / ≤ 0, Unit Price not a number, missing Part Name or UOM for a new item,
+      unknown location / bin, duplicate rows in the file, item inactive / not stockable,
+      opening stock already posted for that item + location, store without Number Series code.
+
+  STEP 3 — Approve
+    Summary card before approving: items matched (matchedRows), items to create
+      (itemsToCreate), stock lines (stockLines), total opening value (totalValue),
+      rows skipped (errorRows).
+    Approve enabled only when summary.canApprove (needs every NEW row to have an Item Group).
+    POST /:id/approve   → summary + createdItems [{ itemId, itemCode, description }]
+      One transaction: new items get part numbers, then one posted Opening Stock document.
+      ERROR rows are skipped. Any failure → nothing saved, no part number used,
+      status FAILED + errorMessage; fix and approve again.
+      400 OPENING_IMPORT_NOT_READY: rows without Item Group / nothing to post.
+      409 OPENING_IMPORT_APPROVED: already approved (batch is read-only).
+
+  STEP 4 — Result
+    GET /:id/created-items  → [{ itemId, itemCode, description, storeName }]  (new part numbers)
+    GET /:id/error-report   → .xlsx of error rows (+ new rows without group) with an Errors column
+    Show summary.documentNumber (link to the Opening Stock document).
+
+  History: GET / ?page=&limit=  → batches (newest first) with documentNumber.
+
+
+6) ERRORS — QUICK LIST
+--------------------------------------------------------------------------------
+  ITEM_STORE_LOCKED 400 · ITEM_GROUP_STORE_MISMATCH 400 · ITEM_NAME_DUPLICATE 409 (confirm)
+  ITEM_REQUIRED_FIELDS 400 (errors[]) · ITEM_IN_USE 409 · ITEM_IMAGE_INVALID 400
+  ITEM_CODE_REQUIRED 400 (manual item codes, import only)
+  PROTECTED_FIELD_REQUIRED_LOCKED 400
+  OPENING_IMPORT_MISSING_COLUMNS 400 · OPENING_IMPORT_NOT_READY 400/409
+  OPENING_IMPORT_APPROVED 409 · OPENING_IMPORT_ROW_NOT_FOUND 404 · OPENING_IMPORT_NOT_FOUND 404
+  OPENING_IMPORT_PICK_INVALID 400 · OPENING_IMPORT_ITEM_GROUP_INVALID 400
+  + Item Group / UOM codes in section 3, Number Series codes in its own handoff.
+
+
+7) CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] Item form renders from form-schema (labels, order, required, hidden fields/tabs)
+  [ ] Store first + locked after save; Store change clears Item Group
+  [ ] Item Group tree filtered by Store; UOM from master
+  [ ] Picture upload after save; preview via /image/url
+  [ ] Duplicate-name confirm → resend with confirmDuplicateName
+  [ ] ITEM_IN_USE on delete → suggest Inactive
+  [ ] Item list: Store / Item Group / Status filters + columns
+  [ ] Item Group + UOM master screens
+  [ ] Form Configuration: Mandatory toggle + Label box
+  [ ] Import: template, upload, Matched/New/Errors tabs, editable grid, ambiguous pick,
+      bulk Set Item Group, Total Price + batch total, summary, Approve, Result, error report
+
+
+8) STATUS (22-Oct-2026)
+--------------------------------------------------------------------------------
+  DEV  (Erp_test_db): migrated; ANA (company 28) layout + UOMs configured.
+  LIVE (Ana_corporation_db): NOT migrated yet — these APIs return errors/404 there until the
+       backend team migrates LIVE, runs the ANA setup and deploys.
+  Approve speed: 1,000 rows ≈ 7 s, 5,000 rows ≈ 16 s (DEV over proxy).
+================================================================================

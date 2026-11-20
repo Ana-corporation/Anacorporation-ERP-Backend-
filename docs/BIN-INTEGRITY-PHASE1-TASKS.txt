@@ -1,0 +1,133 @@
+================================================================================
+BIN INTEGRITY — PHASE 1 TASK LIST + ACCEPTANCE CRITERIA
+Date:       2026-11-19
+Audience:   BE + FE
+Based on:   Revised phase 1 (enforce bin rule, Bin Mgmt switch, bin status,
+            Issue available-qty, same-store bin-to-bin Transfer first)
+================================================================================
+
+SHARED BUILDING BLOCK (do first — used by #4, #2, #3, Transfer)
+--------------------------------------------------------------------------------
+  T0. One function: availableQty(companyId, itemId, warehouseId, storageBinId)
+      - Same source of truth as Current Stock / balance row
+      - Used by: Issue post, Transfer post, Bin Mgmt OFF block, bin delete block
+      - Posting paths lock the stock balance row (or equivalent) in a transaction
+        so two concurrent Issues/Transfers cannot both pass then overdraw
+
+  Accept:
+    [x] Issue, Transfer, OFF-block, delete-block all call the same helper  (BE)
+    [ ] Concurrent double Issue from one bin: second post fails with insufficient stock
+    [x] Qty matches Current Stock for that Part + Store + Bin  (BE)
+
+
+P1 — #8 Enforce the bin rule
+--------------------------------------------------------------------------------
+  T1. API: every Opening / Issue / Adjustment / Transfer line
+      - warehouse.binManagement = true  → storageBinId required
+      - warehouse.binManagement = false → storageBinId must be null
+  T2. DB: strengthen where feasible (CHECK / app invariant on post); no silent coerce
+
+  Accept:
+    [x] Bin Mgmt Yes + no bin → 400 BIN_REQUIRED  (BE)
+    [x] Bin Mgmt No + bin set → 400 BIN_NOT_ALLOWED (or equivalent)  (BE)
+    [x] Opening Stock import already aligned; Issue / Adjustment / Transfer same  (BE)
+
+
+P2 — #2 Bin Mgmt switch (+ confirm migration)
+--------------------------------------------------------------------------------
+  T3. OFF blocked if any bin in the store has availableQty > 0
+  T4. ON when store has unbinned stock:
+      - Do not silent-fix
+      - Confirm screen → one migration into system bin UNASSIGNED
+      - Totals unchanged (Part + Store qty same; now on UNASSIGNED)
+  T5. UNASSIGNED = system bin (cannot delete / rename; flag isSystem)
+  T6. Audit every Bin Mgmt change: actor, timestamp, oldValue, newValue
+  T7. Optional: list/alert stock still sitting in UNASSIGNED
+
+  Accept:
+    [x] OFF with stock in any bin → blocked with clear message  (BE)
+    [x] OFF with empty bins / history only → allowed (or follow product: empty bins OK)  (BE)
+    [x] ON with unbinned stock without confirm → blocked  (BE)
+    [x] ON with confirm → balances move to UNASSIGNED; ledger shows the move  (BE)
+    [x] UNASSIGNED cannot be deleted or renamed  (BE)
+    [x] Audit log has before/after Bin Mgmt  (BE)
+
+
+P3 — #3 Bin status + delete block
+--------------------------------------------------------------------------------
+  T8. Status: Active | Blocked | Inactive (keep history)
+  T9. Blocked / Inactive: cannot receive new postings (Opening/Issue/Adj/Transfer in)
+  T10. Delete blocked if:
+       - availableQty > 0, OR
+       - any ledger / posted history, OR
+       - any draft / unposted document line references the bin
+  T11. Same availableQty helper as T0
+
+  Accept:
+    [x] Delete bin with stock → blocked  (BE)
+    [x] Delete bin with history but zero qty → blocked  (BE)
+    [x] Delete bin referenced by draft Issue → blocked  (BE)
+    [x] Blocked bin rejected on new inbound line  (BE)
+    [x] Active bin still works as today  (BE)
+
+
+P4 — #4 Issue validation (shared available-qty)
+--------------------------------------------------------------------------------
+  T12. FE Issue line: when bin selected, show available qty for Part + Store + Bin
+  T13. Post rejects if qty > available (negative stock OFF by default)
+  T14. Use T0 + row lock / transaction
+
+  Accept:
+    [ ] UI shows available before post  (FE — API ready: GET .../stock/available)
+    [x] Over-issue → clear insufficient-stock error  (BE)
+    [ ] Concurrent over-issue: only one succeeds  (smoke)
+
+
+P5 — Transfer (phase 1: bin-to-bin same store only)
+--------------------------------------------------------------------------------
+  T15. New document type (or stock doc): Transfer, Draft → Post
+  T16. Same store, fromBin → toBin, same part; qty ≤ available in fromBin
+  T17. Post: ledger OUT from fromBin + IN to toBin; Current Stock updated both sides
+  T18. Bin rule #8 applies; dest bin must be Active
+  T19. Store-to-store Transfer = phase 1.1 / follow-up (not required to close phase 1)
+
+  Accept:
+    [x] Wrong-bin stock can be fixed without Adjustment  (BE API)
+    [x] Adjustment history is not used for bin moves  (BE)
+    [x] Ledger has paired out/in; balances match  (BE)
+    [x] Over-transfer from empty/partial bin fails via T0  (BE)
+
+
+OUT OF PHASE 1 (later, as agreed)
+--------------------------------------------------------------------------------
+  #6 Adjustment reason polish
+  #5 Default / suggest bin (largest qty; FIFO later)
+  #7 Structured bin code A-01-02
+  Store-to-store Transfer
+
+
+PRE-RELEASE DATA TESTS (mandatory)
+--------------------------------------------------------------------------------
+  [ ] Store with stock and Bin Mgmt = No (unbinned balances)
+  [ ] Store Bin Mgmt = Yes with stock in bins
+  [ ] Bin with zero qty but old ledger rows
+  [ ] Draft Issue / Opening / Adjustment still pointing at a bin
+  [ ] Switch ON → UNASSIGNED migration on a real Ana store (company 28)
+  [ ] Switch OFF blocked when any bin has qty
+  [ ] Concurrent Issue smoke (two posts, same bin)
+
+
+FE SCREENS (phase 1)
+--------------------------------------------------------------------------------
+  - Store edit: Bin Mgmt toggle + confirm dialog for ON migration
+  - Bin master: status; delete errors; UNASSIGNED locked in UI
+  - Issue: available qty by bin
+  - Transfer (same store): from/to bin, qty, post
+  - Optional: UNASSIGNED stock list / badge
+
+
+DONE WHEN
+--------------------------------------------------------------------------------
+  Phase 1 closed only if T0–T18 acceptance boxes above are green on DEV
+  (and smoke on Ana schema with real-shaped data).
+================================================================================

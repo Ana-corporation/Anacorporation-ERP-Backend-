@@ -4,7 +4,7 @@ import { RequirePermissions } from '@/common/decorators/auth.decorators';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
-import { CurrentStockQueryDto, StockLedgerQueryDto } from './dto/stock-query.dto';
+import { AvailableQtyQueryDto, CurrentStockQueryDto, StockLedgerQueryDto } from './dto/stock-query.dto';
 import { StockQueryService } from './stock-query.service';
 
 /** Read-only by design: stock changes only through posted inventory documents. */
@@ -24,6 +24,18 @@ export class StockController {
   ) {
     assertCompanyAccess(companyId, user);
     return this.stockQueryService.currentStock(companyId, user.sub, query);
+  }
+
+  @Get('available')
+  @RequirePermissions('inventory_stock:view')
+  @ApiOperation({ summary: 'Available qty for one part at a store (and optional bin) — Issue / Transfer' })
+  available(
+    @Param('companyId') companyId: string,
+    @Query() query: AvailableQtyQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.stockQueryService.availableQty(companyId, user.sub, query);
   }
 
   @Get('ledger')

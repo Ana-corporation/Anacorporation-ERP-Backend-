@@ -1,0 +1,55 @@
+================================================================================
+ERP EXCEL IMPORT — WHERE IT IS NEEDED, HOW TO MATCH THE FORM, BE WORK
+Date:       2026-11-18
+Audience:   FE + BE + data team
+Purpose:    One rule for every Excel → ERP load. Separate files. Correct order.
+            Match current ERP (Material Type / Segment Category / RM + process,
+            BOM MAIN/SUB Common Key). Do not mix masters, stock, and BOM.
+================================================================================
+
+STATUS (BE — 2026-11-18)
+--------------------------------------------------------------------------------
+  DONE / UPDATED in this drop:
+    [x] Vendors — Is Job Work Vendor (form + import column + DB)
+    [x] Opening Stock — Old Code / Ambiguous Old Code, job-work vendor on
+        Sub Contractor Store, per-row zeroPriceConfirmed (+ batch confirmZeroPrice),
+        template Instructions examples
+    [x] Item import — Material Type / Segment Category / Process / Old Code unique
+        GET|POST /companies/{id}/items/import/template|validate|confirm|:{importId}
+    [x] BOM import — Draft only from find-no sheet; Common Key from Find integer
+        GET|POST /companies/{id}/boms/import/template|validate|confirm|:{importId}
+        Confirm body: importId + parentItemId|machineId (+ optional header fields)
+    [x] Old Code uniqueness on Item create/update
+
+  STILL OPEN (general rules / later):
+    [ ] Customer import
+    [ ] Dedicated resource:import permission (currently uses resource:create)
+    [ ] Dry-run flag, background job for >1k rows, formula-injection harden across
+        all parsers (cells stored as text today)
+    [ ] File-hash block on vendor/item/BOM sessions (Opening Stock already hashes)
+
+  Point FE at local API (localhost:3002). Apply migration
+  20261118160000_vendor_job_work_and_import_bom before testing.
+
+  Full product rules (files A–E, load order, QA) — see the working spec this
+  handoff was written from (Excel import cutover document, 2026-11-18).
+================================================================================
+
+LOAD ORDER
+  Setup → Vendors → Items → Opening Stock → Machine → BOM
+  Never reverse Items and Opening Stock / BOM.
+
+APIs
+  Vendors     …/vendors/import/*     + isJobWorkVendor on create/update/import
+  Items       …/items/import/*
+  Opening     …/inventory/opening-stock-imports/*
+              PATCH row: { data?, confirmZeroValuation?: boolean }
+  BOM         …/boms/import/*
+              POST confirm: { importId, parentItemId|machineId, bomType?,
+                              baseQuantity?, revisionLabel?, remarks? }
+              → { bomId, bom } DRAFT only — never RELEASED
+
+BOM FIND → KEY
+  Find 16 → MAIN Common Key 16; 16.1 / 16.2 → SUB under 16.
+  FE hybrid labels (Key 16 / .1 / .2) are UI only.
+================================================================================

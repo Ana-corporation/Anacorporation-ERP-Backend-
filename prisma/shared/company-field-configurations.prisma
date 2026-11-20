@@ -12,6 +12,10 @@ model CompanyFieldConfiguration {
   isRegistrationVisible Boolean? @map("is_registration_visible")
   /// Position inside the section, same number space as custom_field_definitions.sort_order.
   displayOrder          Int?     @map("display_order")
+  /// Mandatory override for configurable fields; a hidden field is never required.
+  isRequired            Boolean? @map("is_required")
+  /// Company label, e.g. "Part Number" for itemCode.
+  label                 String?  @db.VarChar(100)
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
 

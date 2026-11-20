@@ -1,0 +1,538 @@
+HRMS - EMPLOYEE DETAILS: FULL FIELD LIST (global SaaS)
+=======================================================
+Source : Employee page expansion (one record for HRMS + ERP)
+Pair   : My Profile = a small view of this record + the login account
+         (docs/FE-HANDOFF-USER-LOGIN-PROFILE-SELF-SERVICE.txt is login only)
+Scope  : Employee master INSIDE the ERP (HCM screen). Sales Order / payroll
+         engines are out of this file.
+Status : Plan. Expand the existing employees table; most sections not built.
+         ERP subset BUILT 2026-10-30 (lookup, warehouse, names, series EMP,
+         employees:*). HRMS tabs still pending.
+
+Tags:  [REQUIRED] go-live      [LATER] after go-live
+       [S]  sensitive: separate permission, masked display, audit of views
+       [E]  effective-dated: keep history with start and end date
+       [SELF] employee may edit (sensitive ones go to HR approval)
+       [CFG] shown / mandatory by company configuration (Form Configuration)
+       * = mandatory by default
+
+
+0. CURRENT STATE (checked in code, 2026-10-30)
+----------------------------------------------
+What already exists (thin org employee, not an HRMS page):
+
+  Table employees (prisma/organization/employees.prisma)
+    employee_id, company_id, user_id (nullable), employee_code UNIQUE(company),
+    first_name, last_name, email, mobile, branch_id, department_id,
+    designation_id, reporting_manager_id, joining_date,
+    employment_type (full_time/part_time/contract/intern/consultant),
+    employment_status (active/inactive/terminated/on_leave),
+    profile_photo, profile_completion_percentage,
+    created/updated/deleted + row_version. Soft delete already.
+
+  Login is a separate record: users (name, DOB, gender, emails, phones,
+  language, timezone, photo). employees.user_id is already nullable
+  (shop-floor worker with no login). users has no employee_id FK.
+
+  Membership overlay: user_companies stores employee_id as VARCHAR(40)
+  (the login emp code, NOT a FK to employees.employee_id), plus
+  department/designation/branch/warehouse/hire_date/exit_date. Same org
+  placement is duplicated on employees AND user_companies today.
+
+  Masters already in DB: departments, designations (has grade_level),
+  branches, warehouses (used as store / work location). Cost center,
+  holiday calendar, shift, leave policy, pay group, salary structure
+  do NOT exist.
+
+  APIs today (src/modules/organization/employees):
+    GET/POST/PATCH/DELETE  /api/v1/companies/:companyId/employees
+    Permission is users:view|create|edit|delete (NOT employees:*).
+    Create requires a manual employeeCode. No Number Series EMPLOYEE.
+    No lookup endpoint. No child tables.
+
+  My Profile today is /users/me* (login + membership labels). It is not
+  a view of the employee record.
+
+  Product module "hcm" is in the catalogue. src/modules/hrms is empty
+  and excluded from tsconfig.build.json. No employees:* / sensitive
+  permission codes exist.
+
+  Sales Quotation (Phase 1) stores salesperson_user_id on customers, not
+  salesperson_employee_id. ERP modules must switch to employee_id once
+  this page exists (plan section 27.3 rule 2).
+
+Gap vs this requirement (one line per section):
+
+  1 Core        names are first/last only; no legal/preferred/local script;
+                status values do not match (no Candidate / Suspended /
+                Notice period / Exited); no legal_entity_id.
+  2 Personal    DOB/gender live on users, not employees; no marital,
+                nationality, blood group, language, pronouns.
+  3 Contact     work vs personal emails/phones not split; no extension.
+  4-5           no employee_addresses, no employee_emergency_contacts.
+  6 Employment  joining_date + type/status only; no probation, notice,
+                contract dates, original hire, worker category.
+  7 Assignment  current dept/designation/manager are columns on employees
+                (no history). Need employee_assignments [E]. No cost_center,
+                work_mode, dotted-line, change_reason.
+  8-9           no schedule / shift / leave / compensation tables.
+  10-16         no identifiers, bank, education, experience, skills,
+                certifications, documents. Generic identifiers (type+value
+                +country) same pattern as customer_tax_identifiers.
+  17-20         [LATER] assets, health, performance, disciplinary.
+  21 Exit       user_companies.exit_date only; no resignation / LWD /
+                clearance / F&F.
+  22 Account    invite exists; My Profile is login-only; ess_enabled no.
+  24 Masters    dept/designation/branch exist; Number Series has ITEM +
+                CUSTOMER + SALES_QUOTATION, not EMPLOYEE.
+  25 Perms      employees APIs reuse users:* ; no view_sensitive /
+                view_compensation / view_bank / view_team / approve_changes.
+
+Reuse (do not rebuild): Company scoping, soft delete, row_version, audit
+  (withAudit), Form Configuration + Tab Access + Custom Fields, Number
+  Series pattern+counters (add document type EMPLOYEE), E.164 phone util,
+  file-assets pattern (vendors/items), data-access policies (own/team/
+  branch/company), GSTIN-style identifier table (type, value, country).
+
+
+1. DESIGN RULES
+---------------
+- Two records: users (login, preferences) and employees (HR data).
+  employees.user_id is nullable (shop-floor worker with no login) and
+  users.employee_id is nullable (external auditor with no HR record).
+  TODAY: only employees.user_id exists. Add users.employee_id (nullable
+  FK) OR keep the inverse only and treat "no HR record" as
+  employees.user_id IS NULL. Do not keep three copies of the emp code
+  (employees.employee_code, user_companies.employee_id string, users).
+- Every table has company_id. Employee data is scoped by company, and
+  optionally by legal entity / branch.
+- No country columns on core tables. National IDs, tax and statutory
+  numbers go in employee_identifiers (type, value, country, validity).
+- Addresses use region / postal code / country_code, never state / PIN only.
+- Anything that changes over time is effective-dated (designation,
+  department, manager, grade, salary, location, shift).
+- Sensitive data: encrypted at rest where needed (bank, ID numbers),
+  masked on screen (XXXX1234), view and change audited.
+- Collect only what is used (privacy laws). Mark fields optional per
+  country in configuration.
+- Custom Fields must be available on every section.
+- Soft delete only. Exit uses status + dates, never physical delete.
+  Anonymize after the retention period.
+
+
+2. CORE IDENTITY
+----------------
+  employee_id (system PK) | employee_code* (Number Series, e.g. EMP00001)
+  legal_first_name* | legal_middle_name | legal_last_name*
+  preferred_name | name_prefix (Mr, Ms, Dr) | name_suffix
+  name_in_local_script (optional, for non-Latin names)
+  photo (reference) [SELF]
+  status* (Candidate, Active, On leave, Suspended, Notice period,
+           Exited)
+  company_id*, legal_entity_id, branch_id
+
+  MAP FROM TODAY: first_name/last_name → legal_first_name/legal_last_name;
+  employment_status → expand enum (keep old values during migration);
+  profile_photo stays; employee_code stays, generation moves to series.
+
+
+3. PERSONAL
+-----------
+  date_of_birth* [S]            gender [S] [CFG]
+  marital_status [S] [CFG]      nationality (ISO country) [CFG]
+  blood_group                   religion [S] [CFG] (off by default)
+  preferred_language            pronouns [SELF] [CFG]
+  place_of_birth [LATER]        disability_status [S] [CFG] [LATER]
+  veteran / minority status [S] [CFG] [LATER] (some countries only)
+
+  MAP FROM TODAY: date_of_birth and gender live on users. Move (or copy)
+  onto employees so a shop-floor worker without a login still has them.
+  Login profile can keep a display copy.
+
+
+4. CONTACT
+----------
+  work_email*                   personal_email [SELF]
+  work_phone                    mobile_phone* [SELF]
+  personal_phone [SELF]         extension
+  Store phones as E.164 with country code.
+  Social / messaging handle [LATER]
+
+  MAP FROM TODAY: employees.email / mobile become work_email / mobile_phone.
+
+
+5. ADDRESSES  (table employee_addresses)
+----------------------------------------
+  type (Current, Permanent, Mailing)
+  line1, line2, city, region (state / province), region_code,
+  postal_code, country_code*, is_primary
+  valid_from, valid_to [E]
+  Change by employee goes to HR approval [SELF].
+
+
+6. EMERGENCY CONTACTS  (table employee_emergency_contacts)
+----------------------------------------------------------
+  name*, relationship*, phone*, alternate_phone, email, address,
+  priority_order [SELF]
+
+
+7. EMPLOYMENT
+-------------
+  hire_date / joining_date*     original_hire_date (rehire)
+  employment_type* (Full-time, Part-time, Contract, Intern, Apprentice,
+                    Consultant, Daily wage)
+  worker_category (Staff, Worker, Management) [CFG]
+  probation_start, probation_end, confirmation_date, confirmation_status
+  notice_period_days
+  contract_start, contract_end (for fixed-term) with expiry reminder
+  employee_source (Referral, Agency, Walk-in, Campus) [LATER]
+  referred_by [LATER]
+  previous_employee_id (rehire link) [LATER]
+
+  MAP FROM TODAY: joining_date stays; add apprentice + daily_wage to
+  EmploymentType enum (same live-enum lesson as number series: ADD VALUE
+  only, never rename in place).
+
+
+8. ORGANISATION AND POSITION  (table employee_assignments) [E]
+--------------------------------------------------------------
+  legal_entity*, branch / site*, work_location*, work_country
+  department*, sub_department, division / business unit
+  cost_center*
+  job_title / designation*, job_family, grade / level
+  position_id (if position management is used) [LATER]
+  reporting_manager* (employee), dotted_line_manager
+  hr_business_partner [LATER]
+  work_mode (On-site, Remote, Hybrid)
+  effective_from*, effective_to, change_reason (Promotion, Transfer,
+  Demotion, Restructure)
+
+  MAP FROM TODAY: current branch/department/designation/reporting_manager
+  columns on employees become the current assignment row (effective_to
+  null). Keep a denormalized current_* on employees for fast lookup, or
+  always join the open assignment — pick one in implementation, do not
+  keep a third copy on user_companies.
+
+
+9. WORK SCHEDULE, SHIFT, ATTENDANCE, LEAVE  (setup per employee) [E]
+---------------------------------------------------------------------
+  work_calendar / holiday_calendar*  (by country or location)
+  shift (General, A, B, C, Rotational) | weekly_off_pattern
+  standard_hours_per_week
+  attendance_mode (Biometric, Mobile, Web, Manual)
+  biometric_device_id / badge_no / RFID_no
+  overtime_eligible (Y/N) | comp_off_eligible
+  leave_policy* (assigned) | leave_balance (read from leave module)
+  timezone
+
+
+10. COMPENSATION AND PAYROLL SETUP  [S] [E]
+------------------------------------------
+  currency*, pay_frequency (Monthly, Weekly, Bi-weekly, Daily)
+  pay_group
+  salary_structure / pay_grade
+  ctc / base_salary*, effective_from*, change_reason
+  salary_components (table employee_pay_components):
+      component (Basic, HRA, Allowance, Bonus, Deduction ...),
+      amount or %, frequency
+  variable_pay / incentive_plan, bonus_eligible
+  overtime_rate_rule
+  payment_method (Bank transfer, Cheque, Cash)
+  tax regime / filing status [CFG] (country provider decides fields)
+  provident / pension / social security enrolment [CFG]
+  insurance / benefits enrolment (health, life, accident) [LATER]
+  loans and advances (table, balance, EMI) [LATER]
+  Payroll rules per country live in a payroll provider, not in columns.
+
+
+11. IDENTIFIERS AND STATUTORY  (table employee_identifiers) [S]
+---------------------------------------------------------------
+  id_type, id_value, country_code, issue_date, expiry_date, issuing
+  authority, is_primary, document (attachment)
+  Types, by country (data, not columns):
+    India : Aadhaar, PAN, UAN, ESI no, driving licence
+    US    : SSN, I-9 status, W-4
+    UK    : National Insurance no, right to work
+    EU    : national ID, tax ID
+    Any   : passport, visa / work permit, residence permit
+  Expiry reminders for passport, visa, licence, work permit.
+
+  Same generic pattern as customer_tax_identifiers / company_tax_identifiers.
+
+
+12. BANK DETAILS  (table employee_bank_accounts) [S] [SELF-with-approval]
+-------------------------------------------------------------------------
+  account_holder_name*, bank_name*, branch_name,
+  account_number / IBAN* (encrypted, masked),
+  swift_bic, routing / sort code / IFSC (by country),
+  account_type, currency, is_primary, split_percent (if salary split)
+  valid_from, valid_to [E]
+  Change goes to HR / payroll approval before it takes effect.
+
+
+13. EDUCATION  (table employee_education)
+-----------------------------------------
+  level (School, Diploma, Bachelor, Master, Doctorate, Certificate),
+  degree / qualification, field_of_study, institution, university /
+  board, country, start_year, end_year, grade / percentage,
+  document (attachment), is_highest, verified (Y/N)
+
+
+14. WORK EXPERIENCE  (table employee_experience)
+------------------------------------------------
+  previous_employer, job_title, from_date, to_date, location,
+  reason_for_leaving, last_salary [S], reference_contact,
+  document (attachment), verified (Y/N)
+  total_experience_years (calculated)
+
+
+15. SKILLS, CERTIFICATIONS, TRAINING
+------------------------------------
+  skills (table): skill, proficiency (Beginner ... Expert), years
+  certifications (table): name, issuing body, certificate_no, issue_date,
+    expiry_date (reminder), document
+    e.g. welding, forklift, electrical licence, safety training
+  languages (table): language, speak / read / write level
+  training_history (table): course, provider, date, hours, result
+  [LATER] training needs, skill matrix by department / machine
+
+
+16. DEPENDENTS AND NOMINEES  (table employee_dependents) [S]
+------------------------------------------------------------
+  name, relationship, date_of_birth, gender, dependent_on_insurance
+  (Y/N), nominee (Y/N), nominee_share_percent, id_number,
+  contact_phone
+  Needed for insurance, provident fund / gratuity, benefits.
+
+
+17. DOCUMENTS  (table employee_documents)
+-----------------------------------------
+  document_type* (Offer letter, Appointment letter, Contract, ID proof,
+  Address proof, Education certificate, Experience letter, Relieving
+  letter, Medical report, NDA, Policy acknowledgement, Photo),
+  file reference, document_no, issue_date, expiry_date (reminder),
+  uploaded_by / at, visibility (HR only / Employee can see / Manager),
+  verified (Y/N), version
+  Store the file reference only. Validate type and size. No public URLs.
+  Reuse file_assets / vendor-attachments pattern.
+
+
+18. COMPANY ASSETS  (table employee_assets) [LATER]
+---------------------------------------------------
+  asset_id, asset_type (Laptop, Phone, ID card, Uniform, Tools, Vehicle,
+  Locker), serial_no, issued_date, condition, returned_date,
+  acknowledgement (signed)
+  Link to the fixed asset module when it exists.
+
+
+19. HEALTH AND SAFETY  [S] [CFG]
+--------------------------------
+  blood_group (also in Personal), allergies, medical_conditions
+  (optional, employee-entered), pre-employment medical date,
+  periodic medical due date, PPE issued (table), safety induction date,
+  incident history (link to safety module) [LATER], vaccination status
+  [LATER] (only where legally required)
+  Very sensitive: separate permission, minimal collection.
+
+
+20. PERFORMANCE AND CAREER  [LATER]
+-----------------------------------
+  goals / KPIs, appraisal cycles (rating, reviewer, comments),
+  feedback, promotion history (from assignments), succession flag,
+  talent / potential rating, training recommendations
+
+
+21. DISCIPLINARY AND GRIEVANCE  [LATER] [S]
+-------------------------------------------
+  case_type, date, description, action taken, outcome, documents,
+  visibility (HR only)
+
+
+22. ONBOARDING AND EXIT
+-----------------------
+  Onboarding [LATER]: checklist items, assigned owner, due date,
+    completed date, documents collected, induction, asset issue, IT
+    access request, buddy.
+  Exit [REQUIRED when exit is built]:
+    resignation_date*, last_working_day*, exit_type (Resignation,
+    Termination, Retirement, End of contract, Death, Absconding),
+    reason, notice served / waived, handover status, clearance checklist
+    (IT, Finance, Store, HR, Admin), exit_interview notes,
+    full_and_final settlement status, rehire_eligible (Y/N),
+    relieving_letter, experience_letter
+
+
+23. ACCOUNT LINK AND SELF-SERVICE
+---------------------------------
+  user_id (login) | invite status | last_login
+  ess_enabled (self-service on/off)
+  approvals delegate (during leave) [LATER]
+  My Profile shows: photo, preferred name, phones, personal email,
+  address, emergency contacts, language, timezone, notification
+  preferences, skills and certificates, security (password, 2FA,
+  sessions). Read-only on My Profile: employee code, department,
+  designation, manager, location, joining date, employment type, status.
+
+  MAP FROM TODAY: keep /users/me for login security (password, 2FA,
+  sessions). Employee-owned fields move to GET/PATCH /employees/me
+  (or /users/me/employee) so one record is edited. Invite flow
+  (ensureLinkedForInvite) stays; it already creates/links employees.
+
+
+24. SYSTEM AND AUDIT (every table)
+----------------------------------
+  created_by / at, updated_by / at, deleted_at, row_version,
+  change history for [E] and [S] fields (who, when, old, new)
+  data_retention_until, anonymized_at
+  consent records (what, when, version) where required [LATER]
+
+
+25. MASTERS NEEDED
+------------------
+  [REQUIRED] Department, Designation, Grade / Level, Employment Type,
+             Branch / Work Location, Cost Center, Holiday Calendar,
+             Document Type, Identifier Type
+             → Department, Designation, Branch EXIST. Warehouses EXIST
+               (use as work location / store). Grade is designation.grade_level
+               today — promote to its own master if ANA needs named grades.
+               Cost Center, Holiday Calendar, Document Type, Identifier Type
+               are NEW.
+  [REQUIRED soon] Shift, Leave Policy, Pay Group, Salary Structure,
+             Relationship, Education Level, Skill, Certification Type
+  [LATER]    Asset Type, Training Course, Exit Reason, Appraisal Cycle,
+             Disciplinary Type
+  All masters: company_id, code, name, is_active, audit columns.
+  Employee code from Number Series (document type EMPLOYEE).
+  Default pattern: EMP + 5 digits, NEVER reset (same shape as CUSTOMER).
+
+
+26. PERMISSIONS (examples)
+--------------------------
+  employees:view | create | edit | delete
+  employees:view_sensitive (DOB, IDs, medical)
+  employees:view_compensation | edit_compensation
+  employees:view_bank | edit_bank
+  employees:view_documents | edit_documents
+  employees:approve_changes (HR approval of self-service edits)
+  employees:view_team (manager sees direct reports only)
+  employees:export
+  Data scope: own record, direct reports, department, branch, company.
+
+  Catalogue: add an HCM resource pack (same shape as CRM_RESOURCES /
+  SUPPLY_CHAIN_RESOURCES), module code "hcm". Keep users:* for login
+  invite / roles. Lookup API uses employees:view (or a public-within-
+  company read) and NEVER returns [S] fields.
+
+
+27. BUILD ORDER
+---------------
+  A  [REQUIRED] My Profile expansion + Core, Personal, Contact,
+     Addresses, Emergency contacts, Employment, Assignments (sections
+     2 to 8), masters, Number Series EMPLOYEE.
+     Also: GET /employees/lookup (id, code, name, department,
+     designation, status) for ERP selectors. Migrate salesperson /
+     received_by to employee_id once lookup exists.
+  B  [REQUIRED] Identifiers, Documents with expiry reminders, Bank
+     (encrypted, approval), Education, Experience, Skills and
+     certifications (sections 11 to 17).
+  C  [REQUIRED soon] Shift, attendance and leave setup, Compensation
+     setup, Exit (sections 9, 10, 22).
+  D  [LATER] Assets, Health and safety, Performance, Disciplinary,
+     Onboarding, Dependents (if not in B), consent management.
+  Each phase: tables + APIs + error codes first, then the FE plan.
+  Migrations: DEV (Erp_test_db) first, LIVE (Ana_corporation_db) only
+  with explicit approval. Enum values ADD only (no rename/drop).
+
+
+28. ERP INTEGRATION (HRMS is a module inside the ERP)
+-----------------------------------------------------
+  28.1 One employee record, used everywhere
+    ERP module           Uses from the employee record
+    Sales Quotation      Salesperson, approver, reporting manager
+                         (approval chain)
+    Inventory / Store    Assigned store / location, store-keeper, who
+                         issued or received (GRN, Material Issue)
+    Production           Shop-floor workers, shift, skills and
+                         certifications (welding, forklift), work centre
+    Purchase             Buyer, approver limits, department
+    Finance              Cost center, department costing, payroll expense
+    Approvals (all)      Reporting manager, designation, department,
+                         delegate
+    Audit log            Which person did the action
+    Permissions          Role and data scope (own, team, branch, company)
+
+  28.2 REQUIREMENT: one Employee page, all fields apply to HRMS and ERP
+    There is ONE Employee page (Employee master) with every field and
+    section in this plan. It is the single source for the HRMS and for
+    the ERP modules. There is no separate "ERP employee" and "HR employee",
+    and no field is reserved for only one side.
+      - Every field is stored once, on the one employee record.
+      - HRMS screens (leave, attendance, payroll, exit) read it.
+      - ERP screens (quotation, store, production, purchase, approvals)
+        read the same record.
+      - Page layout: tabs for the sections (Core, Personal, Contact,
+        Address, Employment, Assignment, Schedule, Compensation,
+        Identifiers, Bank, Education, Experience, Skills, Documents,
+        Assets, Health, Exit ...).
+    Who sees which field is controlled by PERMISSION, not by splitting
+    the record:
+      - Normal fields (name, department, designation, location, manager,
+        shift, skills): visible to anyone with employees:view.
+      - Sensitive fields [S] (compensation, bank, identifiers, date of
+        birth, medical): need the sensitive permissions in section 26,
+        shown masked otherwise.
+    Which tabs and fields a company uses is controlled by Form
+    Configuration and Tab Access, so a company that does not use payroll
+    simply hides those tabs.
+
+  28.3 Rules
+    1. One master per thing: Department, Designation, Branch, Cost Center
+       and Location exist once, used by both HRMS and ERP.
+    2. Link by ID, never by name: a quotation stores
+       salesperson_employee_id, a GRN stores received_by_employee_id.
+    3. Selectors in ERP screens use a light lookup API
+       (GET /employees/lookup: id, code, name, department, designation,
+       status). It never returns sensitive fields.
+    4. Exit flow: when status becomes Exited, the login is deactivated,
+       and open approvals, tasks, quotations (salesperson) and store
+       assignments are listed for reassignment. History keeps the old
+       name through snapshots.
+    5. Same page, same fields for every company. A company that uses only
+       the ERP hides the tabs it does not need (for example payroll) with
+       Form Configuration and Tab Access. The data model never changes
+       and no code branches per module.
+    6. Same user, role and permission model across ERP and HRMS.
+    7. Employee data scope in ERP lists follows the user's data scope
+       (own, team, branch, company).
+    8. Master data for approvals (limits per designation or grade) lives
+       in the ERP approval rules and reads designation / grade from here.
+
+  28.4 Build dependency
+    The Employee page is built with ALL fields in the planned phases.
+    ERP modules need sections 2, 7 and 8 (core, employment, assignments)
+    and the Department, Designation, Branch and Cost Center masters first,
+    because they use a salesperson, approver, store-keeper or worker.
+    The remaining tabs are built in the phases of section 27, on the same
+    page and the same table design.
+
+  28.5 For ANA
+    ANA uses the same Employee page. In Form Configuration and Tab
+    Access, start with the tabs ANA needs now (Core, Employment,
+    Assignment, Schedule, Skills) and show the other tabs when ANA
+    enables the HRMS features. No new fields or tables are added later.
+
+
+29. QUESTIONS TO CONFIRM
+------------------------
+  1. Which countries does the product launch in (decides identifier and
+     payroll providers)?
+  2. Does the HRMS include payroll, or only employee, attendance and
+     leave at first?
+  3. Do shop-floor workers need HR records without a login (default yes)?
+     Code already allows employees.user_id null — confirm this stays.
+  4. Which fields need HR approval when the employee edits them?
+  5. Retention period for exited employees?
+  6. Collapse user_companies.employee_id (string emp code) into
+     employees.employee_code, and keep one org placement (assignments)
+     instead of copying department/designation onto user_companies?
+  7. Employee code format for ANA (default EMP00001, NEVER reset)?

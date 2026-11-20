@@ -1,0 +1,142 @@
+================================================================================
+FE HANDOFF — Bin Integrity Phase 1 (BE ready)
+Date:       2026-11-19
+Audience:   ERP-Frontend
+Status:     BE implemented on Ana (migrate applied). Other envs: migrate + generate.
+================================================================================
+
+APPLY FIRST (per env)
+--------------------------------------------------------------------------------
+  npm run prisma:deploy:dev   OR   npm run prisma:deploy:prod
+  npx prisma generate
+  Restart API
+  Re-login (or wait for permission seed) so stock_transfers:* appears for ADMIN
+
+
+1) AVAILABLE QTY (Issue / Transfer line picker)
+--------------------------------------------------------------------------------
+  GET /api/v1/companies/{companyId}/inventory/stock/available
+  Query:
+    itemId                required
+    inventoryLocationId   required (alias: warehouseId)
+    storageBinId          optional (omit / null = unbinned balance)
+  Permission: inventory_stock:view
+  Response:
+    {
+      itemId, inventoryLocationId, warehouseId,
+      storageBinId,                 // string | null
+      availableQuantity             // decimal STRING, 6 places e.g. "12.500000"
+    }
+
+  Also: Material Issue / Stock Transfer draft GET already embeds
+  lines[].availableQuantity (live) — /stock/available is for picker before save.
+
+
+2) BIN MGMT TOGGLE (Store / Inventory Location edit)
+--------------------------------------------------------------------------------
+  PATCH /api/v1/companies/{companyId}/warehouses/{id}
+  Permission: warehouses:edit
+  Body additions:
+    binManagement: boolean
+    confirmMigrateToUnassigned?: boolean
+      // required ONLY when turning ON and the store has unbinned qty > 0
+
+  Behaviour:
+    OFF + any bin still has qty ≠ 0
+      → 400 LOCATION_HAS_BINNED_STOCK
+    OFF + bins empty / history only
+      → allowed (bins may remain; they just are not used while Bin Mgmt = No)
+    ON + unbinned stock, confirm missing
+      → 400 LOCATION_BIN_MIGRATE_CONFIRM_REQUIRED
+    ON + confirmMigrateToUnassigned: true
+      → creates/uses system bin UNASSIGNED, moves all unbinned qty there
+         (Part+Store totals unchanged), ledger TRANSFER_OUT + TRANSFER_IN
+         sourceType BIN_MGMT_MIGRATE
+    Audit: Warehouse update logs oldValue.binManagement + newValue
+           (incl. migratedToUnassigned count, unassignedBinId)
+
+
+3) BIN STATUS + SYSTEM BIN
+--------------------------------------------------------------------------------
+  Base: /api/v1/companies/{companyId}/storage-bins
+  Fields on bin (list/get/create/update):
+    status    ACTIVE | BLOCKED | INACTIVE
+    isSystem  boolean (true for UNASSIGNED)
+    isActive  still accepted; BE syncs isActive ↔ status (ACTIVE ↔ true)
+
+  UNASSIGNED: binCode "UNASSIGNED", isSystem=true — cannot rename or delete
+
+  Delete errors (409/400 code):
+    BIN_SYSTEM_LOCKED
+    BIN_HAS_STOCK
+    BIN_HAS_HISTORY
+    BIN_HAS_DOCUMENT_LINES   // includes drafts + transfer to-bin refs
+
+  Posting rules:
+    Inbound (Opening / Adjustment / Transfer-to): status must be ACTIVE
+      → else INVENTORY_BIN_INACTIVE or INVENTORY_BIN_BLOCKED
+    Outbound (Issue / Transfer-from): INACTIVE rejected; BLOCKED allowed
+      (so stock can be cleared from a blocked bin)
+
+
+4) STOCK TRANSFER (phase 1: same store, bin → bin only)
+--------------------------------------------------------------------------------
+  Base: /api/v1/companies/{companyId}/inventory/stock-transfers
+  Permissions (seeded with Supply Chain pack):
+    stock_transfers:view | create | edit | delete | approve
+    (:approve = Post, same as Material Issue)
+
+  Routes (same shape as material-issues):
+    GET    /
+    GET    /:id
+    POST   /                         create draft
+    PUT    /:id                      replace draft
+    DELETE /:id                      delete draft
+    POST   /:id/post                 post → stock change
+
+  Create/Update body:
+  {
+    documentDate: "YYYY-MM-DD",
+    remarks?: string,
+    lines: [{
+      itemId,
+      inventoryLocationId,   // store; binManagement must be ON
+      storageBinId,          // from
+      toStorageBinId,        // to (different bin, same store)
+      quantity               // > 0; post rejects if > available (INSUFFICIENT_STOCK)
+    }]
+  }
+
+  Document numbers: ST-000001…
+  Post ledger: TRANSFER_OUT (from) + TRANSFER_IN (to)
+  Line response (draft/posted): availableQuantity, toStorageBinId, toBinCode, toBinName
+
+  Extra line errors:
+    INVENTORY_TRANSFER_BIN_MGMT_REQUIRED  // store Bin Mgmt = No
+    INVENTORY_TO_BIN_REQUIRED
+    INVENTORY_TRANSFER_SAME_BIN
+    INVENTORY_BIN_BLOCKED                 // destination blocked
+    INSUFFICIENT_STOCK                    // over-transfer on post
+
+
+5) BIN RULE (#8) — all inventory docs (Opening / Issue / Adj / Transfer)
+--------------------------------------------------------------------------------
+  Bin Mgmt Yes + no bin  → 400 INVENTORY_BIN_REQUIRED
+  Bin Mgmt No  + bin set → 400 INVENTORY_BIN_NOT_ALLOWED
+  Transfer without bin mgmt → INVENTORY_TRANSFER_BIN_MGMT_REQUIRED
+
+
+FE SCREENS
+--------------------------------------------------------------------------------
+  - Store edit: Bin Mgmt toggle + confirm dialog when ON would migrate to UNASSIGNED
+  - Bin master: status dropdown; lock UNASSIGNED (hide rename/delete); surface delete codes
+  - Issue: show available qty (draft line field and/or GET .../stock/available)
+  - Transfer: from/to bin, qty, draft list + post
+  - Roles: stock_transfers:* on store staff (ADMIN gets them via catalog backfill on login)
+
+  URGENT — Bin list only shows ~20 on FE
+  - BE default limit=20 (max 200). Ana ELS-001 has 200 bins A1-01…A1-200 (202 w/ A1,A2).
+  - Bin master + bin pickers MUST pass limit=200 (or paginate) + inventoryLocationId.
+  - Full note: docs/FE-HANDOFF-STORAGE-BINS-LIST-LIMIT.txt
+
+================================================================================

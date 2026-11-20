@@ -1,0 +1,151 @@
+================================================================================
+FE HANDOFF — Sales Quotation Phase 0+1: Customers, Payment Terms, Number Series
+Date:       2026-10-29
+Audience:   ERP-Frontend
+Pair:       docs/SALES-QUOTATION-FRONTEND-PLAN.txt (FE Phase 1 screens)
+Backend:    /api/v1/companies/{companyId}/customers
+            /api/v1/companies/{companyId}/payment-terms
+            /api/v1/companies/{companyId}/number-series/{CUSTOMER|SALES_QUOTATION}
+DB:         Migration applied on DEV and PROD (2026-10-29). Quotation tables
+            themselves come in Phase 2 — this handoff is the masters only.
+================================================================================
+
+PERMISSIONS (seed automatically; ADMIN roles get them on next login)
+  customers:view | customers:create | customers:edit | customers:delete
+  payment_terms:view | payment_terms:create | payment_terms:edit | payment_terms:delete
+  number_series:view | number_series:edit            (already existed)
+  sales_quotations:* incl. sales_quotations:override_exchange_rate (Phase 2 use)
+  NOTE: customer/quotation APIs live under the CRM module — the company
+  subscription must have module "crm" entitled, else 403 MODULE_NOT_ENTITLED.
+
+--------------------------------------------------------------------------------
+1. CUSTOMERS
+--------------------------------------------------------------------------------
+GET /customers?page=&limit=&search=&isActive=&customerType=&sortBy=&sortOrder=
+  Standard paginated list (limit max 200). search covers code, name, legal
+  name, email, phone. Each row also carries (for the list columns):
+    primaryTaxType     "GSTIN" | "PAN" | "VAT" | "EIN" | "ABN" | "TRN" | "OTHER" | null
+    primaryTaxLabel    label when OTHER, else null
+    primaryTaxId       the id value (e.g. the GSTIN) | null
+    primaryCity        city of the default address | null
+    primaryRegion, primaryCountryCode
+    currency           { currencyId, code, symbol, decimalPlaces } | null
+    paymentTerm        { paymentTermId, code, name, days } | null
+
+GET /customers/lookup?search=&limit=     (limit max 50, default 20)
+  Active customers only, for dropdowns. Same row shape as the list.
+
+GET /customers/registration-lookup?idType=GSTIN&idValue=29AAAAA0000A1Z5
+  Prefill for "create from GSTIN". Needs customers:create.
+  Response:
+    { idType, idValue, verified,
+      prefill: { name, legalName, customerType: "BUSINESS",
+                 taxIdentifiers: [ { idType:"GSTIN", idValue, regionCode, isPrimary:true },
+                                   { idType:"PAN",  idValue, isPrimary:false } ],
+                 addresses: [ { addressType:"BILL_TO", line1, city, region,
+                                postalCode, countryCode:"IN", isDefault:true } ] },
+      raw: { ...provider payload... } }
+  Other idType values → 422 REGISTRATION_LOOKUP_UNSUPPORTED.
+  GSTIN provider limits still apply (allow-listed companies, GSTIN_API_KEY).
+
+GET /customers/{id}
+  Full detail: customer + taxIdentifiers[] + addresses[] + contacts[]
+  + currency + paymentTerm (+ audit info).
+
+POST /customers
+  {
+    "customerCode": "",            // omit/empty → auto CUS00001 from number series
+    "name": "Acme Industries",     // required
+    "legalName": "", "customerType": "BUSINESS" | "INDIVIDUAL",
+    "email": "", "phone": "+91...", "website": "",
+    "currencyId": null,            // omit → company default currency
+    "paymentTermId": null, "creditLimit": 100000,
+    "salespersonUserId": null, "notes": "", "isActive": true,
+    "metadata": { },
+    "taxIdentifiers": [ { "idType":"GSTIN", "idLabel":null, "idValue":"...",
+                          "regionCode":"29", "isPrimary":true } ],
+    "addresses":  [ { "addressType":"BILL_TO"|"SHIP_TO", "label":"Head Office",
+                      "line1":"...", "line2":"", "city":"", "region":"",
+                      "regionCode":"", "postalCode":"", "countryCode":"IN",
+                      "isDefault":true } ],
+    "contacts":   [ { "name":"...", "designation":"", "email":"", "phone":"",
+                      "isPrimary":true } ]
+  }
+  Exactly one primary tax id / default address / primary contact is enforced
+  server-side (first flagged wins; if none flagged the first row is used).
+
+PATCH /customers/{id}
+  Same fields as create EXCEPT customerCode (immutable).
+  Child arrays are REPLACE-ALL: send the full set when editing; omit the key
+  to leave that set unchanged.
+  Send "rowVersion" (from GET) — stale → 409 CUSTOMER_CONFLICT
+  ("Someone else saved this customer. Reload and try again.").
+
+DELETE /customers/{id}            soft delete
+
+ERROR CODES (error.code; message is English, FE maps text)
+  CUSTOMER_NOT_FOUND               404
+  CUSTOMER_CODE_EXISTS             409 (field customerCode)
+  CUSTOMER_TAX_ID_EXISTS           409 (duplicate idType+idValue on the customer)
+  CUSTOMER_CONFLICT                409 (rowVersion stale)
+  REGISTRATION_LOOKUP_UNSUPPORTED  422
+
+--------------------------------------------------------------------------------
+2. PAYMENT TERMS (Setup master; shared module, role-gated)
+--------------------------------------------------------------------------------
+GET    /payment-terms              all rows, not paginated (like UOMs)
+GET    /payment-terms/{id}
+POST   /payment-terms              { "code":"NET30", "name":"Net 30 days",
+                                     "days":30, "description":"", "isActive":true }
+PATCH  /payment-terms/{id}         same fields, all optional
+DELETE /payment-terms/{id}         soft delete; blocked while customers use it
+
+Rows include customerCount. Error codes:
+  PAYMENT_TERM_NOT_FOUND 404 | PAYMENT_TERM_CODE_EXISTS 409 (field code)
+  | PAYMENT_TERM_IN_USE 409
+
+--------------------------------------------------------------------------------
+3. NUMBER SERIES — CUSTOMER and SALES_QUOTATION
+--------------------------------------------------------------------------------
+The existing number-series endpoints now also accept these document types:
+  GET  /number-series                      → now lists ITEM, CUSTOMER, SALES_QUOTATION
+  GET  /number-series/CUSTOMER             → config + single line + nextNumber
+  PUT  /number-series/SALES_QUOTATION      → save config
+  GET  /number-series/SALES_QUOTATION/preview → { segmentRefId:null, nextNumber:"QT/2026-27/0001" }
+
+Config for these types (segmentSource is forced to NONE; stores/categories
+do not apply):
+  {
+    "config": {
+      "prefix": "QT",
+      "segmentSource": "NONE",
+      "separator": "NONE",
+      "serialLengthDefault": 4,
+      "serialReset": "NEVER" | "YEARLY" | "FISCAL_YEAR",
+      "pattern": "{PREFIX}/{FY}/{SEQ}",   // null/empty = plain prefix+serial
+      "isActive": true,
+      "rowVersion": 3
+    },
+    "lines": [ { "startFrom": 1, "serialLength": 4 } ]
+  }
+  Pattern tokens: {PREFIX} {FY} {YYYY} {YY} {MM} {SEQ}; other chars literal.
+  YEARLY / FISCAL_YEAR require a year token in the pattern, else 400
+  NUMBER_SERIES_RESET_UNSUPPORTED. Bad pattern → NUMBER_SERIES_PATTERN_INVALID.
+  {FY} uses companies.fiscal_year_start_month (ANA: 4 → "2026-27";
+  Jan-start companies get "2026").
+
+DEFAULTS when a company never configured the series (auto-created on first use):
+  CUSTOMER        → CUS00001        (prefix CUS, length 5, no reset)
+  SALES_QUOTATION → QT/2026-27/0001 (pattern {PREFIX}/{FY}/{SEQ}, length 4,
+                                     fiscal-year reset)
+  Config locks (prefix/pattern immutable) after the first number is generated.
+
+--------------------------------------------------------------------------------
+4. NOT IN THIS DROP (coming with Phase 2 / 4 / 7)
+--------------------------------------------------------------------------------
+- Quotation CRUD, pricing, isExpired flag, new-quotation defaults endpoint
+- Company settings API exposure for the new columns (fiscal year, rounding,
+  default validity days…) — columns exist in DB, PATCH endpoint pending
+- Idempotency-Key handling on issue/respond/cancel
+- Item tax classifications + tax-codes search (India GST)
+================================================================================

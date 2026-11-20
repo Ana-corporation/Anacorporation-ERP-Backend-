@@ -1,0 +1,69 @@
+================================================================================
+FE HANDOFF — Storage Bins list shows only ~20 (Ana Electrical)
+Date:       2026-11-20
+Audience:   ERP-Frontend
+Priority:   Fix now — bins exist on BE; UI under-fetches
+================================================================================
+
+PROBLEM
+--------------------------------------------------------------------------------
+  Ana Electrical Store (ELS-001) has 200 planned bins: A1-01 … A1-200
+  (+ old plain A1 / A2 → 202 active total).
+
+  FE Bin master / bin dropdowns only show ~20 because the list API
+  defaults to limit=20.
+
+
+BE (updated 2026-11-20)
+--------------------------------------------------------------------------------
+  GET /api/v1/companies/{companyId}/storage-bins
+  Query:
+    inventoryLocationId   or warehouseId   → filter to ELS-001
+    page                  default 1
+    limit                 default 20, **max 500**
+    sortBy                default binCode
+    sortOrder             default asc
+    search / code         optional
+
+  When inventoryLocationId is set and sortBy=binCode:
+    natural numeric order (A1-01 … A1-200), not plain string order.
+
+  Response (paginated):
+    { items, total, page, limit, ... }
+
+  Permission: warehouses:view
+
+
+FE FIX (required)
+--------------------------------------------------------------------------------
+  1) Bin master (Manage bins for a store)
+     - Always send inventoryLocationId (or warehouseId) for that store
+     - Use limit=500  OR  pagination using total / page
+     - Show total count from response.total (e.g. "202 bins")
+
+  2) Bin pickers (Opening Stock / Issue / Transfer / Adjustment)
+     - Do NOT rely on default limit=20
+     - Prefer:
+       GET .../storage-bins?inventoryLocationId={els}&limit=500&sortBy=binCode&sortOrder=asc
+     - Or typeahead with search=
+     - Never assume the first page is the full bin list
+
+  Example:
+    GET .../storage-bins?inventoryLocationId={els001Id}&limit=500&sortBy=binCode&page=1
+
+
+ANA LIVE CHECK
+--------------------------------------------------------------------------------
+  Store: ELS-001 Electrical Store
+  Expected series: A1-01 … A1-200  → 200 bins
+  Also active: plain A1, A2 → total active 202
+  If UI still shows 20 after fix → FE still omitting limit or paging.
+
+
+DONE WHEN
+--------------------------------------------------------------------------------
+  [ ] Bin master for ELS-001 lists all A1-01…A1-200 (scroll/page OK)
+  [ ] Opening Stock / Transfer bin dropdown can select e.g. A1-150
+  [ ] UI shows total ≈ 202 (or 200 if FE hides plain A1/A2)
+
+================================================================================

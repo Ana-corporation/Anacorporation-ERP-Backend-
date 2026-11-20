@@ -8,18 +8,38 @@ export const INVENTORY_DOCUMENT_PREFIX: Record<InventoryDocumentType, string> = 
   OPENING_STOCK: 'OS',
   MATERIAL_ISSUE: 'MI',
   STOCK_ADJUSTMENT: 'SA',
+  STOCK_TRANSFER: 'ST',
 };
 const DOCUMENT_NUMBER_WIDTH = 6;
 
 export const documentDetailInclude = {
   department: { select: { departmentId: true, departmentCode: true, name: true } },
+  defaultWarehouse: { select: { warehouseId: true, warehouseCode: true, name: true } },
+  defaultStore: { select: { storeCategoryId: true, name: true, storeType: true } },
   lines: {
     orderBy: { lineNo: 'asc' },
     include: {
-      item: { select: { itemId: true, itemCode: true, description: true } },
+      item: {
+        select: {
+          itemId: true,
+          itemCode: true,
+          description: true,
+          manageBy: true,
+          itemGroupRef: { select: { itemGroupId: true, name: true, categoryCode: true } },
+        },
+      },
       branch: { select: { branchId: true, branchCode: true, name: true } },
-      warehouse: { select: { warehouseId: true, warehouseCode: true, name: true } },
+      warehouse: {
+        select: {
+          warehouseId: true,
+          warehouseCode: true,
+          name: true,
+          vendor: { select: { vendorId: true, vendorCode: true, name: true } },
+          storeCategory: { select: { storeCategoryId: true, name: true, storeType: true } },
+        },
+      },
       storageBin: { select: { storageBinId: true, binCode: true, binName: true } },
+      toStorageBin: { select: { storageBinId: true, binCode: true, binName: true } },
     },
   },
 } satisfies Prisma.InventoryDocumentInclude;
@@ -82,7 +102,16 @@ export class InventoryDocumentsRepository {
           }
         : {}),
       ...(search ? { documentNumber: { contains: search, mode: 'insensitive' } } : {}),
-      ...(query.itemId ? { lines: { some: { itemId: BigInt(query.itemId) } } } : {}),
+      ...(query.itemId || query.inventoryLocationId
+        ? {
+            lines: {
+              some: {
+                ...(query.itemId ? { itemId: BigInt(query.itemId) } : {}),
+                ...(query.inventoryLocationId ? { warehouseId: BigInt(query.inventoryLocationId) } : {}),
+              },
+            },
+          }
+        : {}),
     };
     const sortBy = SORT_FIELDS.has(query.sortBy) ? query.sortBy : 'createdAt';
 
@@ -94,11 +123,37 @@ export class InventoryDocumentsRepository {
         orderBy: [{ [sortBy]: query.sortOrder ?? 'desc' }, { documentId: 'desc' }],
         include: {
           department: { select: { departmentId: true, departmentCode: true, name: true } },
+          defaultWarehouse: { select: { warehouseId: true, warehouseCode: true, name: true } },
+          defaultStore: { select: { storeCategoryId: true, name: true, storeType: true } },
           _count: { select: { lines: true } },
         },
       }),
       this.prisma.inventoryDocument.count({ where }),
     ]);
     return { items, total, page, limit };
+  }
+
+  /** Distinct stores (warehouses) used on each document's lines, for the list "Store" column. */
+  async storesByDocument(documentIds: bigint[]) {
+    const result = new Map<string, Array<{ inventoryLocationId: bigint; code: string; name: string }>>();
+    if (documentIds.length === 0) return result;
+    const pairs = await this.prisma.inventoryDocumentLine.groupBy({
+      by: ['documentId', 'warehouseId'],
+      where: { documentId: { in: documentIds } },
+    });
+    const warehouses = await this.prisma.warehouse.findMany({
+      where: { warehouseId: { in: [...new Set(pairs.map((p) => p.warehouseId))] } },
+      select: { warehouseId: true, warehouseCode: true, name: true },
+    });
+    const byId = new Map(warehouses.map((w) => [w.warehouseId.toString(), w]));
+    for (const pair of pairs) {
+      const w = byId.get(pair.warehouseId.toString());
+      const key = pair.documentId.toString();
+      const list = result.get(key) ?? [];
+      list.push({ inventoryLocationId: pair.warehouseId, code: w?.warehouseCode ?? '', name: w?.name ?? '' });
+      result.set(key, list);
+    }
+    for (const list of result.values()) list.sort((a, b) => a.code.localeCompare(b.code));
+    return result;
   }
 }

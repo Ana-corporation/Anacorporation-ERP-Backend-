@@ -1,0 +1,140 @@
+INVENTORY STOCK - SIMPLE GUIDE
+==============================
+Covers: Opening Stock, Material Issue, Stock Adjustment, Current Stock,
+Stock Ledger. Menu: Inventory.
+
+
+1. THE BIG IDEA
+---------------
+Stock changes ONLY through 3 documents:
+
+    Opening Stock      ->  stock goes UP     (first stock you start with)
+    Material Issue     ->  stock goes DOWN   (material given out)
+    Stock Adjustment   ->  UP or DOWN        (fix count after physical check)
+
+Every document has 2 steps:
+
+    DRAFT   save and edit freely. Stock does NOT change.
+    POST    stock changes now. Document is locked (no edit, no delete).
+
+Nobody can type stock directly. Current Stock and Stock Ledger are
+read-only screens that show the result of posted documents.
+
+
+2. WHERE STOCK IS KEPT
+----------------------
+Stock is counted per:   Item + Site + Location (warehouse) + Bin
+
+  Example: Item ANARM00012 in Site "Unit 1", Location "Raw Material
+  Store", Bin "A-01" = 50 NOS.
+
+The same item in another location or bin is a separate count.
+
+
+3. OPENING STOCK  (number OS-000001)
+------------------------------------
+What : The stock you already have on day one, before using the ERP.
+Lines: Item, Site, Location, Bin, Quantity, Unit price (optional).
+Post : Quantity is ADDED to stock.
+
+Two ways:
+  a) Enter lines on screen -> Save draft -> Post.
+  b) Excel import:
+       1. Download template
+       2. Fill and upload -> system checks every row:
+            MATCHED = item found in Item Master
+            NEW     = item not found -> will be created (pick a category)
+            ERROR   = wrong data -> fix it or download the error report
+       3. Approve -> new items are created AND opening stock is posted
+          together. Error rows are skipped.
+
+Permission: opening_stock:view / create / edit / delete / approve (post)
+
+
+4. MATERIAL ISSUE  (number MI-000001)
+-------------------------------------
+What : Material taken out of the store (to production, a department, a
+       job).
+Header: Date, Requested by, Issued by, Department, Purpose, Remarks.
+Lines : Item, Site, Location, Bin, Quantity.
+Post  : Quantity is REDUCED from stock.
+
+Rule: You cannot issue more than you have. If the store has 10 and you
+      issue 12 -> "Insufficient stock for ANARM00012: available 10,
+      required 12". Nothing is posted.
+
+Permission: material_issues:view / create / edit / delete / approve
+
+
+5. STOCK ADJUSTMENT  (number SA-000001)
+---------------------------------------
+What : After a physical count, correct the system stock to what is
+       really on the shelf.
+Header: Date, Reason, Remarks.
+Lines : Item, Site, Location, Bin, Physical quantity (what you counted).
+Post  : System reads the stock at that moment and posts the difference.
+
+  Example:  System says 50, you counted 47
+            Difference = 47 - 50 = -3  ->  3 goes OUT (Adjustment Out)
+            System says 50, you counted 52
+            Difference = +2           ->  2 comes IN (Adjustment In)
+
+The system quantity is taken at POST time (not when the draft was made),
+so a later issue does not make the adjustment wrong.
+
+Permission: stock_adjustments:view / create / edit / delete / approve
+
+
+6. CURRENT STOCK  (read-only)
+-----------------------------
+What : How much of each item is there right now.
+Shows: Item, Site, Location, Bin, Quantity, Unit.
+Filter: Item, Site, Location, Bin, search part number / name.
+        Items with 0 are hidden unless you tick "include zero".
+You only see locations your data-access rules allow.
+
+Permission: inventory_stock:view
+
+
+7. STOCK LEDGER  (read-only)
+----------------------------
+What : The history - every IN and OUT, line by line, with a running
+       balance. Like a bank statement for stock.
+
+  Date        Document   Type             In    Out   Balance
+  01-Nov-26   OS-000001  Opening Stock    50          50
+  03-Nov-26   MI-000004  Material Issue         12    38
+  05-Nov-26   SA-000002  Adjustment Out          3    35
+
+Filter: Item, Site, Location, Bin, Type, Document no, Date range.
+With a date range, the balance before the start date is shown first, so
+the running balance is always correct.
+
+Permission: inventory_stock:view
+
+
+8. HOW THEY CONNECT
+-------------------
+
+   Opening Stock --POST--+
+   Material Issue -POST--+-->  Stock Ledger (one row per movement)
+   Stock Adjustment POST-+          |
+                                    v
+                             Current Stock (total per item/location/bin)
+                                    |
+                                    v
+                    Item Master -> Warehouse tab (qty on hand)
+
+All three update together in one step. If anything fails (for example
+not enough stock), nothing is saved - no half posting.
+
+
+9. QUICK RULES
+--------------
+  - Draft = no stock change. Post = stock change + locked.
+  - A posted document cannot be edited or deleted. Fix a mistake with a
+    new Material Issue or Stock Adjustment.
+  - Stock can never go below zero.
+  - Two people posting at the same time on the same item are handled
+    safely (one waits for the other).
+  - Document numbers are automatic: OS-, MI-, SA- + 6 digits.

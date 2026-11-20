@@ -1,0 +1,651 @@
+PURCHASE ORDER MODULE - LOW-LEVEL DESIGN (LLD)
+==============================================
+Version : 1.1  (09-Nov-2026)
+Based on: "Purchase Order Module LLD & UI Specification" v1.0 (08-Nov-2026)
+Change  : v1.0 was technology-neutral. v1.1 maps it to the ANA ERP stack,
+          the modules that already exist, and the screens to build.
+          Business rules are unchanged unless marked [v1.1].
+Status  : For review. Nothing built.
+
+
+==========================================================================
+1. PURPOSE
+==========================================================================
+Two purchasing flows:
+  (1) Production purchase - material shortages from a machine order
+      (machine + released BOM + quantity) -> Purchase Requirements ->
+      buyer makes one or more POs.
+  (2) Stock replenishment - buyer buys for stock without a shortage;
+      approval is always required.
+
+Core rule: an order never creates a supplier PO directly. System expands
+the BOM, checks usable stock, creates Purchase Requirements for the
+shortage only, and the buyer converts them into POs.
+
+
+==========================================================================
+2. TECH STACK  [v1.1]
+==========================================================================
+Backend   NestJS 11 + Prisma 6 + PostgreSQL (Cloud SQL)
+            DEV schema Erp_test_db, LIVE schema Ana_corporation_db
+          REST: /api/v1/companies/:companyId/...
+          DTOs: zod (nestjs-zod). IDs/quantities as strings in JSON.
+          Money / qty: Prisma Decimal(18,6), never JS float.
+          Auth: JWT + @RequirePermissions('resource:action') on every route
+          Audit: user_audit row inside the same DB transaction
+          Concurrency: rowVersion on every editable header -> 409
+            ROW_VERSION_CONFLICT; FOR UPDATE row locks on balances
+          Idempotency: shared IdempotencyService (idempotency_keys table),
+            Idempotency-Key header on submit/approve/convert/post/resend
+          Numbering: number series (DocumentNumberService) - PR, PO
+          Email: MailService (nodemailer)
+          Background jobs / retry: BullMQ (Redis)
+          PDF: library to be added (e.g. pdfkit) - needs approval
+          Errors: BusinessException(message, status, errors[], CODE)
+Frontend  Next.js 16 (App Router) + React 18 + MUI 5 + Redux Toolkit
+          Pages   src/app/dashboard/purchase/...
+          Screens src/sections/purchase/...
+          API     src/lib/api/purchase-*.ts (unwrap + error code texts)
+          Buttons shown from allowedActions returned by the backend
+Tests     Jest unit + *.db.spec.ts against DEV only (RUN_DB_TESTS=1)
+
+
+==========================================================================
+3. WHAT ALREADY EXISTS AND IS REUSED  [v1.1]
+==========================================================================
+  LLD name            Our module / table                       Status
+  ------------------  ---------------------------------------  ---------
+  Supplier master     Vendors (vendors)                        exists
+  Item master         Items (items) + part numbers, UOM        exists
+  Warehouse           Branch (site), Warehouse, Storage bin    exists
+  UOM                 uoms + item inventory UOM                exists
+  Payment terms       payment_terms                            exists
+  Customer            customers                                exists
+  Machine + BOM       machines, boms, bom_lines                exists
+  BOM expansion       BOM requirements (MAIN/SUB, Decimal)     exists
+  Inventory balance   stock_balances (item+warehouse+bin)      exists
+  Inventory ledger    stock_ledger_entries (StockPosting)      exists
+  Number series       number_series_* (DocumentNumberService)  exists
+  Idempotency         idempotency_keys                         exists
+  Audit log           user_audit                               exists
+  PO (basic)          Material Inward: mi_purchase_orders      exists*
+  GRN + QC + putaway  Material Inward: mi_grn_*, mi_qc_*       exists*
+  Sales Order         -                                        NOT built
+  Reserved/blocked    -                                        NOT built
+  Approval / email    -                                        NOT built
+
+  * Material Inward (co-developer) has a simple PO (create, list, line
+    short-close, no approval, no email, no requirement link) and a full
+    GRN -> QC -> put-away flow. It posts to its own mi_inv_balances /
+    mi_inv_ledger, NOT to stock_balances. See decisions OD-11 and OD-12.
+
+
+==========================================================================
+4. CONFIRMED BUSINESS REQUIREMENTS  (from v1.0)
+==========================================================================
+  BR-01  An order usually has one machine type, qty > 1; may have several
+         machines. Each machine line uses its own BOM; component qty x
+         machine qty.
+  BR-02  Each machine has its own BOM (machines + boms - exists).
+  BR-03  Check required qty against usable stock.
+  BR-04  Shortages become internal Purchase Requirements; no automatic
+         supplier PO.
+  BR-05  Requirements from several orders may be combined - buyer's choice;
+         source traceability kept.
+  BR-06  Buyer may change purchase qty, with reason; original shortage
+         kept.
+  BR-07  Partial receipts: many GRNs per PO.
+  BR-08  Replenishment PO without shortage; approval mandatory.
+  BR-09  Supplier email tracked: attempts, retries, manual resend.
+  BR-10  Only accepted goods increase usable stock.
+
+  In scope : requirements, consolidation, PO draft/approval/issue/cancel/
+             close, supplier PDF + email tracking, GRN with partial and
+             accepted/rejected qty, stock update, enquiry, reports, roles.
+  Out      : supplier invoice / AP / payment, 3-way match (Finance LLD),
+             production execution, supplier portal / EDI, forecasting.
+
+
+==========================================================================
+5. END-TO-END FLOW
+==========================================================================
+5.1 Production purchase
+  1. Planner picks machine (BS500 or BS500-SO00045), its RELEASED BOM,
+     quantity, warehouse and required date.            [v1.1: no SO yet]
+  2. System expands the BOM x quantity (existing BOM requirements logic).
+  3. System reads usable stock per component.
+  4. System creates Purchase Requirements for net shortages only.
+  5. Buyer reviews; optionally combines; creates PO draft(s).
+  6. Buyer submits -> approver approves / rejects.
+  7. Approved PO is issued -> PDF + email (status tracked separately).
+  8. Supplier delivers -> one or more GRNs (Material Inward).
+  9. Accepted qty -> usable stock; rejected/QC-pending -> not usable.
+ 10. PO line + header status recalculated until fully received / closed.
+
+5.2 Stock replenishment
+  1. Buyer: New PO, type = Stock Replenishment.
+  2. Picks warehouse, supplier, items, qty (shows current stock).
+  3. Enters reason (mandatory), submits.
+  4. Approval always required.
+  5. Same issue / GRN / stock flow as above.
+
+5.3 Picture
+  Machine + BOM + qty --> expand --> check stock
+                                   /            \
+                            enough               shortage
+                               |                    |
+                           (production)     Purchase Requirement
+                                                    |
+                                          buyer review / adjust
+                                           /                 \
+                                   separate PO         combine (optional)
+                                           \                 /
+                                             PO Draft -> Submit
+                                                    |
+                                          Approve / Reject
+                                                    |
+                                         Issue (PDF + email)
+                                                    |
+                                      GRN (partial, many) -> QC
+                                                    |
+                                    accepted qty -> stock IN
+                                                    |
+                                        PO status recalculated
+
+
+==========================================================================
+6. FUNCTIONAL DESIGN
+==========================================================================
+6.1 Material requirement (shortage) calculation
+  - Machine qty: positive whole number.
+  - BOM: only the RELEASED current BOM of the machine (STANDARD, or the
+    CUSTOMER BOM of a customised machine). [v1.1]
+  - Required qty = BOM qty per machine x machine qty (scrap factor:
+    OD-03, off in phase 1).
+  - Materials = SUB lines + MAIN lines without SUBs (same rule as the BOM
+    "Requirements" button). MAIN assemblies are not purchased. [v1.1]
+  - Store a snapshot: BOM id, number, version, lines used. Later BOM
+    revisions must not change the snapshot.
+  - Several machine lines: calculate each, then sum by item + warehouse
+    + required date.
+
+6.2 Usable stock
+  Available = on hand - reserved - blocked/quarantine.
+  Unreceived PO qty is NOT counted.
+  [v1.1] We do not track reserved / blocked yet, so phase 1:
+         Available = stock_balances.quantity in the chosen warehouse.
+         QC-pending GRN qty is not in stock_balances, so not counted.
+  Shortage = max(0, required - available).
+
+6.3 Purchase Requirement (internal, not sent to supplier)
+  Requirement No    PR-000001 (number series)
+  Source type       SHORTAGE or REPLENISHMENT
+  Source            machine, BOM no + version, (later: SO + SO line)
+  Item, warehouse, required qty, requested date
+  Suggested vendor  optional (item preferred vendor / last PO)
+  Converted qty     how much is already on POs
+  Open qty          required - converted
+  Status            DRAFT, PENDING_REVIEW, APPROVED, PARTIALLY_CONVERTED,
+                    FULLY_CONVERTED, CANCELLED
+  Rule: the same open qty can never go onto two POs - conversion locks
+        the requirement row (FOR UPDATE) and reduces open qty in the same
+        transaction.
+
+6.4 Review and optional consolidation
+  - Filter by item, vendor, warehouse, date, machine/BOM, status.
+  - Select one or many -> Create PO.
+  - Combine only when vendor, currency, purchase UOM and ship-to
+    warehouse match. System never forces combining.
+  - One PO line may come from many requirements; each line keeps a
+    source breakdown (which requirement, how much).
+  - One requirement may be split across POs / vendors.
+  - Buyer may order more or less than required:
+      less  -> balance stays open on the requirement
+      more  -> excess marked buyer-added; reason required
+    Stored: original qty, ordered qty, variance, reason.
+
+6.5 Purchase Order
+  Header
+    PO No              PO-000001 (number series)
+    PO Type            PRODUCTION or REPLENISHMENT
+    Vendor             active vendor (vendors)
+    Vendor address / contact / email   snapshot at issue
+    PO Date            today (editable with permission)
+    Currency           vendor default; edit with permission
+    Payment terms      vendor default; snapshot
+    Delivery date      header default; line may override
+    Ship-to warehouse  one per PO (OD-04)
+    Buyer              logged-in user
+    Vendor reference, internal notes, supplier notes
+    Subtotal / discount / tax / freight / other / grand total   calculated
+    Status             see 6.9
+    Send status        NOT_SENT, QUEUED, SENT, FAILED
+    Reason             mandatory for REPLENISHMENT
+    Version            1, 2, ... (amendments)
+  Lines
+    Line no, item (part no + old part no), purchase description,
+    purchase UOM (+ conversion to inventory UOM), ordered qty, unit price,
+    discount, tax code / %, net / tax / gross, required date, warehouse,
+    source allocation, received / accepted / rejected / outstanding qty.
+
+6.6 Approval
+  - REPLENISHMENT: always needs approval.
+  - PRODUCTION: approval matrix (by type, amount, currency) - settings,
+    not hard-coded (OD-01, OD-02).
+  - Submit   : validate, freeze values, create approval task.
+  - Approve  : approver, time, comment, version -> APPROVED.
+  - Reject   : reason required -> REJECTED -> buyer edits / resubmits.
+  - Pending  : no edit; Withdraw (if allowed) -> DRAFT.
+  - After approval: commercial change = new version + re-approval.
+  - Creator cannot approve own PO (setting, default off).
+
+6.7 Supplier communication
+  - PDF from the approved version only; stored (file_assets) for audit.
+  - Email only after approval, to the contact snapshot on the PO.
+  - Each attempt: recipient, time, status, error, retry count.
+  - BullMQ job retries transient failures; after the last retry -> Email
+    Failure Queue.
+  - Manual resend = new attempt, same PO version, no new PO.
+  - Email failure never undoes approval.
+
+6.8 GRN (Material Inward)  [v1.1]
+  GRN, QC and put-away screens already exist in Material Inward. The PO
+  module feeds them:
+  - GRN can pick only APPROVED / SENT POs, outstanding lines only.
+  - Delivered > 0 and <= outstanding (over-receipt tolerance 0%, OD-06).
+  - Accepted + rejected + QC-pending = delivered.
+  - Batch / serial only for tracked items.
+  - On posting: accepted qty -> usable stock IN (OD-12), rejected qty ->
+    no stock, QC-pending -> quarantine (not usable).
+  - Posting idempotent; posted GRN never deleted - reversal only.
+  - After each GRN: PO line received / accepted / outstanding updated and
+    PO status recalculated.
+
+6.9 PO status
+  DRAFT -> PENDING_APPROVAL -> APPROVED -> SENT -> PARTIALLY_RECEIVED ->
+  FULLY_RECEIVED -> CLOSED
+  REJECTED (back to buyer), CANCELLED (no new GRN; old receipts stay).
+  Close with open qty needs permission + reason.
+  Send status is a separate field (APPROVED + FAILED is valid).
+
+
+==========================================================================
+7. SCREENS  [v1.1]
+==========================================================================
+New menu: Purchase  (shown with purchase_requirements:view or
+purchase_orders:view)
+
+  Menu item              Route                                   Screen
+  ---------------------  --------------------------------------  ------
+  Purchase Dashboard     /dashboard/purchase                     S1
+  Purchase Requirements  /dashboard/purchase/requirements        S2-S4
+  Purchase Orders        /dashboard/purchase/orders              S5
+  New / edit PO          /dashboard/purchase/orders/new, /[id]   S6
+  PO Approvals           /dashboard/purchase/approvals           S7
+  Goods Receipt (GRN)    /dashboard/inventory/material-inward    S8
+  Supplier Email Queue   /dashboard/purchase/email-queue         S9
+  Purchase Settings      /dashboard/purchase/settings            S10
+  Purchase Reports       /dashboard/purchase/reports             S11
+
+--------------------------------------------------------------------------
+S1  PURCHASE DASHBOARD
+--------------------------------------------------------------------------
+  Who    : buyer, purchase manager
+  Cards  : Open requirements | POs pending approval | Approved not sent |
+           Partially received | Overdue deliveries | Email failures |
+           GRNs awaiting QC
+           (click a card -> list with that filter)
+  Filters: date range, vendor, warehouse, buyer, PO type
+  API    : GET /purchase/dashboard
+
+--------------------------------------------------------------------------
+S2  PURCHASE REQUIREMENT LIST
+--------------------------------------------------------------------------
+  Who    : buyer, planner
+  Search : PR no, part no / name, machine, BOM no
+  Filters: type, status, warehouse, suggested vendor, required date
+  Columns: [ ] | PR No | Type | Item (part no + old) | Required | Available
+           | Shortage | Converted | Open | Warehouse | Machine / BOM |
+           Required date | Suggested vendor | Status
+  Top    : "Generate from BOM" (S3) | "New replenishment" (S4)
+  Row    : View | Edit (draft) | Cancel | Open BOM
+  Bulk   : tick compatible rows -> "Create PO" -> S6 prefilled with
+           lines + source allocations. Incompatible selection (vendor /
+           UOM / warehouse differ) -> message, no PO.
+  API    : GET /purchase-requirements
+           POST /purchase-requirements/consolidate-preview
+
+--------------------------------------------------------------------------
+S3  GENERATE REQUIREMENTS FROM BOM  (dialog)
+--------------------------------------------------------------------------
+  Step 1 Input : Machine (MachinePicker) | BOM (its released BOM, read-
+                 only no + version) | Quantity | Warehouse | Required date
+                 [later: Sales Order + line instead of manual]
+  Step 2 Check : table per material -
+                 Part no | Name | Per machine | Required | Available |
+                 Shortage | UOM ; shortage rows highlighted; "No shortage"
+                 rows greyed
+  Step 3 Create: "Create N requirements" (shortage rows only)
+  Rules        : BOM must be RELEASED; qty whole number > 0;
+                 Idempotency-Key per click (no double requirements)
+  API          : POST /purchase-requirements/preview-from-bom  (no save)
+                 POST /purchase-requirements/from-bom
+
+--------------------------------------------------------------------------
+S4  NEW REPLENISHMENT REQUIREMENT  (dialog)
+--------------------------------------------------------------------------
+  Fields : Item | Warehouse | Qty | Required date | Suggested vendor |
+           Reason *
+  Shows  : current stock of the item in that warehouse
+  Note   : buyer can also skip this and make a Replenishment PO directly
+  API    : POST /purchase-requirements
+
+--------------------------------------------------------------------------
+S5  PURCHASE ORDER LIST
+--------------------------------------------------------------------------
+  Search : PO no, vendor, part no
+  Filters: status, send status, type, vendor, buyer, warehouse, date
+  Columns: PO No | Date | Type | Vendor | Buyer | Warehouse | Total |
+           Status chip | Send status chip | Delivery date | Received %
+  Top    : "New PO"
+  Row    : Open | Submit | Approve/Reject (approver) | Issue | Resend |
+           Close | Cancel  (from allowedActions)
+  API    : GET /purchase-orders
+
+--------------------------------------------------------------------------
+S6  CREATE / EDIT / VIEW PURCHASE ORDER
+--------------------------------------------------------------------------
+  Layout : header form + line grid + totals panel + fixed action bar
+  Header : PO Type * | Vendor * | Contact | PO Date * | Currency * |
+           Payment terms * | Delivery date * | Ship-to warehouse * |
+           Vendor reference | Reason (* for Replenishment) |
+           Internal notes | Supplier notes
+  Lines  : Item * | Description | Source PR | Required qty | Ordered qty *
+           | Variance | Reason (if variance) | UOM | Unit price * |
+           Discount | Tax | Line total | Required date | Warehouse
+           + "Add item" (replenishment) / "Add from requirements"
+           Replenishment lines show current stock.
+  Totals : Subtotal | Discount | Tax | Freight | Other | Grand total
+  Actions: Save draft | Submit for approval | Withdraw | Cancel |
+           Print preview | Issue to supplier | Resend | Close
+           (enabled per status + allowedActions)
+  Tabs (after save):
+           Lines | Source traceability (PR -> machine / BOM) | Approval
+           history | Supplier emails (attempts) | GRNs (from Material
+           Inward) | Audit trail
+  Rules  : DRAFT / REJECTED editable; PENDING read-only; APPROVED edit ->
+           "Amend" creates version n+1 and needs re-approval; 409 on
+           rowVersion -> "Changed by someone else. Reload?"
+  API    : POST /purchase-orders, PUT /purchase-orders/:id,
+           GET /purchase-orders/:id, POST .../submit | withdraw | amend |
+           cancel | close | issue | resend, GET .../history,
+           GET .../pdf
+
+--------------------------------------------------------------------------
+S7  PO APPROVALS
+--------------------------------------------------------------------------
+  Who    : PO approver
+  List   : POs PENDING_APPROVAL within my authority -
+           PO No | Type | Vendor | Buyer | Total | Submitted on | Reason
+  Open   : read-only PO + Approve (comment) | Reject (reason *)
+  Rules  : own PO blocked unless setting allows; approves a specific
+           version; Idempotency-Key
+  API    : GET /purchase-orders?approvalQueue=mine
+           POST /purchase-orders/:id/approve | reject
+
+--------------------------------------------------------------------------
+S8  GOODS RECEIPT (GRN) - existing Material Inward screen
+--------------------------------------------------------------------------
+  Changes only:
+  - PO picker lists APPROVED / SENT POs from this module, outstanding
+    lines only.
+  - Per line: delivered | accepted | rejected (reason) | QC-pending |
+    batch / serial | attachments.
+  - Post GRN (confirm) -> stock + PO status updated.
+  API    : existing /material-inward/grn... (+ PO source change, OD-11)
+
+--------------------------------------------------------------------------
+S9  SUPPLIER EMAIL QUEUE
+--------------------------------------------------------------------------
+  Columns: PO No | Vendor | Recipient | Last attempt | Error | Retries |
+           PO version | Status | Resend
+  Resend : permission controlled; creates a new attempt
+  API    : GET /purchase-orders/email-attempts?status=FAILED
+           POST /purchase-orders/:id/resend
+
+--------------------------------------------------------------------------
+S10 PURCHASE SETTINGS  (purchase manager / admin)
+--------------------------------------------------------------------------
+  - PO / PR number series (Number Series screen - exists)
+  - Approval matrix: PO type | amount from-to | currency | approver role
+  - Self-approval allowed (default No)
+  - Over-receipt tolerance % (default 0)
+  - Email retry: attempts, interval
+  - Default PO email subject / body template
+  API    : GET / PUT /purchase-settings, /purchase-approval-rules
+
+--------------------------------------------------------------------------
+S11 PURCHASE REPORTS  (Excel export)
+--------------------------------------------------------------------------
+  Open requirements | Open POs | Overdue deliveries | Vendor purchase
+  history | GRN report | Replenishment report | Email failures
+  API    : GET /purchase/reports/:report (+ ?format=xlsx)
+
+
+==========================================================================
+8. DATABASE (Prisma models -> tables)  [v1.1]
+==========================================================================
+  Reused: vendors, items, uoms, warehouses, branches, storage_bins,
+  payment_terms, machines, boms, bom_lines, stock_balances,
+  stock_ledger_entries, number_series_*, idempotency_keys, user_audit,
+  file_assets. LLD so_* tables wait for the Sales Order module.
+
+  New (prisma/purchase/*.prisma):
+  purchase_requirements        id, company_id, pr_no, source_type,
+                               machine_id, bom_id, bom_version,
+                               item_id, warehouse_id, required_qty,
+                               converted_qty, required_date,
+                               suggested_vendor_id, reason, status,
+                               (later so_id, so_line_id), audit cols,
+                               row_version
+  purchase_requirement_runs    one "Generate from BOM" run: machine, BOM,
+                               qty, warehouse, snapshot JSON of lines,
+                               idempotency
+  purchase_orders              id, company_id, po_no, po_type, version,
+                               vendor_id, vendor snapshot JSON, po_date,
+                               currency, payment_term_id + snapshot,
+                               delivery_date, warehouse_id, buyer_id,
+                               reason, notes, totals, status,
+                               send_status, approved_at/by, closed_at,
+                               close_reason, audit cols, row_version
+  purchase_order_lines         po_id, line_no, item_id, description,
+                               purchase_uom, uom_factor, ordered_qty,
+                               unit_price, discount, tax_pct, net, tax,
+                               gross, required_date, warehouse_id,
+                               received_qty, accepted_qty, rejected_qty,
+                               outstanding_qty, variance_reason
+  purchase_order_line_sources  po_line_id, requirement_id, qty
+  purchase_order_versions      po_id, version, snapshot JSON, pdf file id
+  purchase_order_approvals     po_id, version, action, user, at, comment
+  purchase_email_attempts      po_id, version, recipient, status, error,
+                               retry_count, attempted_at, sent_by
+  purchase_approval_rules      company_id, po_type, amount_from/to,
+                               currency, approver role
+  purchase_settings            company_id, self_approval, tolerance %,
+                               retry policy, email template
+
+  Integrity
+  - Unique: (company_id, pr_no), (company_id, po_no), attempt id.
+  - CHECK: qty > 0, converted_qty <= required_qty (raw SQL).
+  - Conversion and GRN posting in one transaction; FOR UPDATE locks.
+  - Stock posting unique per (source_type, source_line_id, movement) -
+    already enforced by stock_ledger_entries.
+  - No hard delete of issued POs, approvals, attempts, posted GRNs.
+  - Enums in the schema enums file (status, type, send status).
+
+
+==========================================================================
+9. API  (/api/v1/companies/:companyId)  [v1.1]
+==========================================================================
+  Requirements
+  GET    /purchase-requirements                       list
+  GET    /purchase-requirements/:id                   detail
+  POST   /purchase-requirements/preview-from-bom      shortage preview
+  POST   /purchase-requirements/from-bom              create (Idem-Key)
+  POST   /purchase-requirements                       replenishment
+  PATCH  /purchase-requirements/:id                   edit draft
+  POST   /purchase-requirements/:id/cancel
+  POST   /purchase-requirements/consolidate-preview   check + preview
+  Purchase orders
+  GET    /purchase-orders                             list (+ approvalQueue)
+  GET    /purchase-orders/:id                         detail + allowedActions
+  POST   /purchase-orders                             draft (from PRs or direct)
+  PUT    /purchase-orders/:id                         edit draft (rowVersion)
+  POST   /purchase-orders/:id/submit | withdraw       (Idem-Key)
+  POST   /purchase-orders/:id/approve | reject        (Idem-Key)
+  POST   /purchase-orders/:id/amend                   new version
+  POST   /purchase-orders/:id/issue                   PDF + queue email
+  POST   /purchase-orders/:id/resend                  new attempt
+  POST   /purchase-orders/:id/close | cancel          reason
+  GET    /purchase-orders/:id/pdf
+  GET    /purchase-orders/:id/history
+  GET    /purchase-orders/email-attempts
+  Settings / dashboard / reports
+  GET|PUT /purchase-settings, /purchase-approval-rules
+  GET    /purchase/dashboard, /purchase/reports/:report
+
+  Error codes (examples)
+  PR_NOT_FOUND, PR_NOT_OPEN, PR_QTY_EXCEEDED, PR_INCOMPATIBLE,
+  BOM_NOT_RELEASED, PO_NOT_FOUND, PO_NOT_DRAFT, PO_NOT_APPROVED,
+  PO_SELF_APPROVAL, PO_NO_AUTHORITY, PO_REASON_REQUIRED,
+  PO_VARIANCE_REASON_REQUIRED, PO_OPEN_QTY_ON_CLOSE, PO_CANCELLED,
+  GRN_OVER_RECEIPT, GRN_QTY_MISMATCH, ROW_VERSION_CONFLICT,
+  IDEMPOTENCY_KEY_*
+
+
+==========================================================================
+10. PERMISSIONS  [v1.1]
+==========================================================================
+  purchase_requirements : view, create, edit, delete, approve (review)
+  purchase_orders       : view, create, edit, delete, approve,
+                          manage (issue / resend / close / cancel)
+  purchase_settings     : view, edit
+  GRN                   : Material Inward permissions (today items:*;
+                          own permission recommended)
+  Roles (examples)
+    Planner   PR view/create
+    Buyer     PR view/create/edit, PO view/create/edit, submit
+    Approver  PO view/approve
+    Receiver  GRN (Material Inward)
+    Manager   all + settings
+    Auditor   view only
+  Backend checks every action; UI only hides buttons.
+
+
+==========================================================================
+11. NOTIFICATIONS / BACKGROUND JOBS  (BullMQ)
+==========================================================================
+  PR created            -> buyer work list (S2 / dashboard)
+  PO submitted          -> approver (S7) + email/notification
+  PO approved/rejected  -> buyer
+  PO email failed       -> retry job; after last retry -> S9
+  Delivery overdue      -> daily job -> buyer
+  GRN posted            -> buyer + planner
+  PO fully received     -> buyer (can close)
+  Jobs use unique job ids / idempotency keys (no double email / post).
+
+
+==========================================================================
+12. VALIDATIONS  (from v1.0, mapped)
+==========================================================================
+  VAL-01 Only a released BOM can create requirements (SO later).
+  VAL-02 BOM snapshot stored (id, number, version, lines).
+  VAL-03 Required = qty per machine x machine qty.
+  VAL-04 Available = usable stock; unreceived PO qty excluded.
+  VAL-05 Requirement qty > 0.
+  VAL-06 Combine only compatible vendor / currency / UOM / warehouse.
+  VAL-07 Qty change keeps original + reason.
+  VAL-08 Replenishment PO: reason + approval mandatory.
+  VAL-09 No issue before approval.
+  VAL-10 Pending PO not editable (withdraw first).
+  VAL-11 Approved PO change = amendment + re-approval.
+  VAL-12 GRN qty <= outstanding (tolerance setting).
+  VAL-13 Accepted + rejected + QC-pending = delivered.
+  VAL-14 Only accepted qty is usable stock.
+  VAL-15 Posted GRN not deleted; reversal only.
+  VAL-16 Close with open qty needs permission + reason.
+  VAL-17 Email failure does not undo approval / create a PO.
+  VAL-18 Cancelled PO takes no new GRN.
+
+
+==========================================================================
+13. ACCEPTANCE TESTS  (from v1.0; * = adjusted [v1.1])
+==========================================================================
+  AT-01  BS500 x 3, BOM motor qty 2 -> motor required 6.
+  AT-02* Two machines with different BOMs -> each expanded, traced.
+  AT-03* Required 10, on hand 12 -> no shortage (reserved/blocked not
+         tracked in phase 1; full rule when reservations exist).
+  AT-04  Covered by stock -> no requirement.
+  AT-05  Two shortages same motor, combine -> one PO line, two sources.
+  AT-06  Same, not combined -> two POs.
+  AT-07  Shortage 7, ordered 10 -> 7 / 10 / variance 3 / reason.
+  AT-08  Replenishment PO -> draft ok, approval before issue.
+  AT-09  Issue unapproved PO -> blocked (PO_NOT_APPROVED).
+  AT-10  PO 100, GRN 60 accepted -> stock +60, partially received.
+  AT-11  GRN 40 more -> stock +40, fully received.
+  AT-12  GRN 10: 8 accepted, 2 rejected -> stock +8 only.
+  AT-13  GRN post sent twice -> one stock posting.
+  AT-14  Email fails -> PO stays approved, attempt in S9.
+  AT-15  Resend -> new attempt, same version, no new PO.
+  AT-16  BOM revised after run -> old requirement snapshot unchanged.
+  AT-17  Over-receive -> GRN_OVER_RECEIPT.
+  AT-18  No approve permission -> 403, no change.
+  AT-19* Two buyers convert the same requirement at once -> only open qty
+         is converted; second gets PR_QTY_EXCEEDED.
+
+
+==========================================================================
+14. PHASES  [v1.1]
+==========================================================================
+  P1  PO core: tables, PO draft (direct / replenishment), submit,
+      approve / reject, amend, cancel, close, S5 S6 S7, permissions.
+  P2  Requirements: generate from machine BOM (S3), replenishment PR
+      (S4), list + consolidation (S2), PO from PRs with source lines.
+  P3  Issue: PDF, email via BullMQ, retry, S9.
+  P4  GRN link: Material Inward reads these POs, updates PO receipt
+      qty / status, accepted qty -> stock_balances (OD-11, OD-12).
+  P5  Dashboard (S1), reports (S11), settings (S10), notifications.
+  P6  Sales Order link when the Sales Order module exists; reservations
+      / blocked stock.
+  Each phase: migration DEV -> tests -> FE handoff -> LIVE on approval.
+
+
+==========================================================================
+15. OPEN DECISIONS
+==========================================================================
+  From v1.0
+  OD-01  Approval thresholds / approvers           -> settings matrix
+  OD-02  Production POs always approved?          -> matrix; replenish
+                                                     always
+  OD-03  Scrap / yield in shortage                 -> off in phase 1
+  OD-04  One PO, many warehouses?                  -> one per PO
+  OD-05  QC for all items or some                  -> per item/category
+  OD-06  Over-receipt tolerance, close authority   -> 0%, close w/ reason
+  OD-07  Tax, freight, discount, landed cost       -> company tax rules
+  OD-08  Preferred vendor rules                    -> item preferred
+                                                     vendor + override
+  OD-09  Automatic reorder suggestions             -> later
+  OD-10  Invoice / 3-way match                     -> Finance LLD
+  New [v1.1]
+  OD-11  PO tables: build new purchase_orders and point Material Inward
+         GRN at them, OR extend mi_purchase_orders? (recommended: new
+         module owns PO; agree with the Material Inward developer)
+  OD-12  Material Inward posts to mi_inv_balances, not stock_balances.
+         One stock is needed (recommended: accepted / put-away qty posts
+         through StockPostingService so Current Stock shows it).
+  OD-13  No Sales Order yet: phase 1 uses machine + BOM + qty typed by
+         the planner; SO link in P6.
+  OD-14  Reserved / blocked stock not tracked: phase 1 available =
+         on hand in the warehouse.
+  OD-15  PDF library to add (pdfkit or similar) and PO PDF layout /
+         company letterhead.

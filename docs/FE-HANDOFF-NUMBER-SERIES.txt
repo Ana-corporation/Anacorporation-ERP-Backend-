@@ -1,0 +1,236 @@
+================================================================================
+FE HANDOFF — NUMBER SERIES (ITEM / PART NUMBER)
+Date: 22-Oct-2026   Backend: ERP-Backend, branch development-anc
+Pair: NUMBER-SERIES-FE-PROMPT.txt (this file is the backend's answer + exact API)
+================================================================================
+
+0) IN ONE MINUTE
+--------------------------------------------------------------------------------
+  - New setting screen "Number Series". Admin sets: prefix (ANA), segment by Store,
+    separator, serial length, and a short code per store (RM, SP, BO, EL, GN, OL, FG).
+  - When the series is active, the backend generates the Item part number on save:
+      Bought-Out store     → ANABO00001, ANABO00002 ...
+      Finished Goods store → ANAFG0001 ...
+  - Item form must send storeCategoryId. Item code is read-only (backend ignores it).
+  - Companies without an active series: nothing changes (ITM-000001 / MANUAL as today).
+  - Once the first number is generated the structure locks (prefix, source, separator,
+    default length; and per store: code + length). The backend tells you what is locked.
+
+  All responses use the normal envelope { success, message, data, errors, code }.
+  Examples below show only `data`. All ids are strings.
+
+
+1) PERMISSIONS
+--------------------------------------------------------------------------------
+  number_series:view   GET list / settings / preview / audit
+  number_series:edit   PUT settings
+  Both are in the company ADMIN pack. Existing admins get them after logging out and in once.
+  Show the menu entry only with number_series:view; the Save button only with number_series:edit.
+  Without the permission the API returns 403.
+
+
+2) SETTINGS APIs
+--------------------------------------------------------------------------------
+  Base: /api/v1/companies/:companyId/number-series
+
+  2.1 GET /number-series
+      data: [
+        { "documentType": "ITEM", "label": "Item / Part Number",
+          "configured": true, "isActive": true, "isLocked": true }
+      ]
+      Only ITEM today; render as a list so PO / GRN / Invoice can be added later.
+
+  2.2 GET /number-series/ITEM
+      data: {
+        "documentType": "ITEM",
+        "config": {                                  // null until first save
+          "prefix": "ANA",
+          "segmentSource": "STORE",                  // STORE | ITEM_GROUP | NONE
+          "separator": "NONE",                       // NONE | HYPHEN | SLASH
+          "serialLengthDefault": 5,                  // 3..8
+          "serialReset": "NEVER",                    // NEVER | YEARLY
+          "isActive": true,
+          "isLocked": true,
+          "updatedAt": "2026-10-22T09:12:44.120Z",
+          "rowVersion": 3                            // send back on PUT
+        },
+        "lines": [                                   // one per active store category
+          { "numberSeriesLineId": "12", "segmentRefId": "41", "segmentName": "Bought-Out Store",
+            "segmentCode": "BO", "startFrom": 1, "serialLength": 5, "lastNumber": 2,
+            "isLocked": true, "nextNumber": "ANABO00003" },
+          { "numberSeriesLineId": "13", "segmentRefId": "42", "segmentName": "Finished Goods Store",
+            "segmentCode": "FG", "startFrom": 1, "serialLength": 4, "lastNumber": 0,
+            "isLocked": false, "nextNumber": "ANAFG0001" },
+          { "numberSeriesLineId": null, "segmentRefId": "43", "segmentName": "Electrical Store",
+            "segmentCode": "", "startFrom": 1, "serialLength": 5, "lastNumber": 0,
+            "isLocked": false, "nextNumber": "" }        // store not set up yet
+        ],
+        "lockedFields": ["prefix", "segmentSource", "separator", "serialLengthDefault"]
+                                                     // [] when not locked
+      }
+      Notes:
+      - A store without a line comes back with numberSeriesLineId null and nextNumber "".
+      - segmentCode may be pre-filled from the store master when the store already has one.
+      - nextNumber is "" when the store has no code, or the next serial would not fit.
+      - segmentSource NONE → lines has exactly one row with segmentRefId null.
+
+  2.3 PUT /number-series/ITEM          (number_series:edit)
+      body: {
+        "config": {
+          "prefix": "ANA", "segmentSource": "STORE", "separator": "NONE",
+          "serialLengthDefault": 5, "serialReset": "NEVER", "isActive": true,
+          "rowVersion": 3                            // from the last GET (omit on first save)
+        },
+        "lines": [
+          { "segmentRefId": "41", "segmentCode": "BO", "startFrom": 1, "serialLength": 5 },
+          { "segmentRefId": "42", "segmentCode": "FG", "startFrom": 1, "serialLength": 4 },
+          { "segmentRefId": "43", "segmentCode": "EL" }      // new store after lock: allowed
+        ]
+      }
+      → data: same shape as 2.2 (use it to refresh the screen; rowVersion goes up).
+      Rules:
+      - Stores you do not send are left unchanged. Sending all rows is fine.
+      - segmentCode "" = store not in the series (an unlocked line is removed).
+      - startFrom omitted = keep current. serialLength omitted = serialLengthDefault.
+      - Codes are uppercased by the backend (you may uppercase while typing).
+      - One transaction: the store master's numberSeriesCode is updated too.
+
+  2.4 GET /number-series/ITEM/preview?segmentRefId=41
+      data: { "segmentRefId": "41", "nextNumber": "ANABO00003" }
+      Does NOT use up a number. segmentRefId optional when segmentSource is NONE.
+
+  2.5 GET /number-series/ITEM/audit?page=1&limit=20
+      data: {
+        "items": [
+          { "auditId": "9001", "action": "update", "entityName": "NumberSeriesLine",
+            "entityId": "12", "performedBy": { "userId": "7", "name": "Dhamodharan" },
+            "performedAt": "2026-10-22T09:12:44.000Z",
+            "field": "startFrom", "segmentName": "Bought-Out Store",
+            "oldValue": 1, "newValue": 100 }
+        ],
+        "total": 14
+      }
+      One row per changed field. action: create | update | delete.
+      entityName NumberSeriesConfig rows have segmentName null.
+
+
+3) SETTINGS SCREEN — WHAT TO BUILD
+--------------------------------------------------------------------------------
+  Header fields:
+    Prefix              text, A-Z 0-9, max 10, may be empty
+    Segment source      Store | None.  "Item Group" shown disabled ("coming soon")
+    Separator           None | Hyphen (-) | Slash (/)
+    Serial length       3..8 (default for new stores)
+    Serial reset        Never.  "Yearly" shown disabled (not supported: numbers would repeat)
+    Active              toggle
+  Store table (only when source = Store):
+    Store | Code (1-6, A-Z 0-9) | Start from | Length | Last used | Next number | lock icon
+  Locks:
+    - Disable header fields listed in lockedFields.
+    - For a row with isLocked true: disable Code and Length. Start from stays editable.
+    - Rows with isLocked false (incl. new stores) are fully editable.
+  Live example:
+    Show "Example: ANABO00001" while typing. Format =
+      prefix + sep + code + sep + serial padded to length      (empty parts left out)
+      sep: NONE "" | HYPHEN "-" | SLASH "/"
+      source NONE: prefix + sep + serial
+    After save, trust nextNumber from the response.
+  Save:
+    PUT with rowVersion. Map errors[].field to inputs:
+      config.prefix, config.serialLengthDefault, lines.N.segmentCode, lines.N.startFrom ...
+      (N = index in the lines array you sent)
+    On 409 NUMBER_SERIES_CONFLICT: "Someone else changed this. Reloading." → GET again.
+
+
+4) ITEM MASTER — WHAT CHANGES
+--------------------------------------------------------------------------------
+  4.1 GET /api/v1/companies/:companyId/items/settings   (items:view)
+      data: { "companyId": "28", "itemCodeMode": "AUTO", "itemCodePrefix": "ITM",
+              "numberSeriesActive": true, "updatedAt": "..." }
+      numberSeriesActive true  → series mode (below)
+      numberSeriesActive false → today's behaviour, no change
+
+  4.2 Item form when numberSeriesActive = true
+      - Add "Store" select (required). Options: GET /companies/:companyId/store-categories
+        (active ones). Send storeCategoryId.
+      - Item code field: read-only, placeholder "Generated on save".
+        Optional hint: GET /number-series/ITEM/preview?segmentRefId=<store> after a store is picked.
+        Item users may not have number_series:view → on 403 just keep "Generated on save".
+        The preview is only a hint; the real number is assigned at save.
+      - Do not send itemCode (ignored anyway, also in MANUAL mode).
+      - After save, show the itemCode from the response (e.g. ANABO00003).
+
+  4.3 POST /api/v1/companies/:companyId/items
+      body: { "description": "Bearing 6204", "storeCategoryId": "41", ...other fields }
+      → data includes:
+        "itemCode": "ANABO00003",
+        "storeCategoryId": "41",
+        "storeCategory": { "storeCategoryId": "41", "name": "Bought-Out Store", "numberSeriesCode": "BO" }
+
+  4.4 PATCH /api/v1/companies/:companyId/items/:id
+      - Item has a store → Store select disabled. Sending the same id is fine;
+        a different id → 400 ITEM_STORE_LOCKED.
+      - Old item without a store → admin may set it once. Its code is NOT renumbered.
+
+  4.5 Item list / detail
+      storeCategoryId + storeCategory are on every item (null for old items).
+      Optional: add a "Store" column. Search by code / description is case-insensitive.
+
+  4.6 Store categories master
+      GET /store-categories rows now include "numberSeriesCode": "BO" (null when not set).
+      Show it read-only (it is edited on the Number Series screen).
+
+
+5) ERRORS — WHAT TO SHOW
+--------------------------------------------------------------------------------
+  Code                                HTTP  Where / message to show
+  NUMBER_SERIES_PREFIX_INVALID        400   config.prefix — letters/digits, max 10
+  NUMBER_SERIES_SERIAL_LENGTH_INVALID 400   length field — 3 to 8
+  NUMBER_SERIES_SEGMENT_CODE_INVALID  400   lines.N.segmentCode — 1-6 letters/digits
+  NUMBER_SERIES_SEGMENT_CODE_EXISTS   400   lines.N.segmentCode — code used by another store
+                                            (409 only if two admins save the same code at once)
+  NUMBER_SERIES_SOURCE_UNAVAILABLE    400   Item Group not available yet
+  NUMBER_SERIES_RESET_UNSUPPORTED     400   Yearly reset not supported
+  NUMBER_SERIES_LOCKED_FIELD          400   field in errors[] — locked after numbers were generated
+  NUMBER_SERIES_START_FROM_TOO_LOW    400   lines.N.startFrom — must be above "last used"
+  NUMBER_SERIES_NOT_CONFIGURED        400   Settings: lines.N.segmentRefId (store not found).
+                                            Item save: "This store has no part-number code. Ask an admin."
+  NUMBER_SERIES_INACTIVE              400   Item save: series switched off meanwhile → reload settings
+  NUMBER_SERIES_OVERFLOW              409   Item save: this store's number range is full
+                                            (e.g. ANAFG9999). Ask an admin; numbers are never cut short
+  NUMBER_SERIES_CONFLICT              409   Settings: someone else saved → reload
+  ITEM_STORE_REQUIRED                 400   storeCategoryId — "Select a store"
+  ITEM_STORE_LOCKED                   400   storeCategoryId — store cannot be changed
+  ITEM_CODE_EXISTS                    409   item code already exists (MANUAL mode)
+  (no code) "Store category not found" 404  item save with an unknown / inactive store
+
+  Body shape: { success:false, message, code, errors:[{ field, message }] }
+
+
+6) CHECKLIST
+--------------------------------------------------------------------------------
+  [ ] Number Series menu behind number_series:view; Save behind number_series:edit
+  [ ] Locked fields disabled from lockedFields + line.isLocked
+  [ ] Item Group / Yearly shown disabled
+  [ ] PUT sends rowVersion; 409 conflict reloads
+  [ ] Field errors mapped (config.*, lines.N.*)
+  [ ] Item form: Store required + code read-only when numberSeriesActive
+  [ ] Item edit: Store disabled once set
+  [ ] Preview 403 handled quietly
+  [ ] Company without a series: item form unchanged
+
+
+7) STATUS (22-Oct-2026)
+--------------------------------------------------------------------------------
+  DEV  (Erp_test_db)        migrated.
+  LIVE (Ana_corporation_db) migrated + ANA seeded (company 28):
+         prefix ANA, by Store, no separator, length 5
+         RM SP BO EL GN OL = 5 digits, FG = 4 digits   (next: ANABO00001, ANAFG0001)
+  Local backend (localhost:3002, LIVE DB): restarted with the new code — test against this.
+  Cloud Run (deployed app): still the old code until the backend is pushed to development-anc.
+    Until then it returns 404 for /number-series and no numberSeriesActive flag
+    (treat a missing flag as false).
+
+  Note: ANA's series is already ACTIVE. As soon as the new backend is deployed, item create
+  needs storeCategoryId — ship the item form change together with (or before) that deploy.
+================================================================================

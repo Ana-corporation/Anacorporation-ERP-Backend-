@@ -5,7 +5,7 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { AuthenticatedUser } from '@/common/interfaces/auth.interface';
 import { assertCompanyAccess } from '@/common/utils/company-access.util';
-import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/employee.dto';
+import { CreateEmployeeDto, EmployeeLookupQueryDto, UpdateEmployeeDto } from './dto/employee.dto';
 import { EmployeesService } from './employees.service';
 
 @ApiTags('Employees')
@@ -15,8 +15,8 @@ export class EmployeesController {
   constructor(private readonly employeesService: EmployeesService) {}
 
   @Get()
-  @RequirePermissions('users:view')
-  @ApiOperation({ summary: 'List employees for company' })
+  @RequirePermissions('employees:view')
+  @ApiOperation({ summary: 'List employees for company (ERP master)' })
   findAll(
     @Param('companyId') companyId: string,
     @Query() query: PaginationQueryDto,
@@ -26,8 +26,22 @@ export class EmployeesController {
     return this.employeesService.findAll(companyId, query);
   }
 
+  @Get('lookup')
+  @RequirePermissions('employees:view')
+  @ApiOperation({
+    summary: 'Light list for ERP dropdowns (salesperson, store-keeper, approver). No sensitive fields.',
+  })
+  lookup(
+    @Param('companyId') companyId: string,
+    @Query() query: EmployeeLookupQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    assertCompanyAccess(companyId, user);
+    return this.employeesService.lookup(companyId, query);
+  }
+
   @Get(':id')
-  @RequirePermissions('users:view')
+  @RequirePermissions('employees:view')
   @ApiOperation({ summary: 'Get employee by ID' })
   findOne(
     @Param('companyId') companyId: string,
@@ -39,8 +53,8 @@ export class EmployeesController {
   }
 
   @Post()
-  @RequirePermissions('users:create')
-  @ApiOperation({ summary: 'Create employee (no login until invited)' })
+  @RequirePermissions('employees:create')
+  @ApiOperation({ summary: 'Create employee (code from EMPLOYEE number series when omitted; no login until invited)' })
   create(
     @Param('companyId') companyId: string,
     @Body() dto: CreateEmployeeDto,
@@ -51,7 +65,7 @@ export class EmployeesController {
   }
 
   @Patch(':id')
-  @RequirePermissions('users:edit')
+  @RequirePermissions('employees:edit')
   @ApiOperation({ summary: 'Update employee org/profile fields' })
   update(
     @Param('companyId') companyId: string,
@@ -64,7 +78,7 @@ export class EmployeesController {
   }
 
   @Delete(':id')
-  @RequirePermissions('users:delete')
+  @RequirePermissions('employees:delete')
   @ApiOperation({ summary: 'Soft-delete employee' })
   remove(
     @Param('companyId') companyId: string,

@@ -91,8 +91,16 @@ describe('built-in-field-registry', () => {
   it('locks itemCode and description', () => {
     expect(getBuiltInField('item', 'itemCode')?.configurable).toBe(false);
     expect(getBuiltInField('item', 'description')?.configurable).toBe(false);
-    expect(getBuiltInField('item', 'itemType')?.configurable).toBe(false);
     expect(getBuiltInField('item', 'status')?.configurable).toBe(false);
+  });
+
+  it('lets companies hide item type, sales and purchase flags; new master fields start hidden', () => {
+    for (const key of ['itemType', 'isSalesItem', 'isPurchaseItem']) {
+      expect(getBuiltInField('item', key)).toMatchObject({ configurable: true, defaultVisible: true });
+    }
+    for (const key of ['storeCategoryId', 'itemGroupId', 'inventoryUomId', 'imageFileAssetId']) {
+      expect(getBuiltInField('item', key)).toMatchObject({ configurable: true, defaultVisible: false });
+    }
   });
 
   it('uses unique store-prefixed keys for bag collisions', () => {

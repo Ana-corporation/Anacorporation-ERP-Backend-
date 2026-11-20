@@ -18,8 +18,14 @@ export const INVENTORY_LINE_ERROR_CODES = {
   BIN_NOT_ALLOWED: 'INVENTORY_BIN_NOT_ALLOWED',
   BIN_NOT_FOUND: 'INVENTORY_BIN_NOT_FOUND',
   BIN_INACTIVE: 'INVENTORY_BIN_INACTIVE',
+  BIN_BLOCKED: 'INVENTORY_BIN_BLOCKED',
+  BIN_SAME: 'INVENTORY_TRANSFER_SAME_BIN',
+  TO_BIN_REQUIRED: 'INVENTORY_TO_BIN_REQUIRED',
   DUPLICATE_LINE: 'INVENTORY_DUPLICATE_LINE',
   OUT_OF_SCOPE: 'INVENTORY_LOCATION_OUT_OF_SCOPE',
+  VENDOR_INACTIVE: 'VENDOR_INACTIVE',
+  SUBCONTRACTOR_NO_ISSUE: 'SUBCONTRACTOR_STOCK_NOT_ISSUABLE',
+  TRANSFER_BIN_MGMT_REQUIRED: 'INVENTORY_TRANSFER_BIN_MGMT_REQUIRED',
 } as const;
 
 export interface ResolvedInventoryLine extends StockLocationKey {
@@ -31,6 +37,11 @@ export interface ResolvedInventoryLine extends StockLocationKey {
   unitPrice: Prisma.Decimal | null;
   physicalQuantity: Prisma.Decimal | null;
   remarks: string | null;
+  batchNo: string | null;
+  serialNo: string | null;
+  zeroPriceConfirmed: boolean;
+  /** Stock Transfer destination bin (same warehouse). */
+  toStorageBinId: bigint | null;
 }
 
 /** Inventory UoM lives in the Item Master inventory tab bag. */
@@ -82,15 +93,31 @@ export class InventoryLineResolverService {
       }),
       db.warehouse.findMany({
         where: { companyId: company, warehouseId: { in: ids(warehouseIdOf) }, deletedAt: null },
-        select: { warehouseId: true, branchId: true, binManagement: true, isActive: true },
+        select: {
+          warehouseId: true,
+          branchId: true,
+          binManagement: true,
+          isActive: true,
+          vendor: { select: { name: true, isActive: true, deletedAt: true } },
+          storeCategory: { select: { storeType: true } },
+        },
       }),
       db.branch.findMany({
         where: { companyId: company, branchId: { in: ids(siteIdOf) }, deletedAt: null, isActive: true },
         select: { branchId: true },
       }),
       db.storageBin.findMany({
-        where: { companyId: company, storageBinId: { in: ids((l) => l.storageBinId) }, deletedAt: null },
-        select: { storageBinId: true, warehouseId: true, isActive: true },
+        where: {
+          companyId: company,
+          storageBinId: {
+            in: [
+              ...ids((l) => l.storageBinId),
+              ...ids((l) => (l as InventoryDocumentLineInput & { toStorageBinId?: string | null }).toStorageBinId),
+            ],
+          },
+          deletedAt: null,
+        },
+        select: { storageBinId: true, warehouseId: true, isActive: true, status: true },
       }),
       this.dataAccessPoliciesService.resolveUserDataScope(userId, companyId),
     ]);
@@ -100,6 +127,38 @@ export class InventoryLineResolverService {
     const branchIds = new Set(branches.map((b) => b.branchId.toString()));
     const binById = new Map(bins.map((b) => [b.storageBinId.toString(), b]));
     const seen = new Set<string>();
+
+    const assertBinUsable = (
+      fail: (code: string, field: string, message: string) => never,
+      binId: string | null | undefined,
+      field: string,
+      warehouseId: bigint,
+      mode: 'inbound' | 'outbound',
+    ): bigint => {
+      if (!binId) {
+        return fail(INVENTORY_LINE_ERROR_CODES.BIN_REQUIRED, field, 'Storage bin is required for this location') as never;
+      }
+      const bin = binById.get(binId);
+      if (!bin || bin.warehouseId !== warehouseId) {
+        return fail(
+          INVENTORY_LINE_ERROR_CODES.BIN_NOT_FOUND,
+          field,
+          'Storage bin not found in this inventory location',
+        ) as never;
+      }
+      const status = (bin.status || (bin.isActive ? 'ACTIVE' : 'INACTIVE')).toUpperCase();
+      if (status === 'INACTIVE') {
+        return fail(INVENTORY_LINE_ERROR_CODES.BIN_INACTIVE, field, 'Storage bin is inactive') as never;
+      }
+      if (mode === 'inbound' && status === 'BLOCKED') {
+        return fail(
+          INVENTORY_LINE_ERROR_CODES.BIN_BLOCKED,
+          field,
+          'Storage bin is blocked and cannot receive stock',
+        ) as never;
+      }
+      return bin.storageBinId;
+    };
 
     return lines.map((line, index) => {
       const path = `lines[${index}]`;
@@ -148,6 +207,21 @@ export class InventoryLineResolverService {
       if (!warehouse.isActive) {
         fail(INVENTORY_LINE_ERROR_CODES.LOCATION_INACTIVE, 'inventoryLocationId', 'Inventory location is inactive');
       }
+      if (warehouse.vendor && (!warehouse.vendor.isActive || warehouse.vendor.deletedAt)) {
+        fail(
+          INVENTORY_LINE_ERROR_CODES.VENDOR_INACTIVE,
+          'inventoryLocationId',
+          `Vendor ${warehouse.vendor.name} of this location is inactive`,
+        );
+      }
+      // Material at job-work vendors leaves only through job-work receipt, return or adjustment.
+      if (documentType === InventoryDocumentType.MATERIAL_ISSUE && warehouse.storeCategory?.storeType === 'SUBCONTRACTOR') {
+        fail(
+          INVENTORY_LINE_ERROR_CODES.SUBCONTRACTOR_NO_ISSUE,
+          'inventoryLocationId',
+          `Stock at vendor${warehouse.vendor ? ` ${warehouse.vendor.name}` : ''} cannot be issued`,
+        );
+      }
       const siteId = siteIdOf(line);
       if (siteId && !branchIds.has(siteId)) {
         fail(INVENTORY_LINE_ERROR_CODES.SITE_NOT_FOUND, 'siteId', 'Site not found or inactive');
@@ -160,27 +234,50 @@ export class InventoryLineResolverService {
         );
       }
 
+      if (documentType === InventoryDocumentType.STOCK_TRANSFER && !warehouse.binManagement) {
+        fail(
+          INVENTORY_LINE_ERROR_CODES.TRANSFER_BIN_MGMT_REQUIRED,
+          'inventoryLocationId',
+          'Bin-to-bin transfer requires bin management on this location',
+        );
+      }
+
       let storageBinId: bigint | null = null;
+      let toStorageBinId: bigint | null = null;
+      const transferLine = line as InventoryDocumentLineInput & { toStorageBinId?: string | null };
+
       if (warehouse.binManagement) {
-        if (!line.storageBinId) {
-          fail(INVENTORY_LINE_ERROR_CODES.BIN_REQUIRED, 'storageBinId', 'Storage bin is required for this location');
-        }
-        const bin = binById.get(line.storageBinId!);
-        if (!bin || bin.warehouseId !== warehouse.warehouseId) {
-          fail(
-            INVENTORY_LINE_ERROR_CODES.BIN_NOT_FOUND,
+        if (documentType === InventoryDocumentType.STOCK_TRANSFER) {
+          storageBinId = assertBinUsable(fail, line.storageBinId, 'storageBinId', warehouse.warehouseId, 'outbound');
+          if (!transferLine.toStorageBinId) {
+            fail(INVENTORY_LINE_ERROR_CODES.TO_BIN_REQUIRED, 'toStorageBinId', 'Destination storage bin is required');
+          }
+          toStorageBinId = assertBinUsable(
+            fail,
+            transferLine.toStorageBinId,
+            'toStorageBinId',
+            warehouse.warehouseId,
+            'inbound',
+          );
+          if (storageBinId === toStorageBinId) {
+            fail(INVENTORY_LINE_ERROR_CODES.BIN_SAME, 'toStorageBinId', 'From and to storage bins must be different');
+          }
+        } else {
+          const inbound =
+            documentType === InventoryDocumentType.OPENING_STOCK ||
+            documentType === InventoryDocumentType.STOCK_ADJUSTMENT;
+          storageBinId = assertBinUsable(
+            fail,
+            line.storageBinId,
             'storageBinId',
-            'Storage bin not found in this inventory location',
+            warehouse.warehouseId,
+            inbound ? 'inbound' : 'outbound',
           );
         }
-        if (!bin!.isActive) {
-          fail(INVENTORY_LINE_ERROR_CODES.BIN_INACTIVE, 'storageBinId', 'Storage bin is inactive');
-        }
-        storageBinId = BigInt(line.storageBinId!);
-      } else if (line.storageBinId) {
+      } else if (line.storageBinId || transferLine.toStorageBinId) {
         fail(
           INVENTORY_LINE_ERROR_CODES.BIN_NOT_ALLOWED,
-          'storageBinId',
+          line.storageBinId ? 'storageBinId' : 'toStorageBinId',
           'This inventory location does not use storage bins',
         );
       }
@@ -204,10 +301,14 @@ export class InventoryLineResolverService {
         branchId: warehouse.branchId,
         warehouseId: warehouse.warehouseId,
         storageBinId,
+        toStorageBinId,
         quantity: decimalOrNull(line.quantity),
         unitPrice: decimalOrNull(line.unitPrice),
         physicalQuantity: decimalOrNull(line.physicalQuantity),
         remarks: line.remarks ?? null,
+        batchNo: line.batchNo?.trim() || null,
+        serialNo: line.serialNo?.trim() || null,
+        zeroPriceConfirmed: line.zeroPriceConfirmed === true,
       };
 
       if (documentType === InventoryDocumentType.STOCK_ADJUSTMENT) {
@@ -217,6 +318,31 @@ export class InventoryLineResolverService {
             INVENTORY_LINE_ERROR_CODES.DUPLICATE_LINE,
             'itemId',
             `${item.itemCode} is counted twice for the same location and bin`,
+          );
+        }
+        seen.add(key);
+      }
+      if (documentType === InventoryDocumentType.OPENING_STOCK) {
+        // Different batches / serials of one item may share a bin; anything else is a repeat.
+        const key = `${stockKey(resolved)}:${(resolved.batchNo ?? '').toLowerCase()}:${(resolved.serialNo ?? '').toLowerCase()}`;
+        if (seen.has(key)) {
+          fail(
+            INVENTORY_LINE_ERROR_CODES.DUPLICATE_LINE,
+            'itemId',
+            warehouse.vendor
+              ? `${item.itemCode} is entered twice for vendor ${warehouse.vendor.name}`
+              : `${item.itemCode} is entered twice for the same location, bin, batch and serial`,
+          );
+        }
+        seen.add(key);
+      }
+      if (documentType === InventoryDocumentType.STOCK_TRANSFER) {
+        const key = `${stockKey(resolved)}>${resolved.toStorageBinId}`;
+        if (seen.has(key)) {
+          fail(
+            INVENTORY_LINE_ERROR_CODES.DUPLICATE_LINE,
+            'itemId',
+            `${item.itemCode} is transferred twice on the same from/to bins`,
           );
         }
         seen.add(key);

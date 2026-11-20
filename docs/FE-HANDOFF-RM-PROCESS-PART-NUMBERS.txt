@@ -1,0 +1,126 @@
+FE handoff — RM + process part numbers (two only)
+=================================================
+Updated: 17 Nov 2026
+Backend + LIVE data remap are done. Local API on prod DB needs restart to pick up the latest stages payload.
+
+What the user sees
+------------------
+Mechanical / made parts = TWO part numbers only. No stage tags (no "RM", "SF", "PLT", "MCN" labels).
+
+  ANARM00001 → ANAPLT00001
+  ANARM00003 → ANAMCN00001
+  ANARM00251 → ANAFAB00038
+
+Meaning:
+  - ANARM… = raw material identity (Material Master highlights this).
+  - ANA{process}… (PLT/MCN/FAB…) = process assigned for feed / work — NOT “fully finished”.
+    Buyer assigns one process; that second PN tracks the part through processing.
+  - Do not treat the process PN as fully finished goods.
+
+Material Master: always bold/fill the RM code in the chain.
+Never show a third FF number.
+Never show labels like "RM … → SF …" or "RM … → PLT …".
+Bought-out (FST, BRG, PLY, …) = one part number, no stage line.
+Do not show Store on Material Master list/drawer (e.g. Semi-Finished Store chip/column).
+Store stays in DB for inventory/stock screens only — not part-number identity.
+
+LIVE data (already applied)
+---------------------------
+Old ANASF… / ANAFF… for BS500 made parts were soft-deleted.
+New process parts exist (PLT / MCN / FAB / SPR / CMP).
+BOM lines still point at the RM item; stages come from the linked process item.
+Refresh after API restart — no BOM re-save needed.
+
+API shape (BOM + Item Master)
+-----------------------------
+stages: {
+  rm: { itemId, itemCode, categoryCode } | null,   // e.g. ANARM00001, "RM"
+  sf: { itemId, itemCode, categoryCode } | null,   // process part: ANAPLT… / ANAMCN…, categoryCode "PLT"/"MCN"/…
+  ff: { itemId, itemCode, categoryCode } | null    // always null for new mechanical parts
+}
+
+Notes:
+- Slot key is still "sf" in JSON (backward compatible). It means the process / end part.
+- Soft-deleted old ANASF/ANAFF are never returned.
+- Display only the two itemCodes: stages.rm.itemCode → stages.sf.itemCode
+- Do NOT print stage tags (RM / SF / PLT / MCN / FAB) next to the numbers — the segment is already in the code.
+- Ignore ff even if present on very old leftover data.
+
+Existing FE helper (keep using)
+-------------------------------
+src/lib/item/stage-parts.ts
+  - filledStageKeys → rm + sf only (never ff)
+  - stageSlotLabel → uses sfCategoryCode / rmCategoryCode
+  - mapStagesFromApi / resolveItemStages → map categoryCode from API refs
+
+BOM / Material master / Item drawer
+-----------------------------------
+Show the same chain everywhere — part numbers only, no tags:
+
+  {rm.itemCode} → {sf.itemCode}
+
+Examples:
+  ANARM00001 → ANAPLT00001
+  ANARM00251 → ANAFAB00038
+
+The end part number (ANAPLT / ANAMCN / ANAFAB / …) is how the user knows the process.
+Do not print RM / SF / PLT / MCN / FAB as labels.
+Do not print FF.
+
+Create / edit item (Item Master)
+--------------------------------
+On Add Material, Store is hidden. Two-step category pick (Electrical vs Mechanical separated):
+
+  1) Material Type — Mechanical (RM) / Bought-out (BO) / Electrical (ES) / General (GS) / Oil (OS) / Finished (FF)
+  2) Segment Category — only segment codes for that type (e.g. ES → ELT, EYK…; BO → PLY, BRG…)
+  Both fields are searchable Autocomplete dropdowns (type to filter).
+  Store is still derived from the selected segment category (not shown).
+
+When Material Type = Mechanical and Segment Category = RM: both part numbers are defined at the start
+(Process picker: PLT / MCN / FAB / SHM / SPR — SF stage categories, not in Segment Category).
+No "Raw material only" toggle — process picker is required before save for RM.
+
+POST /companies/{companyId}/items
+
+  stagePlan: "RM_PROCESS"   (always for new made / RM items)
+  processCategoryCode: "PLT" | "MCN" | "FAB" | "SPR" | "CMP" | …  
+    (required)
+
+Example:
+  {
+    "description": "MAIN SIDE PLATE RH",
+    "itemGroupId": "<RM category id>",
+    "storeCategoryId": "<Raw Material Store id>",
+    "stagePlan": "RM_PROCESS",
+    "processCategoryCode": "PLT"
+  }
+
+→ creates ANARM… + ANAPLT… in one save.
+
+Bought-out categories: no stagePlan / no process picker (one part number only).
+Edit: if an older RM has no process part yet, use POST …/items/{id}/stages.
+
+Create missing process part later
+---------------------------------
+POST /companies/{companyId}/items/{id}/stages
+  { "processCategoryCode": "MCN" }
+
+Removed (do not call):
+  stagePlan "RM_SF" / "RM_SF_FF"
+  body { "upTo": "SF" | "FF" }
+
+Category Master
+---------------
+Process categories (PLT, MCN, FAB, SPR, …): Stage = SF (many allowed per company).
+Bought-out categories: no Stage / no stagePlan.
+FF stage category is unused for new mechanical parts.
+
+Checklist for FE
+----------------
+[ ] Restart/reload against latest backend (stages include categoryCode).
+[ ] BOM line / group editor: show RM + process code + process part number (same as Material master).
+[x] Item list / detail / form: same two-number chain; never show FF for these; highlight RM.
+[x] Item create: Material Type → Segment Category (searchable); RM_PROCESS + required process picker at add start.
+[x] Material Master: do not show Store column/chip (list + drawer).
+[ ] Remove any UI that creates or confirms FF / "RM → SF → FF".
+[ ] Bought-out rows: still one part number only.
