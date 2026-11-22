@@ -10,6 +10,17 @@ const optionalText = (max: number) =>
 
 const dateSchema = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected date as YYYY-MM-DD');
 
+const optionalDateSchema = z.preprocess(emptyToUndefined, dateSchema.optional());
+
+const requiredId = (label: string) =>
+  z.preprocess((value) => {
+    if (value === '' || value === null || value === undefined) return '';
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return String(value);
+    if (typeof value === 'bigint') return value.toString();
+    if (typeof value === 'string') return value.trim();
+    return value;
+  }, z.string().regex(/^\d+$/, `${label} is required`));
+
 const decimalSchema = (positive: boolean) =>
   z.preprocess(
     (value) => (typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : value),
@@ -124,7 +135,7 @@ const orderLineSchema = z.object({
   unitPrice: decimalSchema(false),
   taxPct: decimalSchema(false),
   discountAmount: decimalSchema(false).optional().default('0'),
-  requiredDate: dateSchema.optional(),
+  requiredDate: optionalDateSchema,
   warehouseId: bigintIdSchema,
   varianceReason: optionalText(2000),
   sources: z.array(lineSourceSchema).optional().default([]),
@@ -133,7 +144,7 @@ const orderLineSchema = z.object({
 export const SavePurchaseOrderSchema = z
   .object({
     poType: z.enum(['PRODUCTION', 'REPLENISHMENT']),
-    vendorId: bigintIdSchema,
+    vendorId: requiredId('Vendor'),
     poDate: dateSchema,
     currencyId: bigintIdSchema,
     paymentTermId: bigintIdSchema,
