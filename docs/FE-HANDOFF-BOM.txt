@@ -1,0 +1,316 @@
+================================================================================
+FE HANDOFF — Bill of Materials (BOM) backend: MAIN / SUB with Common Key
+Date:       2026-11-04
+Audience:   ERP-Frontend
+Base:       /api/v1/companies/{companyId}
+Plan:       docs/BOM-BACKEND-PLAN.txt   Design: SWENTER_BOM_Common_Key_Technical_Approach.docx
+DB:         Migration 20261104120000_bom_module — DEV (Erp_test_db) ONLY.
+            LIVE (Ana_corporation_db) not migrated yet (needs approval).
+================================================================================
+
+STATUS (2026-11-04)
+--------------------------------------------------------------------------------
+READY in the backend (build against these now, on DEV / local API)
+  [x] Item picker            GET  /items/lookup  (parent: procurementType=Make,Subcontract)
+  [x] BOM list               GET  /boms
+  [x] Create BOM (DRAFT)     POST /boms   (BOM00001 from Number Series; groups inline optional)
+  [x] BOM detail grouped     GET  /boms/{bomId}   (MAIN + SUB by Common Key, allowedActions)
+  [x] Edit header            PATCH /boms/{bomId}
+  [x] Add MAIN               POST /boms/{bomId}/main-lines          (key 1, 2, 3 ... by backend)
+  [x] Add SUB                POST /boms/{bomId}/main-lines/{mainLineId}/sub-lines
+  [x] Edit / delete line     PATCH | DELETE /boms/{bomId}/lines/{lineId}
+  [x] Validate               POST /boms/{bomId}/validate
+  [x] Required quantities    POST /boms/{bomId}/requirements
+  [x] Release                POST /boms/{bomId}/release      (Idempotency-Key)
+  [x] Revision               POST /boms/{bomId}/revisions    (Idempotency-Key)
+  [x] Version history        GET  /boms/{bomId}/revisions
+  [x] Obsolete / Cancel      POST /boms/{bomId}/obsolete | /cancel
+  [x] Delete draft           DELETE /boms/{bomId}
+  [x] Where used / By item   GET  /boms/where-used?itemId= | /boms/by-item/{itemId}
+  [x] Permissions boms:view/create/edit/delete/release/revise/obsolete
+  [x] Tests: 18 unit + controller permissions + 18 DB tests on DEV, all green
+
+NOT READY yet
+  [ ] LIVE database (swenter.com) — BOM tables not migrated; APIs return
+      errors there until the migration is approved and the code is pushed.
+      Use the local API (localhost:3002 on DEV) for development.
+  [ ] Code not committed / pushed (Cloud Run does not have these endpoints).
+  [ ] ANA has no BS500 machine item yet (needs procurementType Make) — create
+      one to test with ANA data; DEV test companies work without it.
+  [x] BOM Excel import — POST /boms/import/validate|confirm + GET template
+      (Draft only; Common Key from Find Number integer). See FE-HANDOFF-EXCEL-IMPORT.txt.
+  [x] Frontend BOM screens — built against this contract (editor + Requirements
+      hybrid find labels). Use localhost:3002 until Cloud Run is pushed.
+
+UPDATE 2026-11-04 (afternoon)
+  - BOM migration applied on LIVE (Ana_corporation_db) as well.
+  - Old / drawing part number added everywhere: `oldCode` on lines,
+    parentItem, requirements lines + totals, where-used item / parent /
+    mainItem, list parentItem. FE shows "ANARM00012 · Old BS5018030020"
+    (bom-shared PartNumbers, item picker, editor header, list, requirements,
+    where-used). Live Item Master value (not snapshotted).
+  - ANA data: item ANAASSY00012 "BS500 MACHINE" (Old BS5000000000A1,
+    Finished Goods / ASSY, Make) and BOM00001 v1 DRAFT loaded from the
+    BS5000000000A1 sheet: 368 MAIN groups (11 with SUB lines), 28 SUB lines,
+    396 lines; find number = sheet item no (12, 12.1 ...); validate clean.
+    Child qty converted to per assembly (135 x2 and 270 x6 -> 1 per assy).
+
+FRONTEND (confirmed in place — Manufacturing → Bill of Materials)
+  Nothing new to stand up; FE already built on this contract.
+  1. List           — S.No, BOM No, machine, version, status, lines, updated, allowedActions
+  2. Create         — Make/Subcontract parent, type, base qty (BOM00001 from Number Series)
+  3. Editor         — groups by Common Key, MAIN + SUB, Add MAIN / Add sub-material
+                      (client never sends commonKey / lineType / parentLineId)
+  4. Validate, requirements, release / revise / obsolete / cancel (Idempotency-Key),
+     versions, where-used
+  5. Released BOM is read-only
+  6. Old / drawing number: ANARM00012 · Old BS5018030020
+  Hybrid find labels (UI only) on editor AND Requirements:
+    Key 16 MAIN, then SUB .1 / .2 (full 16.1 still on hover).
+  Point FE at local API (localhost:3002 on DEV). Live Cloud Run does not expose
+  these endpoints until this code is pushed.
+================================================================================
+
+STRUCTURE
+  One BOM per machine (parent item, e.g. BS500). Inside it, groups:
+  one MAIN line + its SUB lines, tied by a backend Common Key (1, 2, 3 ...).
+  Link = parentLineId (SUB → MAIN) + same commonKey. findNumber may be 16 / 16.1
+  in the API; FE display is hybrid (UI only) in editor + Requirements:
+
+    Key 16  MAIN  MS PIPE ROLLER BOTTOM ASSY
+            SUB   .1  END SHAFT BOTTOM
+            SUB   .2  MS PIPE
+
+  Full "16.1" still stored; hover/title can show it. No BE change for display.
+
+    BOM00001  BS500
+      Key 1  MAIN  MS PIPE ROLLER TOP ASSY     1
+             SUB   END SHAFT TOP               2
+             SUB   MS PIPE                     1
+      Key 2  MAIN  MS PIPE ROLLER BOTTOM ASSY  1
+             SUB   END SHAFT BOTTOM            2
+             SUB   MS PIPE                     1   (same item, other group: OK)
+
+  The client NEVER sends commonKey, lineType or parentLineId. The route decides
+  MAIN vs SUB; sending any of them -> 400 FIELD_NOT_ALLOWED.
+
+PERMISSIONS (module "manufacturing"; ADMIN gets them on next login)
+  boms:view | boms:create | boms:edit | boms:delete
+  boms:release | boms:revise | boms:obsolete   (separate from edit)
+  Item picker uses items:view.
+
+RESPONSE SHAPE
+  Every BOM response = the full detail below (inside the usual
+  { success, data } wrapper). Buttons come from allowedActions[]; the server
+  still checks every action. IDs are strings; quantities are strings
+  (6 decimals, scrap 4 decimals).
+
+  {
+    "bomId": "12", "uuid": "...", "bomNumber": "BOM00001", "version": 1,
+    "revisionLabel": null, "revisionReason": null,
+    "status": "DRAFT" | "RELEASED" | "OBSOLETE" | "CANCELLED",
+    "bomType": "MANUFACTURING" | "ENGINEERING", "bomScope": "STANDARD",
+    "isCurrentVersion": false, "isDefault": false,
+    "rootBomId": "12", "previousVersionId": null, "nextCommonKey": 3,
+    "baseQuantity": "1.000000", "uom": { "uomId": "1", "code": "NOS" },
+    "parentItem": { "itemId": "88", "itemCode": "ANAASSY00012", "name": "BS500",
+                    "isActive": true, "procurementType": "Make" },
+    "effectiveFrom": null, "effectiveTo": null, "remarks": null,
+    "releasedAt": null, "releasedBy": null, "obsoletedAt": null, ...
+    "groups": [
+      { "commonKey": "1",
+        "main": { lineId, lineType:"MAIN", commonKey:"1", parentLineId:null,
+                  lineNumber:10, findNumber, componentItemId, itemCode, itemName,
+                  uomId, uomCode, quantity:"1.000000", scrapPercentage:"0.0000",
+                  remarks, itemActive, itemStatus, itemGroup, storeCategory,
+                  procurementType, snapshot },
+        "subLines": [ { ...same fields, lineType:"SUB", parentLineId: <main lineId> } ] }
+    ],
+    "summary": { "groupCount": 2, "lineCount": 6, "subLineCount": 4 },
+    "hasOpenDraft": false,
+    "allowedActions": ["validate","requirements","edit","addMain","addSub",
+                       "editLine","deleteLine","cancel","release","delete"],
+    "rowVersion": 3, "createdByName": "...", ...
+  }
+  Drafts show live Item Master code / name / UOM. RELEASED / OBSOLETE show the
+  snapshot taken at release (renaming an item later does not change them).
+
+  allowedActions by status
+    DRAFT       validate, requirements, edit, addMain, addSub, editLine,
+                deleteLine, cancel, release, delete
+    RELEASED    requirements, revise (current version, no open draft), obsolete
+    OBSOLETE / CANCELLED   requirements
+  (each filtered by the user's permissions)
+
+--------------------------------------------------------------------------------
+ENDPOINTS
+--------------------------------------------------------------------------------
+Item picker (Item Master)
+  GET /items/lookup?search=&limit=20&procurementType=Make,Subcontract&excludeItemId=
+      &storeCategoryId=&itemGroupId=
+  -> { procurementFieldConfigured, items: [ { itemId, itemCode, name, oldCode,
+       status, uom{uomId,code,name}, itemGroup{...}, storeCategory{...},
+       procurementType } ] }
+  Active items only. Parent picker: procurementType=Make,Subcontract.
+  Component picker: excludeItemId=<parentItemId>.
+
+List
+  GET /boms?page=&limit=&search=&status=&bomType=&parentItemId=&sortBy=&sortOrder=
+           &allVersions=false
+  Default = latest version of each BOM. search: BOM number, parent part number,
+  name, old code. sortBy: bomNumber | version | status | createdAt | updatedAt.
+  Rows: header fields + parentItem + lineCount + currentReleasedVersion +
+  openDraftVersion + allowedActions.
+
+Create (DRAFT; number from Number Series BOM, e.g. BOM00001)
+  POST /boms
+  {
+    "parentItemId": "88",
+    "bomType": "MANUFACTURING",          // optional, default MANUFACTURING
+    "baseQuantity": "1",                 // optional, default 1
+    "effectiveFrom": "2026-11-04", "effectiveTo": null,
+    "revisionLabel": "A", "remarks": "",
+    "groups": [                          // optional
+      { "main": { "componentItemId": "101", "quantity": 1 },
+        "subLines": [ { "componentItemId": "201", "quantity": 2 },
+                      { "componentItemId": "301", "quantity": 1, "findNumber": "12.2" } ] }
+    ]
+  }
+  UOMs are set by the server from the items (send uomId only if you want it
+  checked; it must equal the item's inventory UOM).
+
+Detail          GET    /boms/{bomId}
+Header edit     PATCH  /boms/{bomId}   { rowVersion*, baseQuantity, effectiveFrom,
+                                         effectiveTo, revisionLabel, revisionReason,
+                                         remarks, parentItemId / bomType (v1 only) }
+Delete draft    DELETE /boms/{bomId}
+
+Add MAIN        POST   /boms/{bomId}/main-lines
+                { componentItemId, quantity, findNumber?, scrapPercentage?, remarks?, rowVersion? }
+                -> detail + "affectedLineId", "commonKey" (the new key)
+Add SUB         POST   /boms/{bomId}/main-lines/{mainLineId}/sub-lines
+                { componentItemId, quantity, findNumber?, scrapPercentage?, remarks?, rowVersion? }
+Edit line       PATCH  /boms/{bomId}/lines/{lineId}
+                { componentItemId?, quantity?, findNumber?, scrapPercentage?, remarks?, rowVersion? }
+Delete line     DELETE /boms/{bomId}/lines/{lineId}?withSubLines=true&rowVersion=
+                A MAIN with SUB lines without withSubLines=true -> 409 MAIN_HAS_SUB_LINES
+                (show "Delete the group and its N SUB lines?" then retry with true).
+  Every line change bumps the BOM rowVersion; use the rowVersion of the last
+  response for the next call (optional on line calls, required on header PATCH).
+
+Validate        POST   /boms/{bomId}/validate
+                -> { valid, errors: [ {field, code, message, lineId} ], warnings: [...] }
+Requirements    POST   /boms/{bomId}/requirements   { "productionQuantity": 5 }
+                -> { productionQuantity, baseQuantity,
+                     groups: [ { commonKey, main: {..., quantityPer, required},
+                                 subLines: [ {..., required} ] } ],
+                     totals: [ { itemId, itemCode, itemName, uomCode, required, usedIn:["1","2"] } ],
+                     assemblyTotals: [ ...MAIN lines that have SUB lines... ] }
+                totals = materials to provide (every SUB + MAIN lines without SUB
+                lines); the same item in several groups is added up.
+                MAIN = qty x mainQty x (1 + scrap/100) / baseQty;
+                SUB  = MAIN required x subQty x (1 + scrap/100).
+
+Release         POST   /boms/{bomId}/release      { rowVersion? }        Idempotency-Key*
+Revise          POST   /boms/{bomId}/revisions    { revisionReason*, revisionLabel?, rowVersion? }  Idempotency-Key*
+                -> the NEW draft version (same bomNumber, version + 1, same Common Keys)
+Versions        GET    /boms/{bomId}/revisions    -> { items: [...versions], statusHistory: [...] }
+Obsolete        POST   /boms/{bomId}/obsolete     { reason*, rowVersion? }  Idempotency-Key*
+Cancel          POST   /boms/{bomId}/cancel       { reason*, rowVersion? }  (DRAFT only)
+Where used      GET    /boms/where-used?itemId=&includeDrafts=false
+                -> { item, boms: [ { bomId, bomNumber, version, status, parentItem,
+                     usages: [ { lineId, lineType, commonKey, quantity, mainItem } ] } ] }
+By item         GET    /boms/by-item/{itemId}?bomType=   current released standard BOM
+
+  Idempotency-Key: a new UUID per button click; reuse it ONLY to retry the same
+  click after a network error. Same key + same body -> same result (no second
+  release). Same key + different body -> 422 IDEMPOTENCY_KEY_REUSED.
+  Missing -> 400 IDEMPOTENCY_KEY_REQUIRED.
+
+  After release of version N, the previous current version becomes OBSOLETE
+  automatically. A revision stays DRAFT (not current) until it is released.
+
+--------------------------------------------------------------------------------
+ERROR CODES (error.code; field errors in errors[] with field, code, message)
+--------------------------------------------------------------------------------
+  404  BOM_NOT_FOUND (also another company's BOM), BOM_LINE_NOT_FOUND,
+       MAIN_LINE_NOT_FOUND, COMPONENT_NOT_FOUND (also another company's item)
+  409  BOM_LOCKED, INVALID_STATUS_TRANSITION, PARENT_HAS_RELEASED_BOM,
+       OPEN_REVISION_EXISTS, MAIN_HAS_SUB_LINES, ROW_VERSION_CONFLICT
+  400  PARENT_ITEM_REQUIRED, PARENT_NOT_MAKE_ITEM, PARENT_ITEM_INACTIVE,
+       COMPONENT_REQUIRED, COMPONENT_INACTIVE, LINES_REQUIRED,
+       SUB_PARENT_MUST_BE_MAIN, FIELD_NOT_ALLOWED, QTY_MUST_BE_POSITIVE,
+       SCRAP_OUT_OF_RANGE, UOM_INVALID, UOM_CONVERSION_MISSING, SELF_REFERENCE,
+       DUPLICATE_COMPONENT, EFFECTIVE_DATE_INVALID, REASON_REQUIRED,
+       REVISION_REASON_REQUIRED, IDEMPOTENCY_KEY_REQUIRED
+  422  IDEMPOTENCY_KEY_REUSED
+  Warnings (validate / release response "releaseWarnings"):
+       COMPONENT_INACTIVE (draft), COMPONENT_OBSOLETE,
+       MAIN_WITHOUT_SUB_LINES (only when the MAIN item is Make / Subcontract)
+  Field paths: dot style, e.g. groups.1.subLines.0.quantity, line.componentItemId,
+  baseQuantity. 409 ROW_VERSION_CONFLICT -> "Changed by someone else. Reload?"
+
+  Rules worth showing in the UI
+  - Parent must be a Make / Subcontract item (companies with the
+    procurementType item field; others have no such rule).
+  - The same item twice in ONE group -> DUPLICATE_COMPONENT; in two groups OK.
+  - The parent machine cannot be a line; a SUB cannot use its MAIN's item.
+  - Line UOM = the item's inventory UOM (no conversion in v1).
+
+--------------------------------------------------------------------------------
+API EXAMPLES (local: http://localhost:3002, token from /auth/login)
+--------------------------------------------------------------------------------
+  $T = "Bearer <token>"; $C = 28; $U = "http://localhost:3002/api/v1/companies/$C"
+
+  # parent picker
+  curl -H "Authorization: $T" "$U/items/lookup?search=BS500&procurementType=Make,Subcontract"
+
+  # create draft with two groups
+  curl -X POST -H "Authorization: $T" -H "Content-Type: application/json" "$U/boms" -d '{
+    "parentItemId":"<BS500>",
+    "groups":[
+      {"main":{"componentItemId":"<TOP ASSY>","quantity":1},
+       "subLines":[{"componentItemId":"<END SHAFT TOP>","quantity":2},
+                   {"componentItemId":"<MS PIPE>","quantity":1}]},
+      {"main":{"componentItemId":"<BOTTOM ASSY>","quantity":1},
+       "subLines":[{"componentItemId":"<END SHAFT BOTTOM>","quantity":2},
+                   {"componentItemId":"<MS PIPE>","quantity":1}]}]}'
+
+  # add another group, then a SUB under it
+  curl -X POST -H "Authorization: $T" -H "Content-Type: application/json" \
+       "$U/boms/<bomId>/main-lines" -d '{"componentItemId":"<ITEM>","quantity":1}'
+  curl -X POST -H "Authorization: $T" -H "Content-Type: application/json" \
+       "$U/boms/<bomId>/main-lines/<mainLineId>/sub-lines" -d '{"componentItemId":"<ITEM>","quantity":4}'
+
+  # quantities for 5 machines
+  curl -X POST -H "Authorization: $T" -H "Content-Type: application/json" \
+       "$U/boms/<bomId>/requirements" -d '{"productionQuantity":5}'
+
+  # release (retry-safe)
+  curl -X POST -H "Authorization: $T" -H "Idempotency-Key: 6f1c2c5e-7d3a-4f8e-9a1b-2c3d4e5f6a7b" \
+       -H "Content-Type: application/json" "$U/boms/<bomId>/release" -d '{}'
+
+  # new revision
+  curl -X POST -H "Authorization: $T" -H "Idempotency-Key: <new uuid>" \
+       -H "Content-Type: application/json" "$U/boms/<bomId>/revisions" \
+       -d '{"revisionReason":"ECN-031 bearing size changed","revisionLabel":"B"}'
+
+--------------------------------------------------------------------------------
+NOT IN THIS DROP
+--------------------------------------------------------------------------------
+  SUB under SUB / nested BOMs, customer variant BOMs (columns exist, no API),
+  SolidWorks import, approval workflow, alternates, kits, costing, attachments,
+  BOM copy / compare, Excel export, BS 500 sheet import.
+  Production orders, MRP, purchase, GRN, material issue are separate modules and
+  are never stored as BOM lines.
+
+QA (DEV)
+  [ ] Create BS500 BOM -> keys 1, 2; SUB rows show the MAIN key
+  [ ] Add MAIN -> key 3; delete it -> next MAIN gets 4 (keys never reused)
+  [ ] Same item twice in one group -> DUPLICATE_COMPONENT
+  [ ] Delete a MAIN with SUB lines -> confirm dialog -> withSubLines=true
+  [ ] Requirements for 5 -> END SHAFT TOP 10, END SHAFT BOTTOM 10, MS PIPE 10
+  [ ] Release -> read-only, buttons only Revise / Obsolete
+  [ ] Revise -> v2 DRAFT with same groups; release v2 -> v1 OBSOLETE
+  [ ] Double-click Release (same Idempotency-Key) -> released once
+================================================================================

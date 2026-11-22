@@ -1,0 +1,78 @@
+// shared | number series (auto-generated document / part numbers per company)
+
+/// One series per company + document type (only ITEM today). Part number =
+/// prefix + sep + segmentCode + sep + zero-padded serial, e.g. ANA + BO + 00001 = ANABO00001.
+/// Structure fields lock (isLocked) once the first number is generated.
+model NumberSeriesConfig {
+  numberSeriesConfigId BigInt                    @id @default(autoincrement()) @map("number_series_config_id")
+  companyId            BigInt                    @map("company_id")
+  documentType         NumberSeriesDocumentType  @map("document_type")
+  prefix               String                    @default("") @db.VarChar(10)
+  segmentSource        NumberSeriesSegmentSource @default(STORE) @map("segment_source")
+  separator            NumberSeriesSeparator     @default(NONE)
+  serialLengthDefault  Int                       @default(5) @map("serial_length_default")
+  serialReset          NumberSeriesReset         @default(NEVER) @map("serial_reset")
+  /// Document-number template for non-ITEM types, e.g. "{PREFIX}/{FY}/{SEQ}" → QT/2026-27/0001.
+  /// Tokens: {PREFIX} {FY} {YYYY} {YY} {MM} {SEQ}. Null = plain prefix+serial. ITEM ignores this.
+  pattern              String?                   @db.VarChar(60)
+  isActive             Boolean                   @default(true) @map("is_active")
+  isLocked             Boolean                   @default(false) @map("is_locked")
+  createdBy            BigInt?                   @map("created_by")
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedBy            BigInt?                   @map("updated_by")
+  updatedAt            DateTime?                 @map("updated_at")
+  rowVersion           Int                       @default(1) @map("row_version")
+
+  company  Company               @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  lines    NumberSeriesLine[]
+  counters NumberSeriesCounter[]
+
+  @@unique([companyId, documentType])
+  @@map("number_series_configs")
+}
+
+/// One running counter per segment (store category for STORE; a single line with segmentRefId null
+/// for NONE). lastNumber is only ever increased by the generator, never decremented or reused.
+model NumberSeriesLine {
+  numberSeriesLineId   BigInt    @id @default(autoincrement()) @map("number_series_line_id")
+  numberSeriesConfigId BigInt    @map("number_series_config_id")
+  companyId            BigInt    @map("company_id")
+  segmentRefId         BigInt?   @map("segment_ref_id")
+  segmentCode          String    @default("") @map("segment_code") @db.VarChar(6)
+  startFrom            Int       @default(1) @map("start_from")
+  serialLength         Int       @default(5) @map("serial_length")
+  lastNumber           Int       @default(0) @map("last_number")
+  isLocked             Boolean   @default(false) @map("is_locked")
+  createdBy            BigInt?   @map("created_by")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedBy            BigInt?   @map("updated_by")
+  updatedAt            DateTime? @map("updated_at")
+
+  config  NumberSeriesConfig @relation(fields: [numberSeriesConfigId], references: [numberSeriesConfigId], onDelete: Cascade)
+  company Company            @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@unique([numberSeriesConfigId, segmentCode])
+  @@unique([numberSeriesConfigId, segmentRefId])
+  @@index([companyId])
+  @@map("number_series_lines")
+}
+
+/// Running counter per reset period for pattern-based series (CUSTOMER, SALES_QUOTATION).
+/// periodKey: '' (NEVER) | '2026' (YEARLY) | '2026-27' (FISCAL_YEAR). Incremented atomically
+/// (INSERT … ON CONFLICT … RETURNING), never decremented — gaps from failed saves are accepted.
+model NumberSeriesCounter {
+  numberSeriesCounterId BigInt   @id @default(autoincrement()) @map("number_series_counter_id")
+  numberSeriesConfigId  BigInt   @map("number_series_config_id")
+  companyId             BigInt   @map("company_id")
+  periodKey             String   @default("") @map("period_key") @db.VarChar(10)
+  lastNumber            Int      @default(0) @map("last_number")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @default(now()) @map("updated_at")
+
+  config  NumberSeriesConfig @relation(fields: [numberSeriesConfigId], references: [numberSeriesConfigId], onDelete: Cascade)
+  company Company            @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@unique([numberSeriesConfigId, periodKey])
+  @@index([companyId])
+  @@map("number_series_counters")
+}

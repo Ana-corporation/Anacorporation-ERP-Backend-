@@ -12,6 +12,8 @@ model Warehouse {
   address         String?               @db.VarChar(255)
   locationType    WarehouseLocationType @default(Store) @map("location_type")
   binManagement   Boolean               @default(false) @map("bin_management")
+  /// Sub-contractor location: stock held by this vendor (still company-owned)
+  vendorId        BigInt?               @map("vendor_id")
   isDefault       Boolean               @default(false) @map("is_default")
   isActive        Boolean               @default(true) @map("is_active")
   createdBy       BigInt?               @map("created_by")
@@ -25,6 +27,8 @@ model Warehouse {
   company                    Company                     @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   branch                     Branch?                     @relation(fields: [branchId], references: [branchId])
   storeCategory              StoreCategory?              @relation(fields: [storeCategoryId], references: [storeCategoryId], onDelete: SetNull)
+  vendor                     Vendor?                     @relation(fields: [vendorId], references: [vendorId], onDelete: SetNull)
+  defaultForDocuments        InventoryDocument[]         @relation("InventoryDocumentDefaultWarehouse")
   userCompanies              UserCompany[]
   userPreferences            UserPreference[]
   itemStock                  ItemWarehouseStock[]
@@ -37,9 +41,11 @@ model Warehouse {
   purchaseRequirements       PurchaseRequirement[]
   purchaseOrders             PurchaseOrder[]
   purchaseOrderLines         PurchaseOrderLine[]
+  employees                  Employee[]
 
   @@unique([companyId, warehouseCode])
   @@index([companyId])
   @@index([storeCategoryId])
+  @@index([vendorId])
   @@map("warehouses")
 }

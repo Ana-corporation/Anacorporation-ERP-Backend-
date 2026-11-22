@@ -1,0 +1,27 @@
+// organization | company tax identifiers (seller-side registrations shown on documents)
+
+/// Generic per-country registrations: GSTIN, PAN, VAT, EIN, ABN, TRN, OTHER.
+/// A company can hold several (e.g. one GSTIN per Indian state → regionCode).
+model CompanyTaxIdentifier {
+  companyTaxIdentifierId BigInt    @id @default(autoincrement()) @map("company_tax_identifier_id")
+  companyId              BigInt    @map("company_id")
+  /// GSTIN | PAN | VAT | EIN | ABN | TRN | OTHER (validated in code, not an enum — new countries need no migration)
+  idType                 String    @map("id_type") @db.VarChar(20)
+  /// Shown on PDFs when idType is OTHER (e.g. "Trade License No")
+  idLabel                String?   @map("id_label") @db.VarChar(60)
+  idValue                String    @map("id_value") @db.VarChar(60)
+  /// ISO 3166-2 region part when the registration is region-bound (GSTIN state)
+  regionCode             String?   @map("region_code") @db.VarChar(10)
+  isPrimary              Boolean   @default(false) @map("is_primary")
+  isActive               Boolean   @default(true) @map("is_active")
+  createdBy              BigInt?   @map("created_by")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedBy              BigInt?   @map("updated_by")
+  updatedAt              DateTime? @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@unique([companyId, idType, idValue])
+  @@index([companyId])
+  @@map("company_tax_identifiers")
+}

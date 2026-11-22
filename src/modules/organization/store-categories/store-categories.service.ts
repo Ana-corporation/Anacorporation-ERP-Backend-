@@ -43,8 +43,9 @@ export class StoreCategoriesService {
 
   async create(companyId: string, dto: CreateStoreCategoryDto, actorId: string) {
     const company = parseBigIntId(companyId, 'companyId');
-    const created = await this.withUniqueGuard(company, dto, undefined, (tx) =>
-      tx.storeCategory.create({
+    const created = await this.withUniqueGuard(company, dto, undefined, async (tx) => {
+      if (dto.storeType === 'SUBCONTRACTOR') await this.assertNoOtherSubcontractor(tx, company, null);
+      return tx.storeCategory.create({
         data: {
           companyId: company,
           name: dto.name,
@@ -52,10 +53,11 @@ export class StoreCategoriesService {
           description: dto.description ?? null,
           sortOrder: dto.sortOrder ?? 0,
           isActive: dto.isActive ?? true,
+          storeType: dto.storeType ?? 'NORMAL',
           createdBy: BigInt(actorId),
         },
-      }),
-    );
+      });
+    });
     await this.audit(companyId, actorId, UserAuditAction.create, created.storeCategoryId, {
       name: created.name,
       codePrefix: created.codePrefix,
@@ -82,6 +84,9 @@ export class StoreCategoriesService {
           STORE_CATEGORY_ERROR_CODES.PREFIX_LOCKED,
         );
       }
+      if (dto.storeType !== undefined && dto.storeType !== existing.storeType) {
+        await this.assertStoreTypeChange(tx, company, categoryId, dto.storeType);
+      }
       return tx.storeCategory.update({
         where: { storeCategoryId: categoryId },
         data: {
@@ -90,6 +95,7 @@ export class StoreCategoriesService {
           ...(dto.description !== undefined ? { description: dto.description } : {}),
           ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+          ...(dto.storeType !== undefined ? { storeType: dto.storeType } : {}),
           updatedBy: BigInt(actorId),
           updatedAt: new Date(),
         },
@@ -120,6 +126,40 @@ export class StoreCategoriesService {
     });
     await this.audit(companyId, actorId, UserAuditAction.delete, categoryId);
     return { message: 'Store category deleted' };
+  }
+
+  private async assertNoOtherSubcontractor(tx: Prisma.TransactionClient, companyId: bigint, selfId: bigint | null) {
+    const other = await tx.storeCategory.findFirst({
+      where: { companyId, storeType: 'SUBCONTRACTOR', deletedAt: null, ...(selfId ? { NOT: { storeCategoryId: selfId } } : {}) },
+      select: { name: true },
+    });
+    if (other) {
+      throw new BusinessException(
+        `${other.name} is already the Sub Contractor store`,
+        HttpStatus.CONFLICT,
+        [{ field: 'storeType', message: 'Only one Sub Contractor store per company' }],
+        STORE_CATEGORY_ERROR_CODES.SUBCONTRACTOR_EXISTS,
+      );
+    }
+  }
+
+  /**
+   * A store becomes Sub Contractor only while all its locations are vendor locations without bins;
+   * it goes back to Normal only while it has no vendor locations.
+   */
+  private async assertStoreTypeChange(tx: Prisma.TransactionClient, companyId: bigint, categoryId: bigint, next: string) {
+    const locked = (message: string) =>
+      new BusinessException(message, HttpStatus.BAD_REQUEST, [{ field: 'storeType', message }], STORE_CATEGORY_ERROR_CODES.STORE_TYPE_LOCKED);
+    if (next === 'SUBCONTRACTOR') {
+      await this.assertNoOtherSubcontractor(tx, companyId, categoryId);
+      const own = await tx.warehouse.count({
+        where: { storeCategoryId: categoryId, deletedAt: null, OR: [{ vendorId: null }, { binManagement: true }] },
+      });
+      if (own > 0) throw locked('This store has own locations (or bins); move or delete them before making it the Sub Contractor store');
+    } else {
+      const vendorLocations = await tx.warehouse.count({ where: { storeCategoryId: categoryId, deletedAt: null, vendorId: { not: null } } });
+      if (vendorLocations > 0) throw locked('This store holds vendor locations and must stay the Sub Contractor store');
+    }
   }
 
   /**
@@ -169,9 +209,11 @@ export class StoreCategoriesService {
       companyId: category.companyId,
       name: category.name,
       codePrefix: category.codePrefix,
+      numberSeriesCode: category.numberSeriesCode,
       description: category.description,
       sortOrder: category.sortOrder,
       isActive: category.isActive,
+      storeType: category.storeType,
       locationCount: _count.warehouses,
       createdBy: category.createdBy,
       createdAt: category.createdAt,

@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import ExcelJS from 'exceljs';
+import * as ExcelJS from 'exceljs';
 import { BusinessException } from '@/common/exceptions/business.exception';
 import { IMPORT_ERROR_CODES } from '../import.constants';
 import { ParsedSheet } from './csv-parser.service';

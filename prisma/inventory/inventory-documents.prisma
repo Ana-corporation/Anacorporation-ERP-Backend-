@@ -20,6 +20,17 @@ model InventoryDocument {
   /// Stock Adjustment
   reason String? @db.VarChar(255)
 
+  /// Opening Stock header "Store": default location for new lines (lines keep their own)
+  defaultWarehouseId BigInt?  @map("default_warehouse_id")
+  /// Header "Store" = the Sub Contractor Store (vendor chosen per line); defaultWarehouseId is then empty
+  defaultStoreCategoryId BigInt? @map("default_store_category_id")
+  /// Recalculated by the backend on every save / post
+  totalLines         Int      @default(0) @map("total_lines")
+  totalQuantity      Decimal  @default(0) @map("total_quantity") @db.Decimal(20, 6)
+  totalValue         Decimal  @default(0) @map("total_value") @db.Decimal(20, 6)
+  /// [{ fileAssetId, fileName, mimeType, fileSize, uploadedBy, uploadedAt }]
+  attachmentsJson    Json?    @map("attachments_json")
+
   postedAt   DateTime? @map("posted_at")
   postedBy   BigInt?   @map("posted_by")
   createdBy  BigInt?   @map("created_by")
@@ -31,9 +42,12 @@ model InventoryDocument {
   rowVersion Int       @default(1) @map("row_version")
 
   company       Company                 @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
-  department    Department?             @relation(fields: [departmentId], references: [departmentId], onDelete: NoAction)
-  lines         InventoryDocumentLine[]
+  department       Department?             @relation(fields: [departmentId], references: [departmentId], onDelete: NoAction)
+  defaultWarehouse Warehouse?              @relation("InventoryDocumentDefaultWarehouse", fields: [defaultWarehouseId], references: [warehouseId], onDelete: SetNull)
+  defaultStore     StoreCategory?          @relation("InventoryDocumentDefaultStore", fields: [defaultStoreCategoryId], references: [storeCategoryId], onDelete: SetNull)
+  lines            InventoryDocumentLine[]
   ledgerEntries StockLedgerEntry[]
+  importBatches OpeningStockImportBatch[]
 
   @@unique([companyId, documentType, documentNumber])
   @@index([companyId, documentType, status])
@@ -51,6 +65,8 @@ model InventoryDocumentLine {
   branchId     BigInt? @map("branch_id")
   warehouseId  BigInt  @map("warehouse_id")
   storageBinId BigInt? @map("storage_bin_id")
+  /// Stock Transfer: destination bin within the same warehouse
+  toStorageBinId BigInt? @map("to_storage_bin_id")
   /// Inventory UoM copied from Item Master
   uom          String? @db.VarChar(40)
 
@@ -65,11 +81,26 @@ model InventoryDocumentLine {
 
   remarks String? @db.VarChar(255)
 
-  document   InventoryDocument @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
-  item       Item              @relation(fields: [itemId], references: [itemId], onDelete: NoAction)
-  branch     Branch?           @relation(fields: [branchId], references: [branchId], onDelete: NoAction)
-  warehouse  Warehouse         @relation(fields: [warehouseId], references: [warehouseId], onDelete: NoAction)
-  storageBin StorageBin?       @relation(fields: [storageBinId], references: [storageBinId], onDelete: NoAction)
+  /// Opening Stock: Batch / Heat / Lot No. and serial (reference; stock is not kept per batch yet)
+  batchNo            String?  @map("batch_no") @db.VarChar(60)
+  serialNo           String?  @map("serial_no") @db.VarChar(80)
+  /// quantity x unit price, computed by the backend
+  lineTotal          Decimal? @map("line_total") @db.Decimal(20, 6)
+  /// Opening Stock: unit price 0 accepted on purpose
+  zeroPriceConfirmed Boolean  @default(false) @map("zero_price_confirmed")
+
+  /// Opening stock import reference text (not on Item Master)
+  revision      String? @db.VarChar(40)
+  partCode      String? @map("part_code") @db.VarChar(80)
+  materialGrade String? @map("material_grade") @db.VarChar(80)
+  size          String? @db.VarChar(80)
+
+  document     InventoryDocument @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  item         Item              @relation(fields: [itemId], references: [itemId], onDelete: NoAction)
+  branch       Branch?           @relation(fields: [branchId], references: [branchId], onDelete: NoAction)
+  warehouse    Warehouse         @relation(fields: [warehouseId], references: [warehouseId], onDelete: NoAction)
+  storageBin   StorageBin?       @relation("DocumentLineFromBin", fields: [storageBinId], references: [storageBinId], onDelete: NoAction)
+  toStorageBin StorageBin?       @relation("DocumentLineToBin", fields: [toStorageBinId], references: [storageBinId], onDelete: NoAction)
 
   @@unique([documentId, lineNo])
   @@index([companyId, itemId])

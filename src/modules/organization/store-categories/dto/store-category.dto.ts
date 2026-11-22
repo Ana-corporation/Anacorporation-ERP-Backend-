@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { STORE_TYPES } from '../store-categories.constants';
 
 /** 2-6 chars, A-Z / 0-9, starts with a letter. Trimmed + uppercased ("rms " → "RMS"). */
 export const codePrefixSchema = z.preprocess(
@@ -16,6 +17,8 @@ export const CreateStoreCategorySchema = z.object({
   description: nullableText(255),
   sortOrder: z.coerce.number().int().min(0).max(9999).optional().default(0),
   isActive: z.boolean().optional().default(true),
+  /** SUBCONTRACTOR: one per company; users pick it + a Vendor, locations are made per vendor */
+  storeType: z.enum(STORE_TYPES).optional().default('NORMAL'),
 });
 
 export const UpdateStoreCategorySchema = z.object({
@@ -24,6 +27,7 @@ export const UpdateStoreCategorySchema = z.object({
   description: nullableText(255),
   sortOrder: z.coerce.number().int().min(0).max(9999).optional(),
   isActive: z.boolean().optional(),
+  storeType: z.enum(STORE_TYPES).optional(),
 });
 
 export class CreateStoreCategoryDto extends createZodDto(CreateStoreCategorySchema) {}

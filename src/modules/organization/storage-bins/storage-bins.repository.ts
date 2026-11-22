@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { PaginationQueryDto, getPaginationParams } from '@/common/dto/pagination.dto';
 import { parseBigIntId } from '@/common/utils/bigint.util';
 import { buildListWhere, resolveOrderBy, ListFilterOptions } from '@/common/utils/prisma-filter.util';
-import { CreateStorageBinDto, UpdateStorageBinDto } from './dto/storage-bin.dto';
+import {
+  CreateStorageBinDto,
+  STORAGE_BIN_LIST_MAX,
+  StorageBinListQueryDto,
+  UpdateStorageBinDto,
+} from './dto/storage-bin.dto';
 
 const STORAGE_BINS_LIST_FILTER: ListFilterOptions = {
   contains: { code: 'binCode', name: 'binName' },
@@ -12,15 +16,22 @@ const STORAGE_BINS_LIST_FILTER: ListFilterOptions = {
   dateRange: { field: 'createdAt' },
   searchFields: ['binCode', 'binName'],
   sortFields: ['binCode', 'binName', 'createdAt'],
-  defaultSortField: 'createdAt',
+  defaultSortField: 'binCode',
 };
+
+/** A1-01 … A1-200 style: numeric-aware, not plain string order. */
+export function compareBinCodes(a: string, b: string) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
 
 @Injectable()
 export class StorageBinsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findManyByCompany(companyId: string, query: PaginationQueryDto) {
-    const { skip, limit, page } = getPaginationParams(query);
+  async findManyByCompany(companyId: string, query: StorageBinListQueryDto) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(STORAGE_BIN_LIST_MAX, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
     const locationId = query.inventoryLocationId || query.warehouseId;
     const base: Prisma.StorageBinWhereInput = {
       companyId: parseBigIntId(companyId),
@@ -28,16 +39,35 @@ export class StorageBinsRepository {
       ...(locationId ? { warehouseId: parseBigIntId(locationId) } : {}),
     };
     const where = buildListWhere(base, query, STORAGE_BINS_LIST_FILTER) as Prisma.StorageBinWhereInput;
+    const sortBy = query.sortBy || 'binCode';
+    const sortOrder = query.sortOrder || 'asc';
+    const natural = sortBy === 'binCode';
 
-    return this.prisma.$transaction([
+    // For a single store picker: load match set, natural-sort, then page (fixes A1-100 before A1-20).
+    if (locationId && natural) {
+      const all = await this.prisma.storageBin.findMany({ where });
+      all.sort((a, b) => {
+        const cmp = compareBinCodes(a.binCode, b.binCode);
+        return sortOrder === 'desc' ? -cmp : cmp;
+      });
+      return {
+        items: all.slice(skip, skip + limit),
+        total: all.length,
+        page,
+        limit,
+      };
+    }
+
+    const [items, total] = await this.prisma.$transaction([
       this.prisma.storageBin.findMany({
         where,
         skip,
         take: limit,
-        orderBy: resolveOrderBy(query, STORAGE_BINS_LIST_FILTER),
+        orderBy: resolveOrderBy({ ...query, sortBy, sortOrder }, STORAGE_BINS_LIST_FILTER),
       }),
       this.prisma.storageBin.count({ where }),
-    ]).then(([items, total]) => ({ items, total, page, limit }));
+    ]);
+    return { items, total, page, limit };
   }
 
   findById(id: string, companyId: string) {
@@ -75,14 +105,19 @@ export class StorageBinsRepository {
     createdBy?: string,
   ) {
     return db.storageBin.createManyAndReturn({
-      data: bins.map((bin) => ({
-        companyId,
-        warehouseId,
-        binCode: bin.binCode,
-        binName: bin.binName?.trim() || null,
-        isActive: bin.isActive ?? true,
-        createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
-      })),
+      data: bins.map((bin) => {
+        const status = bin.isActive === false ? 'INACTIVE' : 'ACTIVE';
+        return {
+          companyId,
+          warehouseId,
+          binCode: bin.binCode,
+          binName: bin.binName?.trim() || null,
+          status,
+          isActive: status === 'ACTIVE',
+          isSystem: false,
+          createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
+        };
+      }),
       skipDuplicates,
     });
   }
@@ -95,36 +130,62 @@ export class StorageBinsRepository {
     });
   }
 
-  async isReferenced(id: string) {
+  /** Stock / ledger / draft-or-posted document refs (from or to bin). */
+  async usage(id: string) {
     const storageBinId = parseBigIntId(id);
-    const [balances, ledger, lines] = await Promise.all([
-      this.prisma.stockBalance.count({ where: { storageBinId } }),
+    const [qtyRows, ledger, fromLines, toLines] = await Promise.all([
+      this.prisma.stockBalance.findMany({
+        where: { storageBinId, quantity: { not: 0 } },
+        select: { quantity: true },
+        take: 1,
+      }),
       this.prisma.stockLedgerEntry.count({ where: { storageBinId } }),
       this.prisma.inventoryDocumentLine.count({ where: { storageBinId, document: { deletedAt: null } } }),
+      this.prisma.inventoryDocumentLine.count({ where: { toStorageBinId: storageBinId, document: { deletedAt: null } } }),
     ]);
-    return balances + ledger + lines > 0;
+    return {
+      hasStock: qtyRows.length > 0,
+      hasLedger: ledger > 0,
+      hasDocumentLines: fromLines + toLines > 0,
+    };
+  }
+
+  async isReferenced(id: string) {
+    const u = await this.usage(id);
+    return u.hasStock || u.hasLedger || u.hasDocumentLines;
   }
 
   create(companyId: string, warehouseId: string, dto: CreateStorageBinDto, createdBy?: string) {
+    const status = dto.status ?? (dto.isActive === false ? 'INACTIVE' : 'ACTIVE');
     return this.prisma.storageBin.create({
       data: {
         companyId: parseBigIntId(companyId),
         warehouseId: parseBigIntId(warehouseId),
         binCode: dto.binCode.trim().toUpperCase(),
         binName: dto.binName?.trim() || null,
-        isActive: dto.isActive ?? true,
+        status,
+        isActive: status === 'ACTIVE',
+        isSystem: false,
         createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
       },
     });
   }
 
   update(id: string, dto: UpdateStorageBinDto, updatedBy?: string) {
+    const status =
+      dto.status !== undefined
+        ? dto.status
+        : dto.isActive === undefined
+          ? undefined
+          : dto.isActive
+            ? 'ACTIVE'
+            : 'INACTIVE';
     return this.prisma.storageBin.update({
       where: { storageBinId: parseBigIntId(id) },
       data: {
         ...(dto.binCode !== undefined ? { binCode: dto.binCode.trim().toUpperCase() } : {}),
         ...(dto.binName !== undefined ? { binName: dto.binName === null ? null : dto.binName.trim() } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(status !== undefined ? { status, isActive: status === 'ACTIVE' } : {}),
         updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
         updatedAt: new Date(),
       },
@@ -138,6 +199,7 @@ export class StorageBinsRepository {
         deletedAt: new Date(),
         deletedBy: deletedBy ? parseBigIntId(deletedBy) : undefined,
         isActive: false,
+        status: 'INACTIVE',
       },
     });
   }

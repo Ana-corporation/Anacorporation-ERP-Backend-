@@ -5,6 +5,9 @@ import { BusinessException } from '@/common/exceptions/business.exception';
 type Decimal = Prisma.Decimal;
 const ZERO = new Prisma.Decimal(0);
 
+/** Balance keys handled per statement (create / lock / update / item totals). */
+const LOCK_CHUNK = 1000;
+
 export const STOCK_ERROR_CODES = {
   INSUFFICIENT_STOCK: 'INSUFFICIENT_STOCK',
 } as const;
@@ -72,6 +75,43 @@ export class StockPostingService {
   }
 
   /**
+   * Single source of truth for Issue / Transfer / Bin Mgmt OFF / bin delete.
+   * Same balance row as Current Stock (company + item + warehouse + bin).
+   */
+  async availableQty(
+    db: Prisma.TransactionClient,
+    companyId: bigint,
+    key: Pick<StockLocationKey, 'itemId' | 'warehouseId' | 'storageBinId'>,
+  ): Promise<Decimal> {
+    const map = await this.readBalances(db, companyId, [key]);
+    return map.get(stockKey(key)) ?? ZERO;
+  }
+
+  /** True when any storage bin in the warehouse holds quantity ≠ 0. */
+  async warehouseHasBinnedStock(db: Prisma.TransactionClient, warehouseId: bigint): Promise<boolean> {
+    const row = await db.stockBalance.findFirst({
+      where: { warehouseId, binKey: { not: 0n }, quantity: { not: 0 } },
+      select: { stockBalanceId: true },
+    });
+    return row !== null;
+  }
+
+  /** Unbinned (bin_key = 0) balances with quantity ≠ 0 at this warehouse. */
+  async unbinnedBalancesWithStock(db: Prisma.TransactionClient, warehouseId: bigint) {
+    return db.stockBalance.findMany({
+      where: { warehouseId, binKey: 0n, quantity: { not: 0 } },
+      select: {
+        itemId: true,
+        branchId: true,
+        warehouseId: true,
+        storageBinId: true,
+        quantity: true,
+        item: { select: { itemCode: true } },
+      },
+    });
+  }
+
+  /**
    * Creates missing balance rows and row-locks them (FOR UPDATE) in a fixed order, so concurrent
    * postings on the same item/location wait for each other instead of overselling or deadlocking.
    */
@@ -84,23 +124,38 @@ export class StockPostingService {
     for (const key of keys) unique.set(stockKey(key), key);
 
     const locked = new Map<string, { stockBalanceId: bigint; quantity: Decimal }>();
-    for (const key of [...unique.values()].sort(compareKeys)) {
-      const binKey = key.storageBinId ?? 0n;
+    const sorted = [...unique.values()].sort(compareKeys);
+    for (let i = 0; i < sorted.length; i += LOCK_CHUNK) {
+      const part = sorted.slice(i, i + LOCK_CHUNK);
+      const items = part.map((k) => k.itemId);
+      const branches = part.map((k) => k.branchId);
+      const warehouses = part.map((k) => k.warehouseId);
+      const bins = part.map((k) => k.storageBinId);
+      const binKeys = part.map((k) => k.storageBinId ?? 0n);
       await tx.$executeRaw`
         INSERT INTO stock_balances
           (company_id, item_id, branch_id, warehouse_id, storage_bin_id, bin_key, quantity, created_at)
-        VALUES
-          (${companyId}, ${key.itemId}, ${key.branchId}, ${key.warehouseId}, ${key.storageBinId}, ${binKey}, 0, NOW())
+        SELECT ${companyId}, k.item_id, k.branch_id, k.warehouse_id, k.storage_bin_id, k.bin_key, 0, NOW()
+        FROM unnest(${items}::bigint[], ${branches}::bigint[], ${warehouses}::bigint[], ${bins}::bigint[], ${binKeys}::bigint[])
+          WITH ORDINALITY AS k(item_id, branch_id, warehouse_id, storage_bin_id, bin_key, ord)
+        ORDER BY k.ord
         ON CONFLICT (company_id, item_id, warehouse_id, bin_key) DO NOTHING`;
-      const [row] = await tx.$queryRaw<Array<{ stock_balance_id: bigint; quantity: Decimal }>>`
-        SELECT stock_balance_id, quantity FROM stock_balances
-        WHERE company_id = ${companyId} AND item_id = ${key.itemId}
-          AND warehouse_id = ${key.warehouseId} AND bin_key = ${binKey}
-        FOR UPDATE`;
-      locked.set(stockKey(key), {
-        stockBalanceId: row.stock_balance_id,
-        quantity: new Prisma.Decimal(row.quantity),
-      });
+      const rows = await tx.$queryRaw<
+        Array<{ stock_balance_id: bigint; item_id: bigint; warehouse_id: bigint; bin_key: bigint; quantity: Decimal }>
+      >`
+        SELECT b.stock_balance_id, b.item_id, b.warehouse_id, b.bin_key, b.quantity
+        FROM stock_balances b
+        JOIN unnest(${items}::bigint[], ${warehouses}::bigint[], ${binKeys}::bigint[]) AS k(item_id, warehouse_id, bin_key)
+          ON b.item_id = k.item_id AND b.warehouse_id = k.warehouse_id AND b.bin_key = k.bin_key
+        WHERE b.company_id = ${companyId}
+        ORDER BY b.item_id, b.warehouse_id, b.bin_key
+        FOR UPDATE OF b`;
+      for (const row of rows) {
+        locked.set(`${row.item_id}:${row.warehouse_id}:${row.bin_key}`, {
+          stockBalanceId: row.stock_balance_id,
+          quantity: new Prisma.Decimal(row.quantity),
+        });
+      }
     }
     return locked;
   }
@@ -134,13 +189,13 @@ export class StockPostingService {
       next.set(key, after);
     }
 
-    const now = new Date();
-    for (const [key, quantity] of next) {
-      const { stockBalanceId } = balances.get(key)!;
-      await tx.stockBalance.update({
-        where: { stockBalanceId },
-        data: { quantity, updatedAt: now },
-      });
+    const updates = [...next].map(([key, quantity]) => ({ id: balances.get(key)!.stockBalanceId, quantity }));
+    for (let i = 0; i < updates.length; i += LOCK_CHUNK) {
+      const part = updates.slice(i, i + LOCK_CHUNK);
+      await tx.$executeRaw`
+        UPDATE stock_balances AS b SET quantity = u.quantity, updated_at = NOW()
+        FROM unnest(${part.map((u) => u.id)}::bigint[], ${part.map((u) => u.quantity.toString())}::numeric[]) AS u(id, quantity)
+        WHERE b.stock_balance_id = u.id`;
     }
 
     await tx.stockLedgerEntry.createMany({
@@ -185,14 +240,17 @@ export class StockPostingService {
       row.delta = row.delta.add(m.quantity);
       deltas.set(key, row);
     }
-    const ordered = [...deltas.values()].sort(
-      (a, b) => Number(a.itemId - b.itemId) || Number(a.warehouseId - b.warehouseId),
-    );
-    for (const { itemId, warehouseId, delta } of ordered) {
-      if (delta.isZero()) continue;
+    const ordered = [...deltas.values()]
+      .filter((d) => !d.delta.isZero())
+      .sort((a, b) => Number(a.itemId - b.itemId) || Number(a.warehouseId - b.warehouseId));
+    for (let i = 0; i < ordered.length; i += LOCK_CHUNK) {
+      const part = ordered.slice(i, i + LOCK_CHUNK);
       await tx.$executeRaw`
         INSERT INTO item_warehouse_stock (company_id, item_id, warehouse_id, qty_on_hand, created_by, created_at)
-        VALUES (${companyId}, ${itemId}, ${warehouseId}, ${delta}, ${actorId}, NOW())
+        SELECT ${companyId}, d.item_id, d.warehouse_id, d.delta, ${actorId}, NOW()
+        FROM unnest(${part.map((d) => d.itemId)}::bigint[], ${part.map((d) => d.warehouseId)}::bigint[], ${part.map((d) => d.delta.toString())}::numeric[])
+          WITH ORDINALITY AS d(item_id, warehouse_id, delta, ord)
+        ORDER BY d.ord
         ON CONFLICT (item_id, warehouse_id) DO UPDATE
         SET qty_on_hand = item_warehouse_stock.qty_on_hand + EXCLUDED.qty_on_hand,
             updated_by = EXCLUDED.created_by,

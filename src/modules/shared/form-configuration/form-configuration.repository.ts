@@ -40,7 +40,7 @@ export class FormConfigurationRepository {
     });
   }
 
-  /** Drops the show/hide flags; a saved field order on the same row stays. */
+  /** Drops the show/hide flags; a saved order / mandatory flag / label on the same row stays. */
   async clearVisibilityOverride(
     companyId: string,
     entityType: CustomFieldEntityType,
@@ -48,11 +48,38 @@ export class FormConfigurationRepository {
   ) {
     const where = { companyId: parseBigIntId(companyId), entityType, fieldKey };
     await this.prisma.companyFieldConfiguration.deleteMany({
-      where: { ...where, displayOrder: null },
+      where: { ...where, displayOrder: null, isRequired: null, label: null },
     });
     await this.prisma.companyFieldConfiguration.updateMany({
-      where: { ...where, displayOrder: { not: null } },
+      where,
       data: { isVisible: null, isRegistrationVisible: null },
+    });
+  }
+
+  /** Mandatory flag + label (null = no override). An empty row is removed. */
+  async saveFieldSettings(
+    companyId: string,
+    entityType: CustomFieldEntityType,
+    fieldKey: string,
+    values: { isRequired: boolean | null; label: string | null },
+  ) {
+    const company = parseBigIntId(companyId);
+    await this.prisma.companyFieldConfiguration.upsert({
+      where: { companyId_entityType_fieldKey: { companyId: company, entityType, fieldKey } },
+      update: values,
+      create: { companyId: company, entityType, fieldKey, ...values },
+    });
+    await this.prisma.companyFieldConfiguration.deleteMany({
+      where: {
+        companyId: company,
+        entityType,
+        fieldKey,
+        isVisible: null,
+        isRegistrationVisible: null,
+        displayOrder: null,
+        isRequired: null,
+        label: null,
+      },
     });
   }
 

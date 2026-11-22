@@ -1,0 +1,102 @@
+OPENING STOCK - ONE-PAGE STATUS (everything done so far)
+=========================================================
+Date    : 13-Nov-2026
+Company : multi-tenant (ANA Machinery = companyId 28 used for testing)
+Related : OPENING-STOCK-PHASE1-BACKEND-PROMPT.txt, OPENING-STOCK-PHASE1-FRONTEND-PROMPT.txt,
+          FE-HANDOFF-OPENING-STOCK-PHASE1.txt, INVENTORY-STOCK-SIMPLE-GUIDE.txt
+
+
+1. HOW OPENING STOCK WORKS NOW
+------------------------------
+  Save Draft  -> OS-000001 number, no stock change, editable
+  Post        -> stock balance + stock ledger updated in ONE transaction, document locked
+  Corrections -> Stock Adjustment (no reversal yet)
+  Two ways in -> New Opening Stock screen, or Excel import (preview -> approve)
+
+
+2. BUILT (backend, tested)
+--------------------------
+  Header
+    - Document no. auto on save, Opening Stock Date, Remarks
+    - Default Store (fills every line; each line keeps its own store)
+    - Attachments (count sheets): upload draft/posted, delete draft only
+    - Created / Edited / Posted by + on; "Imported from <file>" with approver
+  Lines
+    - Part no. from Item Master; Part Name, UOM, Item Type (RM/SF/FF/BRG...) read-only
+    - Qty > 0; Unit Price; Line Total = Qty x Price (backend calculates)
+    - Zero / blank price -> must tick "zero value confirmed", else posting refused
+    - Batch / Heat / Lot No., Serial No., Revision, Line Remarks (reference text)
+    - Store + Bin; bin required only for bin-managed stores (re-checked on post)
+  Footer
+    - Total Lines, Total Quantity, Total Stock Value (backend recalculates)
+  Rules (backend, cannot be bypassed by API)
+    - Duplicate line in one document blocked (item + store + bin + batch + serial)
+    - Second opening stock for the same item + store + bin blocked
+    - Material Issue / Stock Adjustment dated before the opening date blocked
+    - Stock never negative; concurrent posting safe (row locks); retry posts once
+  Excel import
+    - Template with Instructions sheet; Location Code = store only, Bin column
+    - Preview: Matched / New Item / Error; nothing saved before Approve
+    - Category Code must match the item; error file with row, column, reason, suggestion
+    - New items only after confirmation and only in allowed categories (SF/FF never)
+    - Zero-price rows need confirmation; rows can be excluded
+  Vendor (sub-contractor) stock
+    - A store location can be linked to a vendor; inactive vendor blocked
+    - Current Stock shows "At vendor" and filters by vendor
+  Item Master (part numbers)
+    - Category Stage RM / SF / FF
+    - New RM item: "RM only" / "RM -> SF" (sub-assembly) / "RM -> SF -> FF" (main)
+      creates the linked part numbers in one save; button to add missing SF/FF later
+
+
+3. DATABASE
+-----------
+  Migrations                                       DEV   LIVE
+  20261111120000_item_material_stage               yes   yes
+  20261111150000_opening_stock_phase1              yes   yes (12-Nov, approved)
+  20261112100000_item_group_material_stage         yes   yes (12-Nov, approved)
+  LIVE data unchanged (columns added only). Nothing committed / pushed yet.
+
+
+4. FRONTEND
+-----------
+  FE developer is building the screen (zero value tick, More fields, footer
+  already in inventory-doc-view.tsx). Still to do / check:
+    - "(not saved)" -> "Draft, not posted"
+    - Change Store per line, Site out of the line, Bin label overlap
+    - Category screen: Stage + "Allow new items from Opening Stock"
+    - Item form: RM only / RM->SF / RM->SF->FF; item page "Create SF / FF part"
+
+
+5. DECISIONS TAKEN
+------------------
+  D1 Sub-contractor stock: users see ONE "Sub Contractor Store" and pick the
+     Vendor; underneath, one location per vendor keeps an exact balance per
+     vendor (same as Dynamics 365 / Odoo / ERPNext; SAP keeps vendor as special
+     stock). No change to the stock engine.
+  D2 Stock key stays item + store + bin. Batch / serial are reference only
+     (batch/serial-managed items still blocked) until batch/serial stock.
+  D3 Unknown Part Number in Excel stays an Error ("Did you mean ...?").
+
+
+6. NEW SPEC (12-Nov) - HOW MUCH FITS
+------------------------------------
+  Already done    : most of sections 1-5 and 6 (see part 2)
+  Small changes   : "Draft, not posted"; zero-price confirm per Excel row + who/when;
+                    Excel: no item creation ("Create the item in Item Master first")
+  Moderate        : Store Type (Normal / Subcontractor / WIP); Batch/Lot and Heat No.
+                    split (needs a category setting "uses heat number"); Excel column
+                    changes (remove Store/Category/Status, add Heat No., Vendor Code);
+                    Vendor-wise stock report with days at vendor
+  Needs decision  : vendor / batch / serial inside stock balances (spec) vs D1/D2
+  NOT IN PROJECT  : accounting (no chart of accounts / journals), reversal, QC Hold
+                    in main stock, WIP process-location master, revision master,
+                    job-work vendor flag, Job Work Order (process: cutting / painting)
+
+
+7. NEXT STEPS (proposal)
+------------------------
+  1. Commit current work to development-anc (no push without approval)
+  2. FE finishes the screen items in part 4
+  3. Small + moderate items of part 6
+  4. Separate projects: Job Work Order, accounting, reversal, QC Hold, WIP master

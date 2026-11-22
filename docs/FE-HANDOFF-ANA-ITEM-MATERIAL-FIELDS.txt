@@ -1,0 +1,154 @@
+================================================================================
+FE HANDOFF — ANA Item Master: material fields + BS 500 parts loaded
+Date:       2026-11-03
+Audience:   ERP-Frontend
+Company:    Ana Machinery (P) Ltd  (companyId 28, ANA_MACHINERY_P_LTD)
+Backend:    /api/v1/companies/{companyId}/items
+            /api/v1/companies/{companyId}/entities/item/form-schema   (existing)
+DB:         PROD (Ana_corporation_db). Data/config only — NO schema change,
+            NO backend deploy needed. Other companies unchanged.
+Related:    docs/ITEM-MASTER-FIELDS.txt (full field list, section 13 = ANA)
+================================================================================
+
+SUMMARY
+  1. 3 new REQUIRED dropdown custom fields on the Item Master (General tab).
+  2. Manage By and Preferred Vendor (built-in) switched ON for ANA.
+  3. Purchasing tab unhidden for ANA roles (only Preferred Vendor shows in it).
+  4. 394 parts from the BS 500 BOM created as items (ANA now has 764 items).
+  5. Store Categories page: "Part No. Code" column removed (FE change, local).
+
+  Nothing new to build if the FE already renders form-schema custom fields
+  and built-in visibility. Hard refresh (Ctrl+F5) — list auto-refresh is off.
+
+
+--------------------------------------------------------------------------------
+1. NEW CUSTOM FIELDS (entityType = item, sectionKey = general)
+--------------------------------------------------------------------------------
+  fieldName          displayName        type      required  options (value = label)
+  materialCategory   Material Category  dropdown  yes       Mechanical | Electrical
+  materialType       Material Type      dropdown  yes       Raw Material |
+                                                            Semi-Finished |
+                                                            Finished Good
+  procurementType    Procurement Type   dropdown  yes       Buy | Make | Subcontract
+
+  sortOrder 101 / 102 / 103. searchable, filterable, sortable = true.
+  sectionKey "general" → itemTabForSectionKey() puts them on the General tab.
+
+  Comes from GET /entities/item/form-schema (resolvedSections → general → fields with
+  source CUSTOM). No hard-coding: render from schema like other custom fields.
+
+  SAVE (POST / PATCH /items):
+    {
+      ...,
+      "customFields": {
+        "materialCategory": "Mechanical",
+        "materialType": "Semi-Finished",
+        "procurementType": "Subcontract"
+      }
+    }
+  Send the option VALUE (same text as the label).
+
+  REQUIRED RULE
+    Create: all 3 must be sent, else 400 "Custom field "Material Type" is
+    required" (errors[].field = customFields.materialType).
+    Update: omitting customFields leaves values as they are. Sending a key
+    with "" or null → 400 required.
+    All 764 ANA items now have the 3 values (predicted 2026-11-03 from store
+    and category; ANA can correct any item on screen):
+      Electrical / Raw Material / Buy   259  (Electrical Store electrical
+                                              categories: ELC MOT CBL SNS HTR
+                                              ELD CAX PNL)
+      Mechanical / Raw Material / Buy   494  (RM-SF-FF drawing parts, bought-
+                                              out parts, PNE TUB GBX TLS LBL
+                                              MEC MCH)
+      Mechanical / Finished Good / Make  11  (assemblies)
+    Review list: C:\Users\swent\Downloads\ANA-material-fields-prediction.csv
+
+  READ
+    GET /items/{id}            → item.customFields.materialType ...
+    GET /items?includeCustomFields=true   → each row.customFields
+  FILTER (list)
+    GET /items?cf.materialType=Semi-Finished
+    GET /items?cf.procurementType=Subcontract&cf.materialCategory=Mechanical
+    Exact match on the value. Combine with search / storeCategoryId /
+    itemGroupId as usual.
+
+
+--------------------------------------------------------------------------------
+2. BUILT-IN FIELDS SWITCHED ON (company_field_configurations)
+--------------------------------------------------------------------------------
+  fieldKey           tab          visible  required  values
+  manageBy           general      yes      no        none | serial | batch
+  preferredVendorId  purchasing   yes      no        vendorId (string) or empty
+
+  Preferred Vendor: use the existing vendor picker (source 'vendors').
+  Backend rejects a vendor from another company (400).
+
+
+--------------------------------------------------------------------------------
+3. TAB ACCESS
+--------------------------------------------------------------------------------
+  purchasing → visible for ANA's 4 roles (was hidden).
+  All other purchasing fields are still hidden by field config, so the tab
+  shows ONLY Preferred Vendor. Keep honouring form-schema: do not render
+  fields the schema omits.
+  Still hidden for ANA: Classification, Sales, Inventory, Planning,
+  Production, Properties.
+
+
+--------------------------------------------------------------------------------
+4. BS 500 BOM PARTS (394 new items)
+--------------------------------------------------------------------------------
+  itemCode     new ANA series code (ANAPLT00001, ANAFST00001, ANAASSY00001 …)
+  oldCode      BOM drawing number (BS5017000010, ALB0000000512 …)
+               → search box already matches oldCode (searchFields include it)
+  description  BOM description
+  store / itemGroupId / inventoryUomId (NOS) set; status active
+  remarks      "Imported from BS5000000000A1 BOM (item 12.1, process RM-SF-FF)."
+  metadata     { source: "BS5000000000A1 BOM", bomItemNo, bomProcess }
+  customFields all 3 filled (predicted — ANA to review/correct on screen)
+
+  Counts:  Raw Materials (RM) 264, Fasteners 63, Bearings 19, Pulleys 12,
+           Assemblies 11, Retaining Rings 8, General Components 8, Belts 4,
+           Mechanical 3, O-Rings 1, Welding Electrodes 1.
+  RM-SF-FF parts (BOM process) = Raw Material Store / RM category,
+  codes ANARM00001-ANARM00264 in BOM order (corrected 2026-11-03; first load
+  had split them into PLT/FAB/MCN/SHM - those codes no longer exist).
+  Lists: C:\Users\swent\Downloads\BS500-material-master-created.csv (first
+         load, old codes for RM-SF-FF rows)
+         C:\Users\swent\Downloads\BS500-RM-renumbered.csv (new RM code,
+         previous code, BOM part number)
+
+  FE suggestion (optional): show Old Code in the item list / detail header
+  for ANA (it is hidden in field config today: oldCode visible=false). Ask
+  ANA; turning it on is a Form Configuration change, no code.
+
+
+--------------------------------------------------------------------------------
+5. STORE CATEGORIES PAGE (ERP-Frontend, not pushed)
+--------------------------------------------------------------------------------
+  src/sections/inventory/setup/store-categories-view.tsx
+  Removed the "Part No. Code" column (header + cell; colSpan 8/7 → 7/6).
+  numberSeriesCode is still returned by the API and still used by
+  Settings → Number Series and opening-stock import — do not remove it from
+  types / API mapping.
+
+
+--------------------------------------------------------------------------------
+6. NOT IN THIS DROP
+--------------------------------------------------------------------------------
+  - BOM master (parent / child / qty / level). Assembly structure and
+    quantities from the BS 500 sheet are NOT stored yet.
+  - material_categories / material_types master tables (values live in the
+    custom-field dropdown options; ANA edits them in Custom Fields settings).
+QA
+  [ ] Ctrl+F5 Item Master → new items at top (sorted newest first)
+  [ ] Search "BS1105030010" → ANARM00264 PANNEL DOOR LHS (Raw Material Store)
+  [ ] General tab shows Material Category / Material Type / Procurement
+      Type (required *) and Manage By
+  [ ] Purchasing tab shows only Preferred Vendor
+  [ ] Create item without Material Type → inline required error
+  [ ] Edit an old item (e.g. ANAELC00001) → shows Electrical / Raw Material / Buy
+  [ ] ?cf.materialType=Finished Good → 11 assemblies
+  [ ] Store Categories table has no Part No. Code column
+================================================================================

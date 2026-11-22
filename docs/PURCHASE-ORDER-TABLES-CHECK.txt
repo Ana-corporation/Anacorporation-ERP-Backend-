@@ -1,0 +1,210 @@
+PURCHASE ORDER - TABLE CHECK (shared doc vs real database + repo)
+=================================================================
+Checked : 09-Nov-2026
+Database: swenter-dev, schema Erp_test_db (DEV)
+Compared: "Purchase Order - existing tables and tables to create" (shared
+          for approval) against the real DEV tables and the Prisma files
+          in this repo (C:\ERP-Backend, branch development-anc).
+
+RESULT: Approve with 2 corrections (section 4).
+
+Legend
+  DB      = table exists in Erp_test_db (DEV row count)
+  Prisma  = committed     -> in git, everyone has it
+            local change  -> in git, plus changes not committed yet
+            NOT COMMITTED -> file only on Arun's machine (not in git)
+  Doc     = what the shared doc says
+  Check   = OK / WRONG
+  
+
+1. BOM / MACHINE TABLES
+-----------------------
+  Table               DB (rows)  Prisma file                        Prisma         Check
+  ------------------  ---------  ---------------------------------  -------------  -----
+  machines            yes (1)    prisma/manufacturing/machines.prisma NOT COMMITTED  OK *
+  machine_settings    yes (1)    prisma/manufacturing/machines.prisma NOT COMMITTED  OK *
+  boms                yes (0)    prisma/manufacturing/boms.prisma     NOT COMMITTED  OK *
+  bom_lines           yes (0)    prisma/manufacturing/boms.prisma     NOT COMMITTED  OK *
+  bom_status_history  yes (0)    prisma/manufacturing/boms.prisma     NOT COMMITTED  OK *
+
+  * Table exists - OK. But the doc says "not in this repo's Prisma files".
+    WRONG: the files exist, they are just not committed yet (see 4.1).
+
+  Columns / values checked in DB
+  - bom_lines: line_type, common_key, parent_line_id, component_item_id,
+    quantity, uom_id, scrap_percentage, item_code/name/uom snapshots  OK
+  - bom_status : DRAFT, RELEASED, OBSOLETE, CANCELLED                 OK
+  - bom_scope  : STANDARD, CUSTOMER                                   OK
+  - bom_line_type: MAIN, SUB                                          OK
+  - machine_type : BASE, ORDER ; machine_status: ACTIVE, INACTIVE     OK
+  - machines.sales_order_id: number column, no foreign key            OK
+  - machines: machine_id, machine_code, name, machine_type, status,
+    item_id, customer_id, sales_order_no                              OK
+  - machine_settings: item_group_id, uom_id                           OK
+  - boms: bom_id, bom_number, version, status, bom_scope,
+    parent_item_id, base_quantity, uom_id                             OK
+  - Same 5 tables also in LIVE schema Ana_corporation_db              OK
+  - Row counts are DEV only. LIVE (Ana_corporation_db) has BS500 +
+    BOM00001 (DRAFT, 396 lines) - use LIVE data for real testing.
+
+
+2. OTHER MASTERS TO REUSE
+-------------------------
+  Table                 DB (rows)  Prisma file                                   Prisma         Check
+  --------------------  ---------  --------------------------------------------  -------------  -----
+  vendors               yes (13)   prisma/purchase/vendors.prisma                committed      OK **
+  items                 yes (384)  prisma/inventory/items.prisma                 local change   OK **
+  uoms                  yes (6)    prisma/inventory/item-groups.prisma           NOT COMMITTED  OK **
+  payment_terms         yes (0)    prisma/shared/payment-terms.prisma            NOT COMMITTED  OK **
+  customers             yes (0)    prisma/crm/customers.prisma                   NOT COMMITTED  OK **
+  item_groups           yes (40)   prisma/inventory/item-groups.prisma           NOT COMMITTED  OK **
+  warehouses            yes (5)    prisma/organization/warehouses.prisma         local change   OK
+  branches              yes (9)    prisma/organization/branches.prisma           committed      OK
+  storage_bins          yes (1)    prisma/organization/storage-bins.prisma       committed      OK
+  currencies            yes (6)    prisma/shared/currencies.prisma               local change   OK
+  stock_balances        yes (0)    prisma/inventory/stock.prisma                 committed      OK
+  stock_ledger_entries  yes (0)    prisma/inventory/stock.prisma                 committed      OK
+  file_assets           yes (1)    prisma/shared/file-assets.prisma              committed      OK
+  user_audit            yes (1056) prisma/audit/user-audit.prisma                committed      OK
+  idempotency_keys      yes (0)    prisma/shared/idempotency.prisma              NOT COMMITTED  OK
+  users                 yes (41)   prisma/iam/users.prisma                       committed      OK
+  roles                 yes (34)   prisma/iam/roles.prisma                       committed      OK
+  permissions           yes (229)  prisma/iam/permissions.prisma                 committed      OK
+  company_code_sequences yes (1)   prisma/shared/company-code-sequences.prisma   committed      WRONG USE ***
+  number_series_configs yes (1)    prisma/shared/number-series.prisma            NOT COMMITTED  (missing in doc) ***
+  number_series_lines   yes (40)   prisma/shared/number-series.prisma            NOT COMMITTED  (missing in doc) ***
+  number_series_counters yes (0)   prisma/shared/number-series.prisma            NOT COMMITTED  (missing in doc) ***
+  sales_orders          NO         -                                             -              OK (doc says none)
+
+  Columns checked: uoms (uom_id, code, name), payment_terms
+  (payment_term_id, code, name, days), items (item_code, old_code,
+  preferred_vendor_id)                                                OK
+
+  ** Doc says these are "missing from this repo's Prisma files".
+     WRONG: all have Prisma files; some are not committed yet (4.1).
+  *** See 4.2 - PR / PO numbers must use number_series_*, not
+      company_code_sequences.
+
+
+3. MATERIAL INWARD (keep separate)
+----------------------------------
+  Table                    DB (rows)  Prisma file                            Prisma     Check
+  -----------------------  ---------  -------------------------------------  ---------  -----
+  mi_purchase_orders       yes (9)    prisma/inventory/material-inward.prisma committed  OK
+  mi_purchase_order_lines  yes (9)    same                                    committed  OK
+  mi_grn_headers           yes (8)    same                                    committed  OK
+  mi_grn_lines             yes (8)    same                                    committed  OK
+  mi_inv_balances          yes (7)    same                                    committed  OK
+  mi_inv_ledger            yes (13)   same                                    committed  OK
+  mi_qc_inspections        yes (6)    same                                    committed  OK
+  mi_qc_inspection_lines   yes (5)    same                                    committed  OK
+  mi_putaway_tasks         yes (5)    same                                    committed  OK
+  mi_putaway_lines         yes (5)    same                                    committed  OK
+  mi_grn_batches           yes (0)    same                                    committed  OK
+  mi_grn_serials           yes (0)    same                                    committed  OK
+  (+ returns, supplier cases, AP invoice tables - same file)
+
+  Doc: keep these, do not extend them, GRN later updates the new PO
+  lines -> OK, matches LLD OD-11.
+  Note: mi_inv_balances is a separate stock from stock_balances. Accepted
+  GRN qty must also reach stock_balances (LLD OD-12) - not in the doc;
+  add it as a later step.
+
+
+4. CORRECTIONS NEEDED IN THE SHARED DOC
+---------------------------------------
+4.1 "Not in this repo's Prisma files" -> WRONG
+    The files exist on Arun's machine but are NOT COMMITTED yet:
+      prisma/manufacturing/boms.prisma        (boms, bom_lines, bom_status_history)
+      prisma/manufacturing/machines.prisma    (machines, machine_settings)
+      prisma/crm/customers.prisma             (customers + tax ids, addresses, contacts)
+      prisma/inventory/item-groups.prisma     (item_groups, uoms)
+      prisma/inventory/opening-stock-imports.prisma
+      prisma/shared/payment-terms.prisma
+      prisma/shared/number-series.prisma
+      prisma/shared/idempotency.prisma
+      prisma/organization/company-tax-identifiers.prisma
+      + local changes in enums, items, warehouses, currencies, companies,
+        employees, store-categories, inventory-documents,
+        company-field-configurations
+      + 8 migrations not committed:
+        20261022100000_number_series
+        20261022130000_item_master_setup
+        20261022150000_opening_stock_import
+        20261023100000_item_group_category_code
+        20261029120000_sales_quotation_masters
+        20261030120000_employee_erp_fields
+        20261104120000_bom_module
+        20261104170000_machine_master
+    Action: commit (and push after approval) BEFORE the PO work starts,
+    otherwise the other developer sees DB drift or re-creates tables.
+
+4.2 "company_code_sequences -> PR-000001 / PO-000001" -> WRONG
+    company_code_sequences only makes warehouse location codes.
+    Document numbers (BOM00001, customers, quotations, employees) use the
+    number series: number_series_configs / number_series_counters via
+    DocumentNumberService.
+    Action: add PURCHASE_REQUIREMENT and PURCHASE_ORDER to the number
+    series document types and reserve numbers with DocumentNumberService.
+
+
+5. NEW TABLES (doc list) - CHECK
+--------------------------------
+  purchase_* tables today: none in DEV, none in LIVE -> all 10 new  OK
+  sales_orders: not in DEV, not in LIVE                             OK
+  Folder: prisma/purchase/ already exists (vendors.prisma,
+  vendor-form-invitations.prisma) -> put the new files there.
+
+  #   Table                        Phase  Check
+  --  ---------------------------  -----  -----
+  1   purchase_orders              1      OK
+  2   purchase_order_lines         1      OK
+  3   purchase_order_versions      1      OK
+  4   purchase_order_approvals     1      OK
+  5   purchase_approval_rules      1      OK
+  6   purchase_settings            1      OK
+  7   purchase_requirements        2      OK  (FK machine_id, bom_id + bom version + snapshot)
+  8   purchase_requirement_runs    2      OK
+  9   purchase_order_line_sources  2      OK
+  10  purchase_email_attempts      3      OK
+
+  Same as docs/PURCHASE-ORDER-LLD.txt section 8.
+
+
+6. "DO NOT CREATE" LIST - CHECK
+-------------------------------
+  No 2nd machines / boms / bom_lines / uoms / payment_terms /
+  customers / vendors / items / warehouses / stock table        OK
+  No new GRN / QC / put-away table (stay in mi_*)                OK
+  No sales order tables now                                      OK
+  No new idempotency table (reuse idempotency_keys)              OK
+  Add: no new numbering table (reuse number_series_*)            ADD
+
+
+7. COVERAGE - EVERY ITEM IN THE SHARED DOC
+------------------------------------------
+  Shared doc item                                     Checked in   Result
+  --------------------------------------------------  -----------  ------------
+  BOM tables (5)                                      section 1    OK, exist
+  "BOM tables not in this repo's Prisma files"        4.1          WRONG
+  BOM tables also in Ana_corporation_db               section 1    OK
+  Released = RELEASED; DRAFT/OBSOLETE/CANCELLED       section 1    OK
+  bom_scope STANDARD / CUSTOMER                       section 1    OK
+  Requirement links machine_id, bom_id + snapshot     section 5    OK
+  Buy SUB + MAIN without children; scrap off          section 1    OK (scrap col exists)
+  Other masters (19 tables)                           section 2    OK, all exist
+  "Masters missing from this repo's Prisma files"     4.1          WRONG
+  company_code_sequences for PR / PO numbers          4.2          WRONG
+  No sales_orders; sales_order_id has no FK           section 1/5  OK
+  Material Inward mi_* kept, not extended             section 3    OK
+  10 new tables in prisma/purchase/                   section 5    OK
+  "Do not create" list                                section 6    OK (+ numbering)
+
+  All items in the shared doc are checked. 3 lines are wrong (2 topics:
+  4.1 uncommitted Prisma files, 4.2 numbering). Everything else matches
+  the real DEV and LIVE databases.
+
+  Before starting the Purchase Order work:
+    1. Commit the files in 4.1 (push only after approval - push deploys LIVE).
+    2. Fix 4.2 in the shared doc (use number series).
+    3. Then create the 10 purchase_* tables (DEV first).

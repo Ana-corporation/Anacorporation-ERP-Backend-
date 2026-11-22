@@ -31,6 +31,8 @@ export const CreateVendorSchema = z.object({
   country: optionalTrimmed(100),
   taxId: optionalTrimmed(80),
   isActive: z.boolean().optional(),
+  /** Job-work vendor — Sub Contractor Store stock accepts only these. Default false. */
+  isJobWorkVendor: z.boolean().optional(),
   /** Advanced SAP-style fields live here (payment, bank, accounting, remarks, attachments). */
   metadata: z.record(z.string(), z.unknown()).optional(),
   /** Optional top-level alias; FE also sends metadata.attachments. */
@@ -51,6 +53,7 @@ export const UpdateVendorSchema = z.object({
   country: optionalTrimmed(100),
   taxId: optionalTrimmed(80),
   isActive: z.boolean().optional(),
+  isJobWorkVendor: z.boolean().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   /** Optional top-level alias; FE also sends metadata.attachments. */
   attachments: z.array(z.record(z.string(), z.unknown())).optional(),

@@ -1,0 +1,126 @@
+// crm | customers (sales master; snapshotted onto quotations/invoices at issue time)
+
+model Customer {
+  customerId        BigInt   @id @default(autoincrement()) @map("customer_id")
+  companyId         BigInt   @map("company_id")
+  customerCode      String   @map("customer_code") @db.VarChar(40)
+  name              String   @db.VarChar(200)
+  legalName         String?  @map("legal_name") @db.VarChar(255)
+  /// BUSINESS | INDIVIDUAL (validated in code)
+  customerType      String   @default("BUSINESS") @map("customer_type") @db.VarChar(20)
+  email             String?  @db.VarChar(255)
+  phone             String?  @db.VarChar(50)
+  website           String?  @db.VarChar(255)
+  /// Default document currency; falls back to the company default when null.
+  currencyId        BigInt?  @map("currency_id")
+  paymentTermId     BigInt?  @map("payment_term_id")
+  creditLimit       Decimal? @map("credit_limit") @db.Decimal(18, 2)
+  /// Account owner (users.user_id, no FK — joined in queries when needed)
+  salespersonUserId BigInt?  @map("salesperson_user_id")
+  notes             String?  @db.VarChar(1000)
+  isActive          Boolean  @default(true) @map("is_active")
+  metadata          Json?
+  createdBy         BigInt?   @map("created_by")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedBy         BigInt?   @map("updated_by")
+  updatedAt         DateTime? @map("updated_at")
+  deletedBy         BigInt?   @map("deleted_by")
+  deletedAt         DateTime? @map("deleted_at")
+  rowVersion        Int       @default(1) @map("row_version")
+
+  company        Company                 @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  currency       Currency?               @relation(fields: [currencyId], references: [currencyId])
+  paymentTerm    PaymentTerm?            @relation(fields: [paymentTermId], references: [paymentTermId])
+  taxIdentifiers CustomerTaxIdentifier[]
+  addresses      CustomerAddress[]
+  contacts       CustomerContact[]
+  boms           Bom[]
+  machines       Machine[]
+
+  @@unique([companyId, customerCode])
+  @@index([companyId])
+  @@index([companyId, name])
+  @@map("customers")
+}
+
+/// Generic buyer-side registrations: GSTIN, PAN, VAT, EIN, ABN, TRN, OTHER.
+model CustomerTaxIdentifier {
+  customerTaxIdentifierId BigInt    @id @default(autoincrement()) @map("customer_tax_identifier_id")
+  customerId              BigInt    @map("customer_id")
+  companyId               BigInt    @map("company_id")
+  /// GSTIN | PAN | VAT | EIN | ABN | TRN | OTHER (validated in code)
+  idType                  String    @map("id_type") @db.VarChar(20)
+  idLabel                 String?   @map("id_label") @db.VarChar(60)
+  idValue                 String    @map("id_value") @db.VarChar(60)
+  /// ISO 3166-2 region part when region-bound (GSTIN state)
+  regionCode              String?   @map("region_code") @db.VarChar(10)
+  isPrimary               Boolean   @default(false) @map("is_primary")
+  isActive                Boolean   @default(true) @map("is_active")
+  createdBy               BigInt?   @map("created_by")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedBy               BigInt?   @map("updated_by")
+  updatedAt               DateTime? @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [customerId], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@unique([customerId, idType, idValue])
+  @@index([companyId])
+  @@index([customerId])
+  @@map("customer_tax_identifiers")
+}
+
+model CustomerAddress {
+  customerAddressId BigInt              @id @default(autoincrement()) @map("customer_address_id")
+  customerId        BigInt              @map("customer_id")
+  companyId         BigInt              @map("company_id")
+  addressType       CustomerAddressType @default(BILL_TO) @map("address_type")
+  /// Optional display name ("Head Office", "Plant 2")
+  label             String?             @db.VarChar(60)
+  line1             String              @db.VarChar(255)
+  line2             String?             @db.VarChar(255)
+  city              String?             @db.VarChar(100)
+  /// Free-text state/province/prefecture (works for every country)
+  region            String?             @db.VarChar(100)
+  /// ISO 3166-2 region part — drives region tax rules
+  regionCode        String?             @map("region_code") @db.VarChar(10)
+  postalCode        String?             @map("postal_code") @db.VarChar(20)
+  /// ISO 3166-1 alpha-2
+  countryCode       String?             @map("country_code") @db.Char(2)
+  isDefault         Boolean             @default(false) @map("is_default")
+  isActive          Boolean             @default(true) @map("is_active")
+  createdBy         BigInt?             @map("created_by")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedBy         BigInt?             @map("updated_by")
+  updatedAt         DateTime?           @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [customerId], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+model CustomerContact {
+  customerContactId BigInt    @id @default(autoincrement()) @map("customer_contact_id")
+  customerId        BigInt    @map("customer_id")
+  companyId         BigInt    @map("company_id")
+  name              String    @db.VarChar(120)
+  designation       String?   @db.VarChar(100)
+  email             String?   @db.VarChar(255)
+  phone             String?   @db.VarChar(50)
+  isPrimary         Boolean   @default(false) @map("is_primary")
+  isActive          Boolean   @default(true) @map("is_active")
+  createdBy         BigInt?   @map("created_by")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedBy         BigInt?   @map("updated_by")
+  updatedAt         DateTime? @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [customerId], onDelete: Cascade)
+  company  Company  @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([customerId])
+  @@map("customer_contacts")
+}

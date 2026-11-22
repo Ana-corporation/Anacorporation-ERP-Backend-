@@ -7,6 +7,10 @@ model StorageBin {
   binCode      String    @map("bin_code") @db.VarChar(50)
   binName      String?   @map("bin_name") @db.VarChar(150)
   isActive     Boolean   @default(true) @map("is_active")
+  /// ACTIVE | BLOCKED | INACTIVE — Blocked/Inactive cannot receive new postings
+  status       String    @default("ACTIVE") @db.VarChar(20)
+  /// System bins (e.g. UNASSIGNED) cannot be deleted or renamed
+  isSystem     Boolean   @default(false) @map("is_system")
   createdBy    BigInt?   @map("created_by")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedBy    BigInt?   @map("updated_by")
@@ -17,7 +21,8 @@ model StorageBin {
 
   company                Company                 @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
   warehouse              Warehouse               @relation(fields: [warehouseId], references: [warehouseId], onDelete: Cascade)
-  inventoryDocumentLines InventoryDocumentLine[]
+  inventoryDocumentLines InventoryDocumentLine[] @relation("DocumentLineFromBin")
+  transferToLines        InventoryDocumentLine[] @relation("DocumentLineToBin")
   stockBalances          StockBalance[]
   stockLedgerEntries     StockLedgerEntry[]
 

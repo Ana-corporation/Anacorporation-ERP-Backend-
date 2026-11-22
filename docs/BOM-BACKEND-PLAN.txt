@@ -1,0 +1,367 @@
+BOM MODULE - BACKEND PLAN (phase 1: plan only, nothing built)
+=============================================================
+Date    : 2026-11-04
+Inputs  : BOM backend prompt (Common Key, MAIN / SUB)  - also saved as
+            C:\ERP-Frontend\docs\planning\bom\BOM-BACKEND-PROMPT-COMMON-KEY.md
+          SWENTER_BOM_Common_Key_Technical_Approach.docx  (wins for lines)
+          BOM LLD: only v1.1 found (C:\ERP-Frontend\docs\planning\bom\BOM-LLD.html,
+            30 Oct). BOM-MODULE-LLD-v2.txt is NOT on this machine.
+Status  : Phases 1-6 done (2026-11-04) on DEV only. Migration
+          20261104120000_bom_module applied on DEV; LIVE not migrated.
+          API + tests + FE handoff: docs/FE-HANDOFF-BOM.txt.
+          Tests: 18 unit (requirements, validation) + 1 controller permission
+          spec + 18 DB tests (boms.db.spec.ts, RUN_DB_TESTS=1, DEV) all green.
+
+
+1. WHAT EXISTS IN THE CODE (checked)
+------------------------------------
+Modules / style
+  - NestJS feature modules; controller `companies/:companyId/<resource>`,
+    global prefix api/v1 (main.ts) -> final URL /api/v1/companies/:id/boms.
+  - Every handler: @RequirePermissions('<resource>:<action>') +
+    assertCompanyAccess(companyId, user) + @CurrentUser().
+  - DTOs: zod + nestjs-zod (createZodDto), ZodValidationPipe global.
+  - Service -> repository (PrismaService). Transactions via
+    prisma.$transaction(fn) with the TransactionClient cast pattern.
+  - src/modules/manufacturing/{bom,routing,...}: empty .gitkeep folders;
+    prisma/manufacturing: empty. "src/modules/manufacturing/**" is EXCLUDED
+    in tsconfig.build.json (must be lifted, same as crm was).
+
+Prisma conventions
+  - camelCase fields with @map("snake_case"), @@map("table"), BigInt ids,
+    companyId FK onDelete Cascade, soft delete (deletedAt/deletedBy),
+    rowVersion Int, createdBy/updatedBy as plain BigInt (no FK).
+  - Enums in prisma/enums.prisma with @@map("snake_enum"); columns use the
+    schema's own enum type (42804 lesson). New enum values: ALTER TYPE
+    ... ADD VALUE only.
+  - Handwritten migration SQL in prisma/migrations/<ts>_<name>/migration.sql;
+    partial unique / CHECK in raw SQL. Apply: npm run prisma:deploy:dev
+    (Erp_test_db). LIVE (Ana_corporation_db) only with approval.
+
+Item Master (items)
+  - itemCode (part number, unique per company, from ITEM number series),
+    description (name), inventoryUomId -> uoms, status (text) + isActive,
+    storeCategoryId, itemGroupId, itemType, soft delete.
+  - NO procurement column. ANA has an item CUSTOM FIELD:
+      custom_field_definitions(companyId, entityType 'item',
+        fieldName 'procurementType', dropdown Buy | Make | Subcontract)
+      custom_field_values(fieldId, recordId = itemId, valueText)
+    Read in a rule: CustomFieldsValuesService.loadCustomFieldsMapsForRecords
+    (companyId, 'item', [itemId]) -> map.get(id).procurementType, or one
+    query joining the definition by fieldName. Other companies may not have
+    this field at all (see 9.2).
+  - ANA data today: 764 items; procurementType Make = 11 (assemblies),
+    everything else Buy. There is NO BS500 machine item yet (the BOM top
+    BS5000000000A1 was never created as an item) - see 9.6.
+  - No items lookup endpoint (only paged GET /items, max 200).
+
+Number Series
+  - NumberSeriesDocumentType: ITEM, CUSTOMER, SALES_QUOTATION, EMPLOYEE.
+  - Pattern series via DocumentNumberService.reserve(tx, companyId, type)
+    (atomic counter, auto-creates the config). Adding BOM =
+    ALTER TYPE number_series_document_type ADD VALUE 'BOM' + one entry in
+    number-series.constants (prefix BOM, 5 digits, NEVER, no pattern)
+    -> BOM00001. Preview: GET /number-series/BOM/preview (exists).
+
+Permissions
+  - Codes are '<resource>:<action>' with plural resource (vendors:view,
+    customers:view, sales_quotations:...). -> prefix  boms:
+  - Catalogue = src/common/constants/permissions.constant.ts; seeded into
+    the permissions table on login (AuthRepository.runSecurityOrgSeed,
+    bump SECURITY_ORG_SEED_VERSION); ADMIN roles get them via the backfill
+    list. Product module codes are also checked against the company
+    subscription snapshot (module 'manufacturing').
+  - permissions.action is the enum PermissionAction (view create edit delete
+    approve export print import manage). release / revise / obsolete are not
+    enum values, so the codes stay boms:release etc. but their catalogue
+    action is approve (release) and manage (revise, obsolete) - same trick
+    as sales_quotations:override_exchange_rate.
+  - ANA company has module 'manufacturing' active + enabled (checked PROD).
+
+Responses / errors / audit
+  - ResponseTransformInterceptor wraps { success, data, meta }.
+  - BusinessException(message, status, errors?: {field, message}[], code).
+    Field paths are dot style today (lines.0.serialLength, config.prefix).
+    FieldError has no `code` -> add optional `code` (backward compatible).
+  - rowVersion: services compare + updateMany(where rowVersion) -> 409.
+    Codes are per module today (CUSTOMER_CONFLICT, NUMBER_SERIES_CONFLICT);
+    BOM will use ROW_VERSION_CONFLICT (prompt + LLD).
+  - Audit: AuditService.log({companyId, performedBy, action, entityName,
+    entityId, oldValue, newValue}); withAudit / withAuditList add
+    createdByName etc. to responses. Inside a transaction the audit row is
+    written with the tx client so a failed audit rolls everything back.
+  - List: buildListWhere + resolveOrderBy with tieBreaker; pagination
+    max 200.
+  - Idempotency: table idempotency_keys exists (DEV + PROD, from the Sales
+    Quotation work) but NO service/interceptor yet -> build a small shared
+    IdempotencyService (section 6).
+  - DB tests: *.db.spec.ts, RUN_DB_TESTS=1 NODE_ENV=development, refuse to
+    run unless the DB is DEV, create throw-away companies, clean up.
+
+
+2. SCHEMA (prisma/manufacturing/boms.prisma + enums)
+----------------------------------------------------
+Enums (enums.prisma)
+  BomType        ENGINEERING | MANUFACTURING              @@map("bom_type")
+  BomScope       STANDARD | CUSTOMER                      @@map("bom_scope")
+  BomStatus      DRAFT | RELEASED | OBSOLETE | CANCELLED  @@map("bom_status")
+  BomLineType    MAIN | SUB                               @@map("bom_line_type")
+  BomSourceType  MANUAL | SOLIDWORKS_IMPORT | COPY_FROM_EBOM | COPY |
+                 CUSTOMER_COPY                            @@map("bom_source_type")
+  NumberSeriesDocumentType + BOM
+
+boms  (one row per version)
+  bom_id BIGSERIAL PK, uuid UUID unique default gen_random_uuid(),
+  company_id FK, bom_number VARCHAR(40), parent_item_id FK items,
+  bom_type bom_type, bom_scope bom_scope default STANDARD,
+  base_quantity DECIMAL(19,6) default 1 (>0), uom_id FK uoms,
+  version INT default 1, revision_label VARCHAR(10), revision_reason TEXT,
+  root_bom_id BIGINT (self, = own id on v1), previous_version_id BIGINT,
+  is_current_version BOOL default false, is_default BOOL default false (9.3),
+  status bom_status default DRAFT, effective_from DATE, effective_to DATE,
+  next_common_key INT default 1, source_type bom_source_type default MANUAL,
+  source_id BIGINT,
+  base_bom_id, base_version_no, customer_id FK customers, source_document_type
+  VARCHAR(40), source_document_id BIGINT, customization_notes TEXT  (null, no logic)
+  remarks TEXT, released_at, released_by, obsoleted_at, obsolete_reason TEXT,
+  cancelled_at, cancel_reason TEXT,
+  created_by/at, updated_by/at, deleted_by/at, row_version INT default 1
+  CHECK base_quantity > 0; CHECK effective_from <= effective_to
+  UNIQUE (company_id, bom_number, version)
+  UNIQUE partial (company_id, parent_item_id, bom_type)
+     WHERE status='RELEASED' AND is_current_version AND bom_scope='STANDARD'
+       AND deleted_at IS NULL
+  UNIQUE partial (company_id, root_bom_id) WHERE status='DRAFT' AND deleted_at IS NULL
+  INDEX (company_id, parent_item_id), (company_id, status),
+        (company_id, root_bom_id), (company_id, base_bom_id)
+
+  is_current_version = the RELEASED version in use (LLD v1.1 meaning). A
+  draft revision is false until it is released.
+
+bom_lines
+  bom_line_id BIGSERIAL PK, company_id FK, bom_id FK boms ON DELETE CASCADE,
+  line_type bom_line_type, common_key VARCHAR(20),
+  parent_line_id BIGINT FK bom_lines ON DELETE CASCADE (null for MAIN),
+  component_item_id FK items, quantity DECIMAL(19,6) (>0), uom_id FK uoms,
+  line_number INT (10, 20, 30 ...), find_number VARCHAR(20),
+  scrap_percentage DECIMAL(9,4) default 0 (0..100), remarks VARCHAR(500),
+  item_code_snapshot VARCHAR(50), item_name_snapshot VARCHAR(255),
+  uom_code_snapshot VARCHAR(20)  (filled at release only),
+  created_at, updated_at
+  UNIQUE (bom_id, line_number)
+  UNIQUE partial (bom_id, common_key) WHERE line_type='MAIN'
+  CHECK (line_type='MAIN' AND parent_line_id IS NULL)
+     OR (line_type='SUB' AND parent_line_id IS NOT NULL)
+  CHECK quantity > 0; CHECK scrap_percentage BETWEEN 0 AND 100
+  INDEX (company_id, component_item_id), (bom_id, parent_line_id)
+  Same-BOM / same-key for parent_line_id: enforced in the service (+ checked
+  again at release).
+
+bom_status_history
+  id, company_id, bom_id, from_status bom_status null, to_status bom_status,
+  actor_id BIGINT, reason TEXT, idempotency_key VARCHAR(80), created_at
+  INDEX (company_id, bom_id)
+
+Relations added to Company, Item (parent + component), Uom, Customer.
+Migration: <ts>_bom_module/migration.sql, DEV only, rollback note:
+  DROP TABLE bom_status_history, bom_lines, boms; DROP TYPE bom_*; the
+  number_series_document_type 'BOM' value stays (enum value drop needs a
+  type rebuild) - harmless if unused.
+
+
+3. API CONTRACT  (/api/v1/companies/:companyId/boms)
+----------------------------------------------------
+Static routes are declared before /:bomId.
+
+GET    /                       boms:view   list (current versions + open drafts by default;
+                                           ?allVersions=true), search bomNumber / parent
+                                           part no / name; filters status, bomType,
+                                           parentItemId; sort bomNumber|createdAt|status
+                                           + tieBreaker bomId
+GET    /where-used?itemId=     boms:view   BOMs + groups using the item (MAIN or SUB);
+                                           current versions (?includeDrafts=true)
+GET    /by-item/:itemId        boms:view   current RELEASED STANDARD BOM (?bomType=)
+POST   /                       boms:create create DRAFT (+ optional groups[] inline)
+GET    /:bomId                 boms:view   header + groups[] (MAIN + subLines[]) ordered
+                                           by commonKey (numeric) then lineNumber;
+                                           live item fields on drafts, snapshots on
+                                           released; allowedActions[]; rowVersion
+PATCH  /:bomId                 boms:edit   DRAFT header (rowVersion required)
+DELETE /:bomId                 boms:delete DRAFT only, soft delete
+POST   /:bomId/main-lines      boms:edit   add MAIN, allocates commonKey
+POST   /:bomId/main-lines/:mainLineId/sub-lines   boms:edit   add SUB
+PATCH  /:bomId/lines/:lineId   boms:edit   componentItemId, quantity, findNumber,
+                                           scrapPercentage, remarks (uom = item UOM)
+DELETE /:bomId/lines/:lineId[?withSubLines=true]   boms:edit
+POST   /:bomId/validate        boms:view   { valid, errors[], warnings[] } - no save
+POST   /:bomId/requirements    boms:view   { productionQuantity } -> groups[] + totals[]
+POST   /:bomId/release         boms:release   Idempotency-Key required
+POST   /:bomId/revisions       boms:revise    Idempotency-Key, { revisionReason, revisionLabel? }
+GET    /:bomId/revisions       boms:view   all versions of the root
+POST   /:bomId/obsolete        boms:obsolete  Idempotency-Key, { reason }
+POST   /:bomId/cancel          boms:edit      { reason } (DRAFT only)
+GET    /items/lookup  (item master, 9.4)  active items: id, code, name, uom,
+                                           group, store, procurementType
+
+Mutations carry the BOM rowVersion (header PATCH required; line add / edit /
+delete optional - if sent and stale -> 409). Every line change bumps the
+BOM rowVersion; every response returns the new rowVersion + allowedActions.
+
+Create body
+  { parentItemId, bomType, baseQuantity?, effectiveFrom?, effectiveTo?,
+    revisionLabel?, remarks?,
+    groups?: [ { main: { componentItemId, quantity, findNumber?,
+                         scrapPercentage?, remarks? },
+                 subLines?: [ { componentItemId, quantity, ... } ] } ] }
+  uomId of header and lines is set by the server from the item.
+  commonKey / lineType / parentLineId in any body -> 400 FIELD_NOT_ALLOWED.
+
+allowedActions
+  DRAFT              edit, addMain, addSub, editLine, deleteLine, validate,
+                     requirements, release, cancel, delete
+  RELEASED current   requirements, revise (no open draft), obsolete
+  RELEASED not cur.  requirements   (cannot happen in v1 - kept for safety)
+  OBSOLETE/CANCELLED none (view only)
+  Filtered by the user's permissions.
+
+Requirements response
+  { productionQuantity, baseQuantity,
+    groups: [ { commonKey, main: {itemId, code, name, uom, qtyPer, scrap,
+                required}, subLines: [ {..., required} ] } ],
+    totals: [ { itemId, code, name, uom, required, usedIn: ["1","2"] } ] }
+  MAIN = prodQty x mainQty x (1 + mainScrap/100) / baseQty
+  SUB  = MAIN required x subQty x (1 + subScrap/100)
+  Prisma.Decimal end to end; returned as strings (6 dp).
+
+
+4. BUSINESS RULES (as the prompt, implementation notes)
+-------------------------------------------------------
+  Common Key: tx -> SELECT ... FROM boms WHERE bom_id=$1 AND company_id=$2
+    FOR UPDATE -> key = next_common_key -> UPDATE next_common_key+1 ->
+    INSERT MAIN. Partial unique (bom_id, common_key) WHERE MAIN = final guard.
+    Never reused (counter only grows; revision copies it).
+  lineNumber: max(line_number)+10 under the same row lock.
+  SUB: load MAIN WHERE id AND bom_id AND company_id AND line_type MAIN;
+    missing -> 404 MAIN_LINE_NOT_FOUND; found but SUB -> 400
+    SUB_PARENT_MUST_BE_MAIN (only within the same BOM, so no existence leak).
+  Duplicate in group: componentItemId equal to the MAIN item or another SUB
+    of the same MAIN -> SELF_REFERENCE / DUPLICATE_COMPONENT.
+  Parent eligibility: see 9.2. Parent item active, same company.
+  Release (one tx): pg_advisory_xact_lock(company, parent, type) -> full
+    validation -> snapshots -> previous current -> OBSOLETE (+ history) ->
+    RELEASED, isCurrentVersion, releasedAt/By -> history -> audit -> store
+    idempotency response. Any failure rolls back all.
+  Revision: RELEASED + current + no open draft (OPEN_REVISION_EXISTS) ->
+    copy header (version+1, same number/root, previousVersionId,
+    nextCommonKey, isCurrentVersion false) -> copy MAINs first (map old->new
+    id), then SUBs with remapped parentLineId; same commonKey, lineNumber,
+    snapshots cleared.
+  Delete MAIN with subs: needs withSubLines=true (deletes SUBs then MAIN in
+    one tx); else 409 MAIN_HAS_SUB_LINES.
+  Validation result codes: all of prompt 3.5, plus BOM_NOT_FOUND (404, also
+    cross-company) and OPEN_REVISION_EXISTS (from LLD v1.1).
+  Field paths: dot style  groups.1.subLines.0.quantity  (matches zod and the
+    existing frontend mapping), each with code.
+
+
+5. FILES
+--------
+New
+  prisma/manufacturing/boms.prisma
+  prisma/migrations/<ts>_bom_module/migration.sql
+  src/modules/manufacturing/manufacturing.module.ts
+  src/modules/manufacturing/bom/bom.module.ts
+  src/modules/manufacturing/bom/boms.controller.ts
+  src/modules/manufacturing/bom/boms.service.ts         (header, status, revisions)
+  src/modules/manufacturing/bom/bom-lines.service.ts    (MAIN / SUB / key allocation)
+  src/modules/manufacturing/bom/boms.repository.ts
+  src/modules/manufacturing/bom/bom-validation.ts       (pure checks -> errors/warnings)
+  src/modules/manufacturing/bom/bom-requirements.ts     (pure Decimal calc)
+  src/modules/manufacturing/bom/bom.constants.ts        (error codes, actions)
+  src/modules/manufacturing/bom/dto/bom.dto.ts
+  src/modules/shared/idempotency/idempotency.module.ts + idempotency.service.ts
+  tests: bom-requirements.spec.ts, bom-validation.spec.ts, boms.db.spec.ts
+  docs/FE-HANDOFF-BOM-*.txt per phase
+Changed
+  prisma/enums.prisma (+5 enums, + BOM document type)
+  prisma/organization/companies.prisma, inventory/items.prisma,
+    inventory/item-groups.prisma (Uom), crm/customers.prisma (relations only)
+  src/modules/shared/number-series/number-series.constants.ts (+ BOM)
+  src/common/constants/permissions.constant.ts (+ boms:* pack)
+  src/common/utils/permission-check.util.ts (manufacturing:* alias)
+  src/modules/iam/authentication/auth.repository.ts (seed version bump)
+  src/common/exceptions/business.exception.ts (FieldError.code optional)
+  src/app.module.ts, tsconfig.build.json, tsconfig.json (lift exclusion)
+  item master: GET /items/lookup (9.4) - read only, no data change
+
+
+6. IDEMPOTENCY (shared)
+-----------------------
+  IdempotencyService.run(tx, {companyId, userId, endpoint, key, body}, fn):
+    INSERT idempotency_keys row (request_hash = sha256(body)) inside the
+    same transaction; on unique conflict: same hash + stored response ->
+    return it; different hash -> 422 IDEMPOTENCY_KEY_REUSED. Missing header
+    -> 400 IDEMPOTENCY_KEY_REQUIRED. Concurrent duplicates wait on the unique
+    insert and then get the stored response. Expiry 24 h (cleanup later).
+  Reused later by Sales Quotation issue / respond / cancel.
+
+
+7. PERMISSIONS
+--------------
+  boms:view | boms:create | boms:edit | boms:delete      (actions view/create/edit/delete)
+  boms:release (action approve), boms:revise (manage), boms:obsolete (manage)
+  module 'manufacturing'; alias manufacturing:{action} -> boms:{action};
+  ADMIN backfill; SECURITY_ORG_SEED_VERSION 4 -> 5.
+
+
+8. PHASES (stop after each)
+---------------------------
+  2 Schema + migration (DEV) + permissions + Number Series BOM
+  3 Draft CRUD, MAIN / SUB, validate, delete draft, items lookup
+  4 Release, revisions, history, obsolete, cancel, idempotency
+  5 Requirements, where-used, by-item
+  6 Tests (unit + DB) and API examples (Bruno / curl)
+
+
+9. CONFLICTS AND QUESTIONS
+--------------------------
+  9.1 LLD v2 missing - only v1.1 found. Plan follows the prompt + v1.1.
+  9.2 Parent eligibility (procurement type). Proposal: read the item custom
+      field named procurementType when the company has that field
+      (Make / Subcontract allowed, Buy -> PARENT_NOT_MAKE_ITEM, empty ->
+      PARENT_NOT_MAKE_ITEM); a company WITHOUT that field -> rule skipped.
+      Alternative (LLD option A): real items.procurement_type column +
+      ANA backfill from the custom field.
+  9.3 isDefault: prompt has it, LLD v1.1 removed it (only one released
+      current BOM per item + type, so nothing to choose). Proposal: create
+      the column, no logic yet.
+  9.4 Items lookup: none exists. Proposal: GET /items/lookup in the item
+      master module (read only).
+  9.5 Common Key format: plain 1, 2, 3 per BOM (doc example shows 123, 124).
+  9.6 BS500 machine item does not exist in ANA's Item Master; it must be
+      created (e.g. Finished Goods / ASSY, procurementType Make) before a
+      BS500 BOM can be made. Not done by this module.
+  9.7 BS 500 sheet has ~350 top-level parts that are not inside an
+      assembly. In MAIN / SUB they become MAIN lines without SUB lines, so
+      the warning "MAIN with no SUB lines" would fire ~350 times.
+      Proposal: keep the warning only for MAIN items whose procurement type
+      is Make / Subcontract (an assembly with nothing under it).
+  9.8 effectiveTo of the old version at release: LLD v1.1 sets it to the
+      new release date - 1; prompt says store/validate only. Proposal:
+      follow the prompt (not set automatically).
+  9.9 Scrap range: prompt 0..100 inclusive, LLD 0..<100. Proposal: prompt.
+
+
+10. DECISIONS (2026-11-04)
+--------------------------
+  Parent eligibility   custom field procurementType (Make / Subcontract);
+                       companies without the field skip the rule. No Item
+                       Master column.
+  Common Key           plain running number per BOM: 1, 2, 3 ...
+  isDefault            column created, no logic.
+  Items lookup         GET /items/lookup in the Item Master module (read only).
+  MAIN warning         "MAIN with no SUB lines" only when the MAIN item is
+                       Make / Subcontract.
+  Not answered (proposals stand): LLD v2 missing -> prompt + v1.1;
+  effectiveTo not auto-set; scrap 0..100; extra codes BOM_NOT_FOUND,
+  OPEN_REVISION_EXISTS; dot field paths with code.

@@ -49,6 +49,10 @@ enum EmploymentStatus {
   inactive
   terminated
   on_leave
+  candidate
+  suspended
+  notice_period
+  exited
 
   @@map("employment_status")
 }
@@ -59,6 +63,8 @@ enum EmploymentType {
   contract
   intern
   consultant
+  apprentice
+  daily_wage
 
   @@map("employment_type")
 }
@@ -98,6 +104,7 @@ enum ImportType {
   VENDOR
   ITEM
   OPENING_STOCK
+  BOM
 
   @@map("import_type")
 }
@@ -319,6 +326,7 @@ enum InventoryDocumentType {
   OPENING_STOCK
   MATERIAL_ISSUE
   STOCK_ADJUSTMENT
+  STOCK_TRANSFER
 
   @@map("inventory_document_type")
 }
@@ -335,6 +343,8 @@ enum StockMovementType {
   MATERIAL_ISSUE
   ADJUSTMENT_IN
   ADJUSTMENT_OUT
+  TRANSFER_OUT
+  TRANSFER_IN
 
   @@map("stock_movement_type")
 }
@@ -402,4 +412,135 @@ enum PurchaseEmailStatus {
   FAILED
 
   @@map("purchase_email_status")
+}
+
+enum OpeningStockImportStatus {
+  DRAFT
+  VALIDATED
+  APPROVED
+  FAILED
+
+  @@map("opening_stock_import_status")
+}
+
+enum OpeningStockImportMatch {
+  MATCHED
+  NEW
+  ERROR
+
+  @@map("opening_stock_import_match")
+}
+
+enum NumberSeriesDocumentType {
+  ITEM
+  CUSTOMER
+  SALES_QUOTATION
+  EMPLOYEE
+  BOM
+
+  @@map("number_series_document_type")
+}
+
+enum NumberSeriesSegmentSource {
+  STORE
+  ITEM_GROUP
+  NONE
+
+  @@map("number_series_segment_source")
+}
+
+enum NumberSeriesSeparator {
+  NONE
+  HYPHEN
+  SLASH
+
+  @@map("number_series_separator")
+}
+
+enum NumberSeriesReset {
+  NEVER
+  YEARLY
+  FISCAL_YEAR
+
+  @@map("number_series_reset")
+}
+
+/// Document money rounding (company setting; used by sales pricing).
+enum RoundingMode {
+  HALF_UP
+  HALF_EVEN
+  DOWN
+
+  @@map("rounding_mode")
+}
+
+enum RoundingStage {
+  LINE
+  DOCUMENT
+
+  @@map("rounding_stage")
+}
+
+enum CustomerAddressType {
+  BILL_TO
+  SHIP_TO
+
+  @@map("customer_address_type")
+}
+
+enum BomType {
+  ENGINEERING
+  MANUFACTURING
+
+  @@map("bom_type")
+}
+
+/// STANDARD = the item's own BOM; CUSTOMER = a customer variant (columns only, later phase).
+enum BomScope {
+  STANDARD
+  CUSTOMER
+
+  @@map("bom_scope")
+}
+
+enum BomStatus {
+  DRAFT
+  RELEASED
+  OBSOLETE
+  CANCELLED
+
+  @@map("bom_status")
+}
+
+/// MAIN = assembly group head (owns a Common Key); SUB = material under one MAIN.
+enum BomLineType {
+  MAIN
+  SUB
+
+  @@map("bom_line_type")
+}
+
+/// BASE = standard machine (BS500); ORDER = customised for one sales order (BS500-SO00045).
+enum MachineType {
+  BASE
+  ORDER
+
+  @@map("machine_type")
+}
+
+enum MachineStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("machine_status")
+}
+
+enum BomSourceType {
+  MANUAL
+  SOLIDWORKS_IMPORT
+  COPY_FROM_EBOM
+  COPY
+  CUSTOMER_COPY
+
+  @@map("bom_source_type")
 }

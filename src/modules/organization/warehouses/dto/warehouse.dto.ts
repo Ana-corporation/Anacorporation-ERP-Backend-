@@ -36,6 +36,8 @@ export const CreateWarehouseSchema = z.object({
   locationType: WarehouseLocationTypeSchema.optional().default('Store'),
   binManagement: z.boolean().optional().default(false),
   isDefault: z.boolean().optional().default(false),
+  /** Sub-contractor location: the vendor holding the stock (active vendor of this company) */
+  vendorId: optionalNullableBigintIdSchema,
 });
 
 /**
@@ -50,7 +52,13 @@ export const UpdateWarehouseSchema = z.object({
   isActive: z.boolean().optional(),
   locationType: WarehouseLocationTypeSchema.optional(),
   binManagement: z.boolean().optional(),
+  /**
+   * Required when enabling bin management while unbinned stock exists.
+   * Moves all unbinned qty into the system UNASSIGNED bin (totals unchanged).
+   */
+  confirmMigrateToUnassigned: z.boolean().optional(),
   isDefault: z.boolean().optional(),
+  vendorId: optionalPatchBigintIdSchema,
 });
 
 /** List filters on top of the shared ones: site (siteId = branchId) and store category. */
@@ -58,6 +66,8 @@ export const WarehouseListQuerySchema = ListQuerySchema.extend({
   branchId: bigintIdSchema.optional(),
   siteId: bigintIdSchema.optional(),
   storeCategoryId: bigintIdSchema.optional(),
+  /** Store pickers: hide the per-vendor locations of the Sub Contractor store */
+  excludeVendorLocations: z.preprocess((v) => v === 'true' || v === true, z.boolean()).optional(),
 });
 
 export class CreateWarehouseDto extends createZodDto(CreateWarehouseSchema) {}

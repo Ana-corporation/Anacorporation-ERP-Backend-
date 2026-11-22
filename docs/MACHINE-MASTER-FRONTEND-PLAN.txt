@@ -1,0 +1,134 @@
+MACHINE MASTER + CUSTOMISED MACHINE - FRONTEND PLAN
+===================================================
+Date   : 2026-11-04
+Status : Plan. Nothing built.
+Pair   : docs/MACHINE-MASTER-BACKEND-PLAN.txt (API contract, error codes)
+Repo   : C:\ERP-Frontend  (Next.js, MUI, same patterns as the BOM screens)
+
+
+0. WHAT CHANGES FOR THE USER
+----------------------------
+- New menu: Manufacturing -> Machines (next to Bill of Materials).
+- BOM screen "Machine *" dropdown shows MACHINES only (BS500, ZETA700,
+  BS500-SO00045 ...), not materials or assemblies.
+- Material pickers (Add MAIN / Add sub-material) no longer show machines.
+- A customised machine for an order is made with one button:
+  "Create customised machine" -> BS500-SO00045 + its own BOM draft.
+
+
+1. FILES
+--------
+New
+  src/lib/api/machines-api.ts                list, lookup, get, create, update,
+                                             delete, image, variants, settings
+  src/app/dashboard/manufacturing/machines/page.tsx          list
+  src/app/dashboard/manufacturing/machines/new/page.tsx      create
+  src/app/dashboard/manufacturing/machines/[id]/page.tsx     detail / edit
+  src/sections/manufacturing/machines/machine-list-view.tsx
+  src/sections/manufacturing/machines/machine-form-view.tsx
+  src/sections/manufacturing/machines/machine-variant-dialog.tsx
+  src/sections/manufacturing/machines/machine-settings-card.tsx
+  src/components/machine-picker/machine-picker.tsx           BOM dropdown
+Changed
+  src/routes/paths.ts + nav config           Machines menu item (permission
+                                             machines:view)
+  src/lib/api/unwrap.ts                      error texts for MACHINE_* codes
+  src/sections/manufacturing/bom/bom-editor-view.tsx
+                                             Machine field -> MachinePicker;
+                                             header shows machine code +
+                                             "Customised for SO00045" chip
+  src/sections/manufacturing/bom/bom-list-view.tsx
+                                             Machine column = machine code +
+                                             name; filter Base / Customised
+  src/components/item-picker/item-picker.tsx component pickers pass
+                                             excludeMachines=true
+  src/lib/api/boms-api.ts                    machine block on BOM detail /
+                                             list; createBom sends machineId
+
+
+2. SCREENS
+----------
+2.1 Machine list  (/dashboard/manufacturing/machines)
+  Columns: S.No | Machine code | Name | Series | Type (Base / Customised) |
+           Sales order | Customer | Linked item (part no) | Current BOM
+           (BOM no + status chip) | Status | Actions
+  Search (code, name, series), filters Type / Status, scroll loading (50),
+  row actions from permissions: Open, Create customised machine (Base only),
+  Delete. "New machine" button (machines:create).
+
+2.2 Machine form  (new / edit)
+  Machine code *     (create only; uppercase A-Z 0-9 -, e.g. BS500)
+  Name *             Series      Model      Description      Remarks
+  Image upload       Status (edit only)
+  Optional on create: "Link an existing item instead of creating one"
+                      (item picker) - used once for BS500 / ANAASSY00012.
+  After save: shows Linked item (ANAMAC00001 · Old BS500) read-only.
+  Tabs (edit): Details | BOMs (standard + customer BOMs of this machine,
+  link to the BOM editor, "Create BOM" when none) | Customised machines
+  (variants list, Base only).
+
+2.3 Create customised machine dialog  (from list row or machine detail)
+  Base machine        BS500 (read-only)
+  Sales order no *    SO00045   (input mask SO + 5 digits; until Sales Order
+                                 exists this is typed)
+  Customer            customer lookup (optional)
+  Remarks             what is customised
+  Preview: "New machine BS500-SO00045 · BOM copied from BOM00001 v1"
+  Confirm -> Idempotency-Key per click -> opens the new BOM draft.
+  Errors: VARIANT_EXISTS ("BS500-SO00045 already exists - open it"),
+          BASE_BOM_NOT_RELEASED ("Release the BS500 BOM first"),
+          SALES_ORDER_NO_INVALID.
+
+2.4 BOM editor changes
+  Machine *  -> MachinePicker (GET /machines/lookup): code, name, current
+  BOM chip; disabled on revisions and on customer BOMs.
+  Header subtitle: "BS500-SO00045 · BS500 MACHINE (customised for
+  SO00045 · ABC Foods) · based on BOM00001 v1".
+  Customer BOM badge on BOM detail + list.
+
+2.5 Machine settings card  (Settings or Machines page, machines:edit)
+  Machines category (item group picker), default UOM. Shown when
+  MACHINE_SETTINGS_MISSING comes back, with a link to set it.
+
+
+3. API CLIENT  (machines-api.ts)
+--------------------------------
+  listMachines(params) / lookupMachines(search) / getMachine(id)
+  createMachine({ machineCode, name, series, model, description, remarks,
+                  linkItemId })
+  updateMachine(id, { rowVersion, ... }) / deleteMachine(id)
+  uploadMachineImage(id, file)
+  createVariant(id, { salesOrderNo, customerId, remarks }, idempotencyKey)
+  listVariants(id)
+  getMachineSettings() / saveMachineSettings({ itemGroupId, uomId })
+  IDs and codes as strings; map rowVersion + allowedActions like BOM.
+
+
+4. RULES IN THE UI
+------------------
+  - Machine code uppercase, no spaces; read-only after create.
+  - Customised machine code is never typed; shown as preview.
+  - Sales order no mask SO + 5 digits.
+  - Buttons from permissions: machines:view / create / edit / delete;
+    customised machine also needs boms:create.
+  - 409 ROW_VERSION_CONFLICT -> "Changed by someone else. Reload?"
+  - Old part number shown with the linked item (PartNumbers component).
+
+
+5. PHASES (follow the backend)
+------------------------------
+  F1 machines-api, list, form, settings card, MachinePicker in the BOM
+     editor, component picker excludeMachines, BOM list machine column.
+  F2 Customised machine dialog + BOM header / list badges.
+  F3 [LATER] Sales Order line "Customise" button (when Sales Order exists).
+
+
+6. QA
+-----
+  [ ] Create machine ZETA700 -> linked item ANAMAC0000x shown
+  [ ] BOM Machine dropdown lists BS500, ZETA700 only (no assemblies)
+  [ ] Add MAIN / sub-material pickers do not list machines
+  [ ] BS500 -> Create customised machine SO00045 -> BS500-SO00045 + BOM
+      draft with the same groups as BOM00001 (after BOM00001 is released)
+  [ ] Same SO again -> "already exists" with link
+  [ ] Double click confirm -> one variant (Idempotency-Key)

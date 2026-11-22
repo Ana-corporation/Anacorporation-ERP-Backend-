@@ -1,0 +1,26 @@
+// shared | payment terms (NET30, 50% ADVANCE, …) — referenced by customers and sales documents
+
+model PaymentTerm {
+  paymentTermId BigInt    @id @default(autoincrement()) @map("payment_term_id")
+  companyId     BigInt    @map("company_id")
+  code          String    @db.VarChar(30)
+  name          String    @db.VarChar(100)
+  /// Net days until due (0 = immediate); informational for quotations
+  days          Int       @default(0)
+  description   String?   @db.VarChar(255)
+  isActive      Boolean   @default(true) @map("is_active")
+  createdBy     BigInt?   @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedBy     BigInt?   @map("updated_by")
+  updatedAt     DateTime? @map("updated_at")
+  deletedBy     BigInt?   @map("deleted_by")
+  deletedAt     DateTime? @map("deleted_at")
+  rowVersion    Int       @default(1) @map("row_version")
+
+  company   Company    @relation(fields: [companyId], references: [companyId], onDelete: Cascade)
+  customers Customer[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("payment_terms")
+}

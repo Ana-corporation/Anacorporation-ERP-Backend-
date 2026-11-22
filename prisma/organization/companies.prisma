@@ -18,6 +18,28 @@ model Company {
   timezone          String        @default("UTC") @db.VarChar(60)
   defaultCurrencyId BigInt?       @map("default_currency_id")
   logoUrl           String?       @map("logo_url") @db.VarChar(500)
+
+  /// ISO 3166-1 alpha-2 (IN, US, DE). Free-text country/state above stay for display.
+  countryCode String? @map("country_code") @db.Char(2)
+  /// ISO 3166-2 region part (TN, CA, BY) — drives region tax rules (e.g. intra vs inter state GST).
+  regionCode  String? @map("region_code") @db.VarChar(10)
+  /// BCP-47 (en-IN, en-US, de-DE) — number/date formatting on documents.
+  locale      String  @default("en") @db.VarChar(15)
+  /// 1 = January … 12 = December (India: 4). Used for FISCAL_YEAR number series resets.
+  fiscalYearStartMonth Int     @default(1) @map("fiscal_year_start_month") @db.SmallInt
+  pricesIncludeTax     Boolean @default(false) @map("prices_include_tax")
+  roundingMode         RoundingMode  @default(HALF_UP) @map("rounding_mode")
+  roundingStage        RoundingStage @default(DOCUMENT) @map("rounding_stage")
+  /// A4 | LETTER — default PDF paper size.
+  defaultPaperSize        String @default("A4") @map("default_paper_size") @db.VarChar(10)
+  defaultDocumentLanguage String @default("en") @map("default_document_language") @db.VarChar(10)
+  /// MANUAL today; provider codes later.
+  exchangeRateSource String @default("MANUAL") @map("exchange_rate_source") @db.VarChar(20)
+  /// Tax engine: NONE | IN_GST (Phase 7) | future codes.
+  taxProviderCode String @default("NONE") @map("tax_provider_code") @db.VarChar(20)
+  /// Default "valid until" = quotation date + N days on new sales quotations.
+  defaultQuotationValidityDays Int @default(30) @map("default_quotation_validity_days") @db.SmallInt
+
   status            CompanyStatus @default(trial)
   createdBy         BigInt?       @map("created_by")
   createdAt         DateTime      @default(now()) @map("created_at")
@@ -45,7 +67,12 @@ model Company {
   stockBalances           StockBalance[]
   codeSequences           CompanyCodeSequence[]
   storeCategories         StoreCategory[]
+  numberSeriesConfigs     NumberSeriesConfig[]
+  itemGroups              ItemGroup[]
+  uoms                    Uom[]
+  numberSeriesLines       NumberSeriesLine[]
   stockLedgerEntries      StockLedgerEntry[]
+  openingStockImports     OpeningStockImportBatch[]
   itemSettings            CompanyItemSettings?
   roles                   Role[]
   permissionSets          PermissionSet[]
@@ -70,6 +97,19 @@ model Company {
   tabRegistrationSettings CompanyTabRegistrationSetting[]
   importSessions          ImportSession[]
   vendorFormInvitations   VendorFormInvitation[]
+  taxIdentifiers          CompanyTaxIdentifier[]
+  customers               Customer[]
+  customerTaxIdentifiers  CustomerTaxIdentifier[]
+  customerAddresses       CustomerAddress[]
+  customerContacts        CustomerContact[]
+  paymentTerms            PaymentTerm[]
+  numberSeriesCounters    NumberSeriesCounter[]
+  idempotencyKeys         IdempotencyKey[]
+  boms                    Bom[]
+  machines                Machine[]
+  machineSettings         MachineSettings?
+  bomLines                BomLine[]
+  bomStatusHistory        BomStatusHistory[]
 
   @@map("companies")
 }

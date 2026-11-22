@@ -13,7 +13,8 @@ const CREATE_ATTEMPTS = 3;
 const CODE_SKIP_LIMIT = 50;
 
 const withStoreCategory = {
-  storeCategory: { select: { storeCategoryId: true, name: true, codePrefix: true } },
+  storeCategory: { select: { storeCategoryId: true, name: true, codePrefix: true, storeType: true } },
+  vendor: { select: { vendorId: true, vendorCode: true, name: true, isActive: true } },
   _count: { select: { storageBins: { where: { deletedAt: null, isActive: true } } } },
 } satisfies Prisma.WarehouseInclude;
 
@@ -39,6 +40,7 @@ export class WarehousesRepository {
         deletedAt: null,
         ...(branchId ? { branchId: parseBigIntId(branchId) } : {}),
         ...(query.storeCategoryId ? { storeCategoryId: parseBigIntId(query.storeCategoryId) } : {}),
+        ...(query.excludeVendorLocations ? { vendorId: null } : {}),
       },
       query,
       WAREHOUSES_LIST_FILTER,
@@ -67,7 +69,7 @@ export class WarehousesRepository {
   findStoreCategory(companyId: string, storeCategoryId: string) {
     return this.prisma.storeCategory.findFirst({
       where: { storeCategoryId: parseBigIntId(storeCategoryId), companyId: parseBigIntId(companyId), deletedAt: null },
-      select: { storeCategoryId: true, isActive: true, codePrefix: true },
+      select: { storeCategoryId: true, isActive: true, codePrefix: true, storeType: true },
     });
   }
 
@@ -171,11 +173,54 @@ export class WarehousesRepository {
           binManagement: dto.binManagement ?? false,
           isDefault: dto.isDefault ?? false,
           isActive: dto.isActive ?? true,
+          vendorId: dto.vendorId ? parseBigIntId(dto.vendorId) : null,
           createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
         },
         include: withStoreCategory,
       });
     });
+  }
+
+  /**
+   * The vendor's location inside the Sub Contractor store, created on first use (inside the caller's
+   * transaction). An advisory lock per store + vendor makes parallel saves wait for each other; the
+   * unique (store, vendor) index is the final guard. Vendor locations have no site and no bins.
+   */
+  async findOrCreateVendorLocation(
+    tx: Prisma.TransactionClient,
+    companyId: bigint,
+    storeCategoryId: bigint,
+    vendor: { vendorId: bigint; name: string },
+    createdBy: bigint | null,
+  ) {
+    await tx.$queryRaw`SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtext(${`vendor_location:${storeCategoryId}:${vendor.vendorId}`}))) AS l`;
+    const existing = await tx.warehouse.findFirst({
+      where: { companyId, storeCategoryId, vendorId: vendor.vendorId, deletedAt: null },
+      select: { warehouseId: true, isActive: true },
+    });
+    if (existing) {
+      if (!existing.isActive) await tx.warehouse.update({ where: { warehouseId: existing.warehouseId }, data: { isActive: true, updatedAt: new Date() } });
+      return existing.warehouseId;
+    }
+    const prefix = await this.lockStoreCategoryPrefix(tx, companyId, storeCategoryId);
+    const warehouseCode = await this.nextLocationCode(tx, companyId, prefix);
+    const created = await tx.warehouse.create({
+      data: {
+        companyId,
+        warehouseCode,
+        name: vendor.name.slice(0, 150),
+        branchId: null,
+        storeCategoryId,
+        locationType: WarehouseLocationType.Store,
+        binManagement: false,
+        isDefault: false,
+        isActive: true,
+        vendorId: vendor.vendorId,
+        createdBy,
+      },
+      select: { warehouseId: true },
+    });
+    return created.warehouseId;
   }
 
   /**
@@ -270,11 +315,19 @@ export class WarehousesRepository {
           ...(dto.locationType !== undefined ? { locationType: dto.locationType } : {}),
           ...(dto.binManagement !== undefined ? { binManagement: dto.binManagement } : {}),
           ...(dto.isDefault !== undefined ? { isDefault: dto.isDefault } : {}),
+          ...(dto.vendorId !== undefined ? { vendorId: dto.vendorId === null ? null : parseBigIntId(dto.vendorId) } : {}),
           updatedBy: updatedBy ? parseBigIntId(updatedBy) : undefined,
           updatedAt: new Date(),
         },
         include: withStoreCategory,
       });
+    });
+  }
+
+  findActiveVendor(companyId: string, vendorId: string) {
+    return this.prisma.vendor.findFirst({
+      where: { vendorId: parseBigIntId(vendorId), companyId: parseBigIntId(companyId), deletedAt: null, isActive: true },
+      select: { vendorId: true },
     });
   }
 

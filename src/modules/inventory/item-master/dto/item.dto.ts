@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { ListQuerySchema } from '@/common/dto/pagination.dto';
+import { ITEM_STAGE_PLANS } from '../item-stages';
 
 /** Sizes mirror prisma/inventory/items.prisma so validation fails before Postgres does. */
 const emptyToUndefined = (value: unknown) =>
@@ -44,7 +46,7 @@ const jsonBag = z.record(z.string(), z.unknown()).optional();
 
 export const ITEM_TYPES = ['item', 'service', 'labor', 'travel'] as const;
 export const ITEM_MANAGE_BY = ['none', 'serial', 'batch'] as const;
-export const ITEM_STATUSES = ['active', 'inactive', 'advanced'] as const;
+export const ITEM_STATUSES = ['draft', 'active', 'inactive', 'obsolete', 'advanced'] as const;
 export const ITEM_VALUATION_METHODS = [
   'moving_average',
   'standard',
@@ -92,6 +94,23 @@ const itemBaseShape = {
     emptyToUndefined,
     z.string().regex(/^\d+$/, 'Invalid preferredVendorId').optional(),
   ),
+  /** Store category; required when the ITEM number series is active. Cannot change once set. */
+  storeCategoryId: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^\d+$/, 'Invalid storeCategoryId').optional(),
+  ),
+  /** Item Group master (must belong to the item's store). */
+  itemGroupId: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^\d+$/, 'Invalid itemGroupId').optional(),
+  ),
+  /** UOM master; also copied to inventory.uomName for stock screens. */
+  inventoryUomId: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^\d+$/, 'Invalid inventoryUomId').optional(),
+  ),
+  /** true = save even though another item in the same store has the same description. */
+  confirmDuplicateName: z.boolean().optional(),
   valuationMethod: z.enum(ITEM_VALUATION_METHODS).optional(),
   itemCost: optionalDecimal,
   manageStockByWarehouse: z.boolean().optional(),
@@ -114,12 +133,35 @@ const itemBaseShape = {
 
 export const CreateItemSchema = z.object({
   // Optional: required only when company itemCodeMode = MANUAL (validated in service).
-  // AUTO mode ignores any client-supplied code and generates ITM-###### on BE.
+  // AUTO mode and an active ITEM number series ignore any client-supplied code.
   itemCode: z.preprocess(
     emptyToUndefined,
     z.string().trim().min(1).max(50).optional(),
   ),
   ...itemBaseShape,
+  /**
+   * Raw-material category only: also create the linked process part in the same save.
+   * RM_ONLY = one part number; RM_PROCESS = RM + process category (PLT / MCN / …) — two part numbers.
+   */
+  stagePlan: z.enum(ITEM_STAGE_PLANS).optional(),
+  /** Required when stagePlan = RM_PROCESS: process category code from the BOM (PLT, MCN, FAB, SPR, …). */
+  processCategoryCode: z.preprocess(
+    emptyToUndefined,
+    z.string().trim().toUpperCase().regex(/^[A-Z]{2,4}$/, 'Use 2 to 4 letters A-Z').optional(),
+  ),
+}).superRefine((value, ctx) => {
+  if (value.stagePlan === 'RM_PROCESS' && !value.processCategoryCode) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['processCategoryCode'],
+      message: 'Process category code is required for RM_PROCESS (e.g. PLT, MCN)',
+    });
+  }
+});
+
+/** Create the missing process part of an existing raw-material item. */
+export const CreateItemStagesSchema = z.object({
+  processCategoryCode: z.string().trim().toUpperCase().regex(/^[A-Z]{2,4}$/, 'Use 2 to 4 letters A-Z'),
 });
 
 export const UpdateItemSchema = z.object({
@@ -154,9 +196,54 @@ export const UpdateItemSettingsSchema = z.object({
     .optional(),
 });
 
+export const ItemListQuerySchema = ListQuerySchema.extend({
+  storeCategoryId: z.string().regex(/^\d+$/).optional(),
+  /** Includes sub-groups of the selected group. */
+  itemGroupId: z.string().regex(/^\d+$/).optional(),
+  inventoryUomId: z.string().regex(/^\d+$/).optional(),
+  /** Adds customFields { fieldName: value } to every row (list columns). */
+  includeCustomFields: z
+    .preprocess((v) => v === 'true' || v === true, z.boolean())
+    .optional()
+    .default(false),
+  /** Material master list: hide items owned by the Machine master (BS500 ...). */
+  excludeMachines: z.preprocess((v) => v === 'true' || v === true, z.boolean()).optional(),
+  // cf.<fieldName>=<value> custom-field filters pass through.
+}).passthrough();
+
+/** cf.* query params, e.g. ?cf.materialType=Raw Material */
+export function extractItemCfFilters(query: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(query)) {
+    if (!key.startsWith('cf.')) continue;
+    const fieldName = key.slice(3);
+    if (!fieldName || value === undefined || value === null || value === '') continue;
+    out[fieldName] = String(value);
+  }
+  return out;
+}
+
+export const ItemLookupQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  storeCategoryId: z.string().regex(/^\d+$/).optional(),
+  itemGroupId: z.string().regex(/^\d+$/).optional(),
+  /** Comma list, e.g. "Make,Subcontract" (BOM parent picker). Ignored when the company has no such field. */
+  procurementType: z.string().trim().max(100).optional(),
+  /** e.g. the BOM parent item, so it cannot be picked as its own component */
+  excludeItemId: z.string().regex(/^\d+$/).optional(),
+  /** Material pickers: hide items that belong to a Machine. */
+  excludeMachines: z.preprocess((v) => v === 'true' || v === true, z.boolean()).optional(),
+  /** Only items linked to a Machine. */
+  onlyMachines: z.preprocess((v) => v === 'true' || v === true, z.boolean()).optional(),
+});
+
+export class ItemListQueryDto extends createZodDto(ItemListQuerySchema) {}
+export class ItemLookupQueryDto extends createZodDto(ItemLookupQuerySchema) {}
 export class CreateItemDto extends createZodDto(CreateItemSchema) {}
 export class UpdateItemDto extends createZodDto(UpdateItemSchema) {}
 export class UpsertItemWarehouseStockDto extends createZodDto(
   UpsertItemWarehouseStockSchema,
 ) {}
 export class UpdateItemSettingsDto extends createZodDto(UpdateItemSettingsSchema) {}
+export class CreateItemStagesDto extends createZodDto(CreateItemStagesSchema) {}

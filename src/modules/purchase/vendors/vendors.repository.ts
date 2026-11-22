@@ -12,7 +12,7 @@ type DbClient = Prisma.TransactionClient | PrismaService;
 const VENDORS_LIST_FILTER: ListFilterOptions = {
   contains: { code: 'vendorCode', name: 'name', email: 'email' },
   exact: { supplierType: 'supplierType' },
-  booleans: { isActive: 'isActive' },
+  booleans: { isActive: 'isActive', isJobWorkVendor: 'isJobWorkVendor' },
   dateRange: { field: 'createdAt' },
   searchFields: ['vendorCode', 'name', 'email', 'phone', 'city', 'country', 'supplierType'],
   sortFields: ['vendorCode', 'name', 'supplierType', 'createdAt'],
@@ -125,6 +125,7 @@ export class VendorsRepository {
         country: dto.country?.trim() || null,
         taxId: dto.taxId?.trim() || null,
         isActive: dto.isActive ?? true,
+        isJobWorkVendor: dto.isJobWorkVendor ?? false,
         metadata: (dto.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
         createdBy: createdBy ? parseBigIntId(createdBy) : undefined,
       },
@@ -173,6 +174,7 @@ export class VendorsRepository {
         ...(dto.country !== undefined ? { country: dto.country } : {}),
         ...(dto.taxId !== undefined ? { taxId: dto.taxId } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(dto.isJobWorkVendor !== undefined ? { isJobWorkVendor: dto.isJobWorkVendor } : {}),
         ...(dto.metadata !== undefined
           ? { metadata: dto.metadata as Prisma.InputJsonValue }
           : {}),

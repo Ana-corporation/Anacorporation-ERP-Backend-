@@ -3,6 +3,8 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 export type FieldError = {
   field: string;
   message: string;
+  /** Optional machine code per field (e.g. QTY_MUST_BE_POSITIVE); top-level `code` stays the summary. */
+  code?: string;
 };
 
 export class BusinessException extends HttpException {

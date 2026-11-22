@@ -93,7 +93,7 @@ run('Store categories (database)', () => {
     const first = await addLocation(a.companyId, a.siteId, 'RM Main', rmsA.storeCategoryId);
     const second = await addLocation(a.companyId, a.siteId, 'RM Assembly', rmsA.storeCategoryId);
     expect([first.locationCode, second.locationCode]).toEqual(['RMS-001', 'RMS-002']);
-    expect(first.storeCategory).toEqual({ storeCategoryId: rmsA.storeCategoryId, name: 'Raw Material Store', codePrefix: 'RMS' });
+    expect(first.storeCategory).toEqual({ storeCategoryId: rmsA.storeCategoryId, name: 'Raw Material Store', codePrefix: 'RMS', storeType: 'NORMAL' });
 
     const rmsB = await addCategory(b.companyId, 'Raw Material Store', 'RMS');
     const otherCompany = await addLocation(b.companyId, b.siteId, 'RM Main', rmsB.storeCategoryId);

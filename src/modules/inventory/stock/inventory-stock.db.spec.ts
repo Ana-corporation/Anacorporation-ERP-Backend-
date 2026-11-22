@@ -18,6 +18,7 @@ import { InventoryDocumentsRepository } from './inventory-documents.repository';
 import { InventoryDocumentsService } from './inventory-documents.service';
 import { InventoryLineResolverService } from './inventory-line-resolver.service';
 import { StockPostingService } from './stock-posting.service';
+import { SubcontractorLocationService } from './subcontractor-location.service';
 import { StockQueryService } from './stock-query.service';
 
 const enabled = process.env.RUN_DB_TESTS === '1';
@@ -42,6 +43,7 @@ run('Inventory stock (database)', () => {
     new InventoryLineResolverService(scope as unknown as DataAccessPoliciesService),
     new StockPostingService(),
     audit,
+    new SubcontractorLocationService(new WarehousesRepository(prisma)),
   );
   const stock = new StockQueryService(prisma, audit, scope as unknown as DataAccessPoliciesService);
   const locationsRepository = new WarehousesRepository(prisma);
@@ -139,6 +141,9 @@ run('Inventory stock (database)', () => {
       await prisma.stockBalance.deleteMany({ where: { companyId } });
       await prisma.inventoryDocument.deleteMany({ where: { companyId } });
       await prisma.userAudit.deleteMany({ where: { companyId } });
+      await prisma.warehouse.updateMany({ where: { companyId }, data: { vendorId: null } });
+      await prisma.vendor.deleteMany({ where: { companyId } });
+      await prisma.warehouse.deleteMany({ where: { companyId, branchId: null } });
       await prisma.company.delete({ where: { companyId } });
     }
     await prisma.$disconnect();
@@ -260,7 +265,7 @@ run('Inventory stock (database)', () => {
     const doc = (await docs.create(
       OPENING_STOCK,
       a.companyId,
-      { documentDate: '2026-10-04', lines: [{ itemId: a.itemId, inventoryLocationId: a.plainId, quantity: '5' }] },
+      { documentDate: '2026-10-04', lines: [{ itemId: a.itemId, inventoryLocationId: a.plainId, quantity: '5', unitPrice: '10' }] },
       actor,
     )) as Doc;
     const results = await Promise.allSettled([
@@ -406,6 +411,200 @@ run('Inventory stock (database)', () => {
 
     const renamed: Doc = await locations.update(a.plainId, a.companyId, { name: 'Yard - renamed' } as never, actor);
     expect(renamed).toMatchObject({ name: 'Yard - renamed', locationCode: 'YARD' });
+  });
+
+  describe('opening stock phase 1 rules', () => {
+    it('totals are computed by the backend; zero price needs confirmation', async () => {
+      const draft: Doc = await docs.create(
+        OPENING_STOCK,
+        b.companyId,
+        {
+          documentDate: '2026-10-01',
+          defaultWarehouseId: b.plainId,
+          lines: [
+            { itemId: b.itemId, inventoryLocationId: b.plainId, quantity: '4', unitPrice: '2.5', batchNo: 'H-1', remarks: 'rack 1' },
+            { itemId: b.itemId, inventoryLocationId: b.binnedId, storageBinId: b.binId, quantity: '3' },
+          ],
+        } as never,
+        actor,
+      );
+      expect(draft).toMatchObject({ totalLines: 2, totalQuantity: '7.000000', totalValue: '10.00', defaultWarehouse: { code: 'YARD' } });
+      expect(draft.lines[0]).toMatchObject({ lineTotal: '10.00', batchNo: 'H-1', itemType: null, zeroPriceConfirmed: false });
+      await expectCode(docs.post(OPENING_STOCK, b.companyId, draft.documentId, actor), 'OPENING_STOCK_ZERO_PRICE');
+      expect(await prisma.stockLedgerEntry.count({ where: { companyId: BigInt(b.companyId) } })).toBe(0);
+
+      const confirmed: Doc = await docs.update(
+        OPENING_STOCK,
+        b.companyId,
+        draft.documentId,
+        {
+          documentDate: '2026-10-01',
+          lines: [
+            { itemId: b.itemId, inventoryLocationId: b.plainId, quantity: '4', unitPrice: '2.5', batchNo: 'H-1' },
+            { itemId: b.itemId, inventoryLocationId: b.binnedId, storageBinId: b.binId, quantity: '3', zeroPriceConfirmed: true },
+          ],
+        } as never,
+        actor,
+      );
+      const posted: Doc = await docs.post(OPENING_STOCK, b.companyId, confirmed.documentId, actor);
+      expect(posted).toMatchObject({ status: 'POSTED', totalValue: '10.00' });
+    });
+
+    it('duplicate lines in one opening stock are rejected; different batches are allowed', async () => {
+      const line = (batchNo?: string) => ({ itemId: b.itemId, inventoryLocationId: b.plainId, quantity: '1', unitPrice: '1', batchNo });
+      await expectCode(
+        docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-02', lines: [line('X'), line('x')] } as never, actor),
+        'INVENTORY_DUPLICATE_LINE',
+      );
+      const ok: Doc = await docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-02', lines: [line('X'), line('Y')] } as never, actor);
+      await docs.remove(OPENING_STOCK, b.companyId, ok.documentId, actor);
+    });
+
+    it('second opening stock for the same item + location + bin is blocked', async () => {
+      const again: Doc = await docs.create(
+        OPENING_STOCK,
+        b.companyId,
+        { documentDate: '2026-10-03', lines: [{ itemId: b.itemId, inventoryLocationId: b.plainId, quantity: '9', unitPrice: '1' }] },
+        actor,
+      );
+      await expectCode(docs.post(OPENING_STOCK, b.companyId, again.documentId, actor), 'OPENING_STOCK_ALREADY_EXISTS', 409);
+      await docs.remove(OPENING_STOCK, b.companyId, again.documentId, actor);
+    });
+
+    it('material issue / adjustment dated before the opening stock date is blocked', async () => {
+      const issue: Doc = await docs.create(
+        MATERIAL_ISSUE,
+        b.companyId,
+        { documentDate: '2026-09-30', requestedBy: 'Line 1', lines: [{ itemId: b.itemId, inventoryLocationId: b.plainId, quantity: '1' }] },
+        actor,
+      );
+      await expectCode(docs.post(MATERIAL_ISSUE, b.companyId, issue.documentId, actor), 'TRANSACTION_BEFORE_OPENING_STOCK');
+      await docs.remove(MATERIAL_ISSUE, b.companyId, issue.documentId, actor);
+
+      const sameDay: Doc = await docs.create(
+        MATERIAL_ISSUE,
+        b.companyId,
+        { documentDate: '2026-10-01', requestedBy: 'Line 1', lines: [{ itemId: b.itemId, inventoryLocationId: b.plainId, quantity: '1' }] },
+        actor,
+      );
+      await docs.post(MATERIAL_ISSUE, b.companyId, sameDay.documentId, actor);
+    });
+
+    it('vendor locations: inactive vendor blocks the line; current stock shows the vendor', async () => {
+      const vendor = await prisma.vendor.create({ data: { companyId: BigInt(b.companyId), vendorCode: 'SUB-1', name: 'Cutting Works' } });
+      const atVendor = await prisma.warehouse.create({
+        data: { companyId: BigInt(b.companyId), branchId: BigInt(b.siteId), warehouseCode: 'SCS-001', name: 'At Cutting Works', vendorId: vendor.vendorId },
+      });
+      const line = { itemId: b.itemId, inventoryLocationId: atVendor.warehouseId.toString(), quantity: '6', unitPrice: '3' };
+      const doc: Doc = await docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-01', lines: [line] }, actor);
+      await docs.post(OPENING_STOCK, b.companyId, doc.documentId, actor);
+
+      const current: Doc = await stock.currentStock(b.companyId, actor, { vendorId: vendor.vendorId.toString(), page: 1, limit: 20 } as never);
+      expect(current.items).toHaveLength(1);
+      expect(current.items[0]).toMatchObject({ locationCode: 'SCS-001', quantity: '6', locationVendor: { name: 'Cutting Works' } });
+
+      await prisma.vendor.update({ where: { vendorId: vendor.vendorId }, data: { isActive: false } });
+      await expectCode(
+        docs.create(MATERIAL_ISSUE, b.companyId, { documentDate: '2026-10-05', requestedBy: 'x', lines: [{ ...line, quantity: '1' }] }, actor),
+        'VENDOR_INACTIVE',
+      );
+      await expectCode(locations.update(atVendor.warehouseId.toString(), b.companyId, { vendorId: vendor.vendorId.toString() } as never, actor), 'VENDOR_INACTIVE');
+    });
+  });
+
+  describe('Sub Contractor store + vendor (one store, a location per vendor)', () => {
+    const ids: Record<string, string> = {};
+    const subLine = (vendorId: string | undefined, extra: Record<string, unknown> = {}) => ({
+      itemId: b.itemId,
+      storeCategoryId: ids.subStore,
+      vendorId,
+      quantity: '5',
+      unitPrice: '2',
+      ...extra,
+    });
+
+    beforeAll(async () => {
+      const cid = BigInt(b.companyId);
+      ids.subStore = (
+        await prisma.storeCategory.create({ data: { companyId: cid, name: 'Sub Contractor Store', codePrefix: 'SUB', storeType: 'SUBCONTRACTOR' } })
+      ).storeCategoryId.toString();
+      const vendor = async (code: string, isActive = true) =>
+        (await prisma.vendor.create({ data: { companyId: cid, vendorCode: code, name: `Vendor ${code}`, isActive } })).vendorId.toString();
+      ids.v1 = await vendor('JW-1');
+      ids.v2 = await vendor('JW-2');
+      ids.v3 = await vendor('JW-3', false);
+      ids.v4 = await vendor('JW-4');
+    });
+
+    it('same item at two vendors = two lines; vendor locations are created automatically', async () => {
+      const doc: Doc = await docs.create(
+        OPENING_STOCK,
+        b.companyId,
+        { documentDate: '2026-10-01', defaultStoreCategoryId: ids.subStore, lines: [subLine(ids.v1), subLine(ids.v2, { quantity: '3' })] } as never,
+        actor,
+      );
+      expect(doc).toMatchObject({ defaultStoreCategoryId: ids.subStore, defaultStore: { storeType: 'SUBCONTRACTOR' } });
+      expect(doc.lines.map((l: Doc) => [l.storeType, l.storeCategoryId, l.locationVendor.name, l.binCode])).toEqual([
+        ['SUBCONTRACTOR', ids.subStore, 'Vendor JW-1', null],
+        ['SUBCONTRACTOR', ids.subStore, 'Vendor JW-2', null],
+      ]);
+      const locations = await prisma.warehouse.findMany({ where: { storeCategoryId: BigInt(ids.subStore) }, orderBy: { warehouseCode: 'asc' } });
+      expect(locations.map((l) => [l.warehouseCode, l.branchId, l.binManagement])).toEqual([
+        ['SUB-001', null, false],
+        ['SUB-002', null, false],
+      ]);
+      await docs.post(OPENING_STOCK, b.companyId, doc.documentId, actor);
+      const atVendors: Doc = await stock.currentStock(b.companyId, actor, { storeCategoryId: ids.subStore, page: 1, limit: 20 } as never);
+      expect(atVendors.items.map((r: Doc) => [r.locationVendor.name, r.quantity, r.storeType])).toEqual(
+        expect.arrayContaining([
+          ['Vendor JW-1', '5', 'SUBCONTRACTOR'],
+          ['Vendor JW-2', '3', 'SUBCONTRACTOR'],
+        ]),
+      );
+    });
+
+    it('vendor rules: required, not allowed on other stores, active, no bins, no duplicates', async () => {
+      const create = (lines: unknown[]) => docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-02', lines } as never, actor);
+      await expectCode(create([subLine(undefined)]), 'VENDOR_REQUIRED');
+      await expectCode(create([{ itemId: b.itemId, inventoryLocationId: b.plainId, vendorId: ids.v1, quantity: '1', unitPrice: '1' }]), 'VENDOR_NOT_ALLOWED');
+      await expectCode(create([subLine(ids.v3)]), 'VENDOR_INACTIVE');
+      await expectCode(create([subLine(ids.v4, { storageBinId: b.binId })]), 'INVENTORY_BIN_NOT_ALLOWED');
+      await expectCode(create([subLine(ids.v4), subLine(ids.v4)]), 'INVENTORY_DUPLICATE_LINE');
+      await expectCode(
+        create([{ itemId: b.itemId, storeCategoryId: b.plainId, vendorId: ids.v4, quantity: '1', unitPrice: '1' }]),
+        'SUBCONTRACTOR_STORE_INVALID',
+      );
+    });
+
+    it('second opening stock for the same item + vendor is blocked; material issue from a vendor is blocked', async () => {
+      const again: Doc = await docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-03', lines: [subLine(ids.v1)] } as never, actor);
+      const err = await docs.post(OPENING_STOCK, b.companyId, again.documentId, actor).then(
+        () => null,
+        (e: BusinessException) => e,
+      );
+      expect((err as BusinessException).getResponse()).toMatchObject({ code: 'OPENING_STOCK_ALREADY_EXISTS', message: expect.stringMatching(/Vendor JW-1/) });
+      await docs.remove(OPENING_STOCK, b.companyId, again.documentId, actor);
+
+      await expectCode(
+        docs.create(MATERIAL_ISSUE, b.companyId, { documentDate: '2026-10-05', requestedBy: 'x', lines: [subLine(ids.v1, { unitPrice: undefined })] } as never, actor),
+        'SUBCONTRACTOR_STOCK_NOT_ISSUABLE',
+      );
+    });
+
+    it('two saves at once for a new vendor create one location; store pickers hide vendor locations', async () => {
+      const save = () => docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-04', lines: [subLine(ids.v4)] } as never, actor) as Promise<Doc>;
+      const [x, y] = await Promise.all([save(), save()]);
+      expect(await prisma.warehouse.count({ where: { storeCategoryId: BigInt(ids.subStore), vendorId: BigInt(ids.v4), deletedAt: null } })).toBe(1);
+      await docs.remove(OPENING_STOCK, b.companyId, x.documentId, actor);
+      await docs.remove(OPENING_STOCK, b.companyId, y.documentId, actor);
+
+      const picker: Doc = await locations.findAll(b.companyId, { excludeVendorLocations: true, page: 1, limit: 100 } as never);
+      expect(picker.items.some((w: Doc) => w.vendorId)).toBe(false);
+      await expectCode(
+        locations.create(b.companyId, { name: 'Manual sub', branchId: b.siteId, storeCategoryId: ids.subStore } as never, actor),
+        'LOCATION_SUBCONTRACTOR_AUTO',
+      );
+    });
   });
 
   it('inactive locations and bins are rejected with their own codes', async () => {

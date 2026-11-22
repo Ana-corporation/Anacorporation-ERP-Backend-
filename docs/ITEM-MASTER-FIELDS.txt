@@ -1,0 +1,238 @@
+ITEM (MATERIAL) MASTER - CURRENT FIELDS
+=======================================
+Date   : 2026-11-03 (checked in code)
+Tables : items, item_warehouse_stock, item_groups, uoms, store_categories,
+         company_item_settings, number_series_* (part numbers)
+API    : /api/v1/companies/{companyId}/items
+Screen : Item Master (SAP Business One style tabs)
+Perms  : items:view | items:create | items:edit | items:delete
+
+Legend:  * = mandatory   [col] = real DB column   [json:x] = stored in the
+         x_json bag (open key/value, not a column)   [lock] = cannot change
+         after create
+
+
+1. HEADER (top of the form)
+---------------------------
+  Field            Store     Type / size        Notes
+  itemCode *       [col]     text 50  [lock]    Part number. Unique per company.
+                                                AUTO / MANUAL / Number Series
+                                                (see section 9). Never renamed.
+  description *    [col]     text 255           Part name, e.g. "MAIN SIDE PLATE RH"
+  itemType         [col]     item | service | labor | travel   (default item)
+  isInventoryItem  [col]     yes/no (default yes)
+  isSalesItem      [col]     yes/no (default yes)
+  isPurchaseItem   [col]     yes/no (default yes)
+  storeCategoryId  [col]     -> store_categories  [lock]
+                                                Raw Material / Spares / Bought-Out
+                                                / Electrical ... Required when the
+                                                ITEM number series is active.
+  itemGroupId      [col]     -> item_groups     Category (BRG, FST, PLY ...).
+                                                Must belong to the item's store.
+  inventoryUomId   [col]     -> uoms            NOS, KG, MTR ... (also copied to
+                                                inventory.uomName for stock screens)
+  image            [col]     file reference     PNG / JPG / WEBP, max 5 MB
+                                                (POST /items/{id}/image)
+
+
+2. GENERAL TAB
+--------------
+  Identification
+    oldCode                [col] text 50      Previous / legacy part number
+    barcode                [col] text 100
+    itemGroup              [col] text 80      Free-text group (older; master
+                                              itemGroupId above is preferred)
+    uomGroup               [col] text 80
+    manufacturer           [col] text 120
+    additionalIdentifier   [col] text 80
+    shippingType           [col] text 40
+    manageBy               [col] none | serial | batch   (default none)
+  Pricing
+    priceList              [col] text 80
+    unitPrice              [col] decimal(18,6)
+    currencyCode           [col] text 10      USD EUR GBP INR SGD AED JPY
+    doNotApplyDiscountGroups [col] yes/no
+  Availability
+    status                 [col] draft | active | inactive | obsolete | advanced
+                                 (default active)
+    activeFrom / activeTo  [col] date
+
+
+3. CLASSIFICATION TAB
+---------------------
+  Grouping
+    division               [col] text 80
+    coreActivity           [col] text 80
+    majorGroup             [col] text 120
+    brandName              [col] text 80
+    contractItemsFor       [col] text 120
+  Weights & stock policy
+    netWeightKg            [col] decimal(18,6)
+    grossWeightKg          [col] decimal(18,6)
+    effectiveDate          [col] date
+    customerStockNo        [col] text 80
+    stockToBe              [col] text 80
+    stockDioDays           [col] whole number
+
+
+4. PURCHASING TAB
+-----------------
+  Procurement
+    preferredVendorId      [col] -> vendors
+    valuationMethod        [col] moving_average | standard | fifo | serial_batch
+    itemCost               [col] decimal(18,6)
+  Purchasing data          [json:purchase]
+    mfrCatalogNo, purchasingUomName, itemsPerPurchaseUnit, packagingUomName,
+    quantityPerPackage, weight
+  Dimensions               [json:purchase]
+    length, width, height, volume, volumeUnit
+  Factors                  [json:purchase]
+    factor1, factor2, factor3, factor4
+  Tax & customs            [json:purchase]
+    customsGroup, customsPercent, taxGroup, taxPercent
+
+
+5. SALES TAB               [json:sales]
+---------------------------------------
+  Sales data   salesUomName, itemsPerSalesUnit, packagingUomName,
+               quantityPerPackage, taxGroup, taxPercent
+  Dimensions   length, width, height, volume, volumeUnit, weight
+  Factors      factor1, factor2, factor3, factor4
+
+
+6. INVENTORY TAB
+----------------
+  manageStockByWarehouse   [col] yes/no (default yes)
+  setGlAccountsBy          [json:inventory]
+  uomName                  [json:inventory]  Inventory UoM text (filled from
+                                              inventoryUomId when set)
+  weight                   [json:inventory]
+  requiredQty, minimumQty, maximumQty   [json:inventory]
+
+  Per-warehouse stock (table item_warehouse_stock, one row per item + store):
+    warehouseId *, isLocked, qtyOnHand (read only - changes only through
+    posted Opening Stock / Material Issue / Stock Adjustment), qtyCommitted,
+    qtyOrdered, requiredQty, minimumQty, maximumQty, firstBinLocation,
+    defaultBinLocation, enforceDefaultBin
+    PUT    /items/{id}/warehouses
+    DELETE /items/{id}/warehouses/{warehouseId}
+
+
+7. PLANNING TAB            [json:planning]
+------------------------------------------
+  planningMethod (none | mrp), procurementMethod (buy | make), orderInterval,
+  orderMultiple, minimumOrderQty, leadTimeDays, toleranceDays
+
+
+8. PRODUCTION, PROPERTIES, REMARKS, ATTACHMENTS
+-----------------------------------------------
+  Production   [json:production]  phantomItem (yes/no), issueMethod
+               (backflush | manual), bomType, productionStdCost,
+               includeInStdCostRollup (yes/no)
+               NOTE: no real BOM table yet - bomType is a label only.
+  Properties   [json:properties]  P1 ... P64 yes/no flags
+  Remarks      [col] remarks (long text)
+  Attachments  files, max 20 per upload (POST /items/{id}/attachments)
+  Custom fields  company-defined extra fields on any tab (custom_field_values)
+  metadata     [json] free bag for anything else
+
+
+9. ITEM CODE / PART NUMBER RULES
+--------------------------------
+  Company setting (company_item_settings):
+    itemCodeMode   AUTO (default) | MANUAL
+    itemCodePrefix default "ITM"  -> AUTO codes ITM00001 ...
+  When the ITEM Number Series is active it wins over AUTO/MANUAL:
+    part number = prefix + segment + serial, e.g. ANA + BO + 00001
+    segment comes from the Store (store_categories.number_series_code)
+    or the Category (item_groups.category_code), per the series setting.
+  itemCode and storeCategoryId cannot be changed after create.
+  Duplicate description in the same store -> warning; send
+  confirmDuplicateName = true to save anyway.
+
+
+10. MASTERS USED BY THE ITEM
+----------------------------
+  store_categories : name, codePrefix (RMS, SPR ...), numberSeriesCode
+                     (hidden on screen now), description, sortOrder, isActive
+  item_groups      : tree per store; name, categoryCode (2-4 letters, e.g.
+                     BRG), description, parent, sortOrder, isActive
+  uoms             : code (uppercase, unique), name, isActive
+  vendors          : preferred vendor
+
+
+11. SYSTEM FIELDS (every item)
+------------------------------
+  itemId, companyId, isActive, createdBy/At, updatedBy/At, deletedBy/At
+  (soft delete), rowVersion
+
+
+12. FIT CHECK - BS 500 BOM EXCEL (BS5000000000A1)
+-------------------------------------------------
+  Excel column      -> Item master field
+  PART NUMBER       -> itemCode (MANUAL, or keep as oldCode)
+  DESCRIPTION       -> description
+  PART NAME group   -> itemGroupId (BEARING=BRG, ALLEN BOLT/HEX NUT=FST ...)
+  PROCESS           -> storeCategoryId / itemGroupId
+                       (RM-SF-FF = made in-house, FST, BRG, PLY, CMP ...)
+  QTY / ITEM NO.    -> NOT an item field. Belongs to a BOM (parent, child,
+                       qty, level) which does not exist yet.
+  ASSY rows         -> item with itemType item + production.bomType label;
+                       the child list needs a BOM table.
+
+  Gap: there is no BOM / bill-of-materials table. Items can be loaded today;
+  the BS 500 structure (which part, how many, under which assembly) cannot.
+
+
+13. ANA MACHINERY (companyId 28) - WHAT IS SWITCHED ON (PROD, 2026-11-03)
+--------------------------------------------------------------------------
+Read from company_field_configurations + company_tab_access + items data.
+
+  Shown on the ANA screen (order as configured):
+    Field             ANA label                   Mandatory
+    storeCategoryId   Store                       yes
+    inventoryUomId    Inventory UOM               yes
+    itemGroupId       Item Group (Category)       yes
+    status            Status                      no (default active)
+    itemCode          Part Number                 auto (number series)
+    description       Part Name                   yes
+    isInventoryItem   Inventory Item              no (default yes)
+    imageFileAssetId  Picture / Image Reference   no
+    remarks           Remarks tab                 no
+    attachments       Attachments tab             no
+
+  Hidden for ANA: every other field (85 of 93 configured keys), including old
+  code, barcode, price, currency, manufacturer, brand, weights, vendor,
+  valuation, cost, and all purchase / sales / inventory / planning /
+  production bag fields.
+  Tabs hidden for ANA roles: Classification, Purchasing, Sales, Inventory,
+  Planning, Production, Properties.
+  Custom fields for items: none.
+
+  Added 2026-11-03 (PROD, ANA only - custom fields + config, no schema change):
+    General tab   Material Category *  dropdown  Mechanical | Electrical
+                  Material Type *      dropdown  Raw Material | Semi-Finished |
+                                                 Finished Good
+                  Procurement Type *   dropdown  Buy | Make | Subcontract
+                  Manage By            built-in  none | serial | batch (optional)
+    Purchasing    Preferred Vendor     built-in  -> vendors (optional); tab now
+                  visible for ANA roles, all other purchasing fields still hidden
+    The 370 existing items have no values for the 3 new fields; they must be
+    filled the next time each item is edited (required check).
+
+  Live data: 370 items. Only these hold values: itemCode, description,
+  storeCategoryId, itemGroupId, inventoryUomId (+ inventory.uomName copy),
+  and system defaults (itemType=item, status=active, manageBy=none, the three
+  yes/no flags, manageStockByWarehouse).
+
+
+14. NOTES
+---------
+  - Most SAP-style fields (division, coreActivity, factors, customs, planning,
+    production) are optional and unused by ANA today. Hide them per company
+    with Form Configuration instead of deleting columns.
+  - Tab bags (purchase / sales / inventory / planning / production) accept any
+    key; they are not validated or reportable like columns. Promote a key to a
+    real column only when it must be filtered, totalled or validated.
+  - Material Inward uses its own mi_* tables and does not update
+    item_warehouse_stock yet.

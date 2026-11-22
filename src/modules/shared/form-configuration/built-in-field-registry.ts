@@ -215,6 +215,24 @@ export function resolveBuiltInVisibility(
   return field.defaultVisible;
 }
 
+/** A hidden field is never required; protected fields keep the developer flag. */
+export function resolveBuiltInRequired(
+  field: BuiltInFieldDefinition,
+  visible: boolean,
+  requiredOverrides: Map<string, boolean> = new Map(),
+): boolean {
+  if (!visible) return false;
+  if (!field.configurable) return field.required;
+  return lookupOverride(field, requiredOverrides) ?? field.required;
+}
+
+export function resolveBuiltInLabel(
+  field: BuiltInFieldDefinition,
+  labelOverrides: Map<string, string> = new Map(),
+): string {
+  return labelOverrides.get(field.fieldKey) ?? field.label;
+}
+
 export function fieldHasOverride(
   field: BuiltInFieldDefinition,
   overrides: Map<string, boolean>,

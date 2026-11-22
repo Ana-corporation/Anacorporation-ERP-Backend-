@@ -1,0 +1,272 @@
+OPENING STOCK - PHASE 1 ENHANCEMENT - BACKEND PROMPT
+===================================================
+Repo   : C:\ERP-Backend (NestJS 11 + Prisma 6 + PostgreSQL), branch development-anc
+Pair   : docs/OPENING-STOCK-PHASE1-FRONTEND-PROMPT.txt
+Source : "Enhance Opening Stock Module - SWENTER ERP" spec (11-Nov-2026), Phase 1 only
+Rule   : DEV (Erp_test_db) first. LIVE migration only after explicit approval.
+         Nothing company-specific in code (no "ANA", no hard-coded RM/SF/FF).
+
+
+1. DECISIONS ALREADY TAKEN
+--------------------------
+D1  Stock "At Vendor" = a normal Inventory Location under the company's
+    "Sub Contractor Store" store category, one location per vendor.
+    New nullable warehouses.vendor_id links the location to Vendor Master.
+    Stock there stays company-owned; no purchase / payable is created.
+D2  Stock is still counted by item + location (warehouse) + bin.
+    NO new stock dimensions in Phase 1 (no vendor / status / batch / serial
+    in stock_balances or stock_ledger_entries).
+D3  QC Hold / In Process / batch-wise and serial-wise balances = Phase 2.
+D4  Opening Stock never creates SF / FF (or any non-eligible) items.
+    Eligibility is a per-category setting, not a hard-coded list.
+D5  Item Master has no revision field: Revision stays a line-level text.
+
+
+2. WHAT EXISTS - REUSE, DO NOT REWRITE
+--------------------------------------
+  Documents   prisma/inventory/inventory-documents.prisma
+              (inventory_documents + inventory_document_lines; OPENING_STOCK /
+              MATERIAL_ISSUE / STOCK_ADJUSTMENT; DRAFT -> POSTED; OS-000001)
+  Service     src/modules/inventory/stock/inventory-documents.service.ts
+              (create / update / remove / post; post claims DRAFT row, one tx)
+  Lines       src/modules/inventory/stock/inventory-line-resolver.service.ts
+              (item, site, location, bin, UOM checks; DUPLICATE_LINE)
+  Posting     src/modules/inventory/stock/stock-posting.service.ts
+              (ONLY writer of stock_balances / stock_ledger_entries; FOR UPDATE
+              locks; never negative; ledger unique per source line + movement)
+  DTOs        src/modules/inventory/stock/dto/inventory-document.dto.ts
+  Routes      inventory-documents.controllers.ts
+              /api/v1/companies/:companyId/inventory/opening-stock
+              GET list, GET :id, POST, PUT :id, DELETE :id, POST :id/post
+  Import      src/modules/inventory/opening-stock-import/*
+              batches + rows tables, upload -> evaluate (MATCHED/NEW/ERROR) ->
+              edit rows -> validate -> approve (items + posted OS in one tx),
+              template, error report, file-hash re-upload check
+  Masters     items (manage_by none/batch/serial, material_stage), item_groups
+              (category_code), warehouses (bin_management), storage_bins,
+              vendors, file_assets (item attachments pattern), user_audit
+  Perms       opening_stock:view / create / edit / delete / approve
+
+
+3. SCHEMA CHANGES (one migration, handwritten SQL like the others)
+------------------------------------------------------------------
+  Migration: prisma/migrations/2026111x120000_opening_stock_phase1
+
+  inventory_documents
+    + default_warehouse_id BIGINT NULL  FK warehouses   (header "Store")
+    + total_lines          INT NOT NULL DEFAULT 0
+    + total_quantity       DECIMAL(20,6) NOT NULL DEFAULT 0
+    + total_value          DECIMAL(20,6) NOT NULL DEFAULT 0
+    + attachments_json     JSONB NULL    [{ fileAssetId, fileName, size, uploadedBy, uploadedAt }]
+
+  inventory_document_lines
+    + batch_no             VARCHAR(60) NULL     (Batch / Heat / Lot No.)
+    + serial_no            VARCHAR(80) NULL
+    + line_total           DECIMAL(20,6) NULL   (qty x unit price, backend)
+    + zero_price_confirmed BOOLEAN NOT NULL DEFAULT false
+    (revision, remarks already exist)
+    + partial unique index: one serial per item per company among OPENING
+      lines -> enforce in service (cross-document check under lock), plus
+      index (company_id, item_id, serial_no) WHERE serial_no IS NOT NULL
+
+  warehouses
+    + vendor_id BIGINT NULL FK vendors     (D1; set only for vendor locations)
+
+  item_groups
+    + allow_opening_create BOOLEAN NOT NULL DEFAULT false
+      (category may get NEW items from Opening Stock import; D4)
+
+  opening_stock_import_rows
+    + bin_text            VARCHAR(40) NULL
+    + batch_no            VARCHAR(60) NULL
+    + serial_no           VARCHAR(80) NULL
+    + remarks             VARCHAR(255) NULL
+    + new_item_confirmed  BOOLEAN NOT NULL DEFAULT false
+    + excluded            BOOLEAN NOT NULL DEFAULT false
+    + similar_items       JSONB NULL   [{ itemId, itemCode, name, score }]
+
+  Prisma models updated to match (camelCase + @map). Run prisma generate.
+  Existing rows: defaults keep everything working (no backfill needed,
+  except optional backfill of document totals from lines).
+
+
+4. RULES TO IMPLEMENT (all on the backend; frontend checks are only help)
+------------------------------------------------------------------------
+R1  Header default store
+    default_warehouse_id saved on the document. Lines still carry their own
+    warehouse_id (the source of truth). Must be an active location the user
+    may access.
+
+R2  Totals
+    line_total = quantity x unit_price (Decimal, 6 dp) computed on save AND
+    re-computed on post. Header totals = sum of lines. Ignore any totals the
+    client sends.
+
+R3  Unit price
+    For OPENING_STOCK lines: unit price missing or 0 -> allowed only when the
+    line has zero_price_confirmed = true. Posting a document with confirmed
+    zero-price lines requires opening_stock:approve.
+    Error: OPENING_STOCK_ZERO_PRICE (field lines[i].unitPrice).
+
+R4  Batch / serial (driven by items.manage_by, not by category)
+    manage_by = batch  -> batch_no required.
+    manage_by = serial -> serial_no required, quantity must be 1, serial
+                          unique per company + item across POSTED opening
+                          lines and within the document.
+    manage_by = none   -> batch / serial optional (stored as reference).
+    Errors: BATCH_REQUIRED, SERIAL_REQUIRED, SERIAL_QTY_ONE, SERIAL_DUPLICATE.
+
+R5  Duplicate lines in one document
+    Keep existing check (item + location + bin). Extend the key with
+    batch_no and serial_no when the item is batch / serial managed.
+    Error: INVENTORY_DUPLICATE_LINE (existing).
+
+R6  Second opening stock (on POST, after balance locks are taken)
+    Block when a POSTED OPENING_STOCK line already exists for the same
+    company + item + warehouse + bin (+ batch_no / serial_no when managed).
+    Error: OPENING_STOCK_ALREADY_EXISTS with the existing document number.
+    Corrections go through Stock Adjustment.
+
+R7  Backdated transactions
+    On POST of MATERIAL_ISSUE and STOCK_ADJUSTMENT: for each line, if a
+    posted OPENING_STOCK exists for item + warehouse + bin with
+    document_date > this document_date -> reject.
+    Error: TRANSACTION_BEFORE_OPENING_STOCK (shows the opening date).
+    Opening Stock itself: reject if a later-dated non-opening movement
+    already exists for that key with an earlier date than the OS date.
+    Keep document_date and posted_at separate (already the case).
+
+R8  Bin validation (existing - re-check on post)
+    bin_management location -> bin required, bin belongs to that location,
+    bin active. Non-bin location -> no bin. Already in the line resolver;
+    make sure post re-runs it (it does today - keep).
+
+R9  Vendor locations (D1)
+    If the line's warehouse has vendor_id -> that vendor must exist in the
+    company and be active at save and at post. Error: VENDOR_INACTIVE.
+    Warehouse create/update API accepts vendorId (optional, active vendor).
+    Current Stock list returns warehouse.vendor { vendorId, name } so the
+    UI can show "At vendor: ...". Filter ?vendorId= on current stock.
+
+R10 Attachments
+    POST   /inventory/opening-stock/:id/attachments        (multipart; draft or posted)
+    GET    /inventory/opening-stock/:id/attachments/:fileAssetId/url
+    DELETE /inventory/opening-stock/:id/attachments/:fileAssetId  (draft only)
+    Reuse the item-attachment code path (StorageService + file_assets);
+    same size / type limits.
+
+R11 Save & Post
+    No new endpoint: client calls POST (or PUT) then POST :id/post.
+    Post must stay idempotent by the existing DRAFT claim (second call ->
+    INVENTORY_DOCUMENT_ALREADY_POSTED).
+
+R12 Audit
+    Keep user_audit rows (create / update / post / delete). Document detail
+    returns createdBy/At, updatedBy/At, postedBy/At (names via withAudit),
+    plus importBatch { batchId, fileName, approvedBy, approvedAt,
+    createdItemCount } when the document came from an import.
+
+
+5. EXCEL IMPORT CHANGES
+-----------------------
+I1  Template columns (OPENING_IMPORT_COLUMNS), in this order:
+      Category Code*, Part Number, Part Name, Store (Location Code)*, Bin,
+      Qty*, Unit Price, Inventory UOM, Batch / Heat / Lot No., Serial No.,
+      Revision, Remarks,
+      reference: Part Code, Material Grade, Size, Revision Status,
+      Machine Model, Machine No, Category
+    Location rule (write in the template "Instructions" sheet):
+      "Store (Location Code)" = Inventory Location code only.
+      "Bin" = bin code inside that location.
+      Legacy "CODE/BIN" in the location cell is still accepted.
+    Add an "Instructions" sheet describing every column.
+
+I2  Matching (MATCHED)
+    Part Number found, item active, Category Code = item's category, store /
+    bin valid, qty > 0, price valid. Part Name and UOM always taken from the
+    Item Master (Excel values only used for NEW rows / warnings).
+    Wrong Category Code for an existing part -> ERROR "Category Code X does
+    not match item category Y".
+
+I3  NEW rows
+    - Category must have item_groups.allow_opening_create = true, else ERROR
+      "New items are not allowed in category X" (covers SF / FF - D4).
+    - similar_items: up to 3 existing items in the same company with a
+      similar name (normalised tokens / trigram-like score >= 0.6), computed
+      on upload and on validate. Shown as a duplicate warning.
+    - new_item_confirmed must be true before approve.
+      POST /opening-stock-imports/:id/rows/confirm-new  { rowIds?: [] }
+           (no rowIds = confirm all NEW rows)  perm: opening_stock:approve
+      POST /opening-stock-imports/:id/rows/exclude      { rowIds: [], excluded: bool }
+    - Picking an existing item for a NEW row (existing row edit) turns it
+      into MATCHED.
+
+I4  ERROR rows (add to existing checks)
+    missing mandatory, wrong category, unknown / inactive store, invalid
+    bin, bad UOM, bad qty / price, duplicate rows (same key as R5),
+    ineligible category, serial / batch rules (R4), zero price without
+    confirmation is a WARNING on the row (not an error) and is confirmed on
+    approve with the same zero_price_confirmed flag.
+
+I5  Approve (existing endpoint)
+    canApprove = no unconfirmed NEW rows (except excluded) and >= 1 stock
+    row. Re-evaluate every row inside the transaction, then: create
+    confirmed NEW items (Item Master service), post one OPENING_STOCK with
+    R2-R9 applied. Excluded + ERROR rows skipped. Already idempotent
+    (batch locked after APPROVED, file-hash check) - keep.
+    Body: { confirmZeroPrice: boolean } (needed when zero-price rows exist).
+
+I6  Error report (existing endpoint) - one line per error:
+      Original Row No | Part Number | Column | Error Reason | Suggested Correction
+    Suggestions where possible (e.g. "Use bin code A-01 of RMS-001",
+    "Category of ANARM00012 is RM").
+
+
+6. ERROR CODES (BusinessException code, 400 unless noted)
+---------------------------------------------------------
+  OPENING_STOCK_ZERO_PRICE, OPENING_STOCK_ALREADY_EXISTS (409),
+  TRANSACTION_BEFORE_OPENING_STOCK, BATCH_REQUIRED, SERIAL_REQUIRED,
+  SERIAL_QTY_ONE, SERIAL_DUPLICATE (409), VENDOR_INACTIVE,
+  OPENING_IMPORT_NEW_NOT_CONFIRMED, OPENING_IMPORT_CATEGORY_NOT_ALLOWED,
+  OPENING_IMPORT_CATEGORY_MISMATCH,
+  existing: INVENTORY_DUPLICATE_LINE, INSUFFICIENT_STOCK,
+  INVENTORY_DOCUMENT_ALREADY_POSTED (409), ROW_VERSION_CONFLICT (409)
+
+
+7. PERMISSIONS
+--------------
+  No new permission codes. Confirm NEW items = opening_stock:approve.
+  Post = opening_stock:approve (existing). Zero-price post = approve.
+  Keep company access + data-access scope checks on every location / bin.
+
+
+8. TESTS (*.db.spec.ts on DEV, throw-away companies)
+----------------------------------------------------
+  - draft does not change stock; post adds stock + ledger OPENING_STOCK
+  - line_total / header totals computed by backend (client totals ignored)
+  - zero price without confirm -> OPENING_STOCK_ZERO_PRICE
+  - duplicate line (item + store + bin) -> INVENTORY_DUPLICATE_LINE
+  - second OS same item + store + bin -> OPENING_STOCK_ALREADY_EXISTS
+  - material issue dated before OS date -> TRANSACTION_BEFORE_OPENING_STOCK
+  - bin store without bin / foreign bin / inactive bin -> rejected on post
+  - serial item: qty 1, duplicate serial rejected
+  - vendor location with inactive vendor -> VENDOR_INACTIVE
+  - import: wrong category -> ERROR; ineligible category NEW -> ERROR;
+    no item created before approve; approve blocked until NEW confirmed;
+    approve twice -> one document, no duplicate items
+  - other company ids -> 404 / access denied
+  - existing Material Issue / Stock Adjustment / Current Stock / Ledger
+    specs still pass
+
+
+9. OUT OF SCOPE (Phase 2)
+-------------------------
+  Stock status (QC Hold / Rejected / Blocked) and custody dimensions in
+  balances + ledger, batch / serial balances, In Process (WIP), reversal
+  workflow for posted opening stock, unifying Material Inward stock.
+
+
+10. DELIVERY
+------------
+  Migration on DEV, code + tests, FE handoff note listing new fields,
+  endpoints and error codes. LIVE only after approval.

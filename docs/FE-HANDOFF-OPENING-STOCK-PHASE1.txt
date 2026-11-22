@@ -1,0 +1,123 @@
+FE HANDOFF - OPENING STOCK PHASE 1 (backend done on DEV)
+========================================================
+Date    : 11-Nov-2026
+Status  : Backend DONE on DEV (Erp_test_db). NOT on LIVE yet (needs approval).
+          Migration 20261111150000_opening_stock_phase1.
+Plan    : docs/OPENING-STOCK-PHASE1-FRONTEND-PROMPT.txt (screens)
+Base    : /api/v1/companies/:companyId
+
+
+1. OPENING STOCK DOCUMENT  (/inventory/opening-stock)
+-----------------------------------------------------
+Request body (POST / PUT) - new fields
+  header  defaultWarehouseId     optional, header "Store" (active location)
+  line    batchNo                optional, max 60 (Batch / Heat / Lot No.)
+          serialNo               optional, max 80
+          zeroPriceConfirmed     boolean, default false (needed when unit price 0 / blank)
+          remarks                (already existed)
+  Client totals are ignored.
+
+Response - new fields
+  header  defaultWarehouseId, defaultWarehouse { warehouseId, code, name }
+          totalLines, totalQuantity ("7.000000"), totalValue ("10.00")
+          attachments [{ fileAssetId, fileName, mimeType, fileSize, uploadedBy, uploadedAt }]
+          importBatch { batchId, fileName, approvedBy, approvedByName, approvedAt,
+                        createdItemCount } | null
+          createdByName / updatedByName / postedByName, postedAt (existing)
+  line    itemType (category code, e.g. RM / BRG; null when none) -> Item Type tag
+          itemCategoryName, manageBy
+          lineTotal ("10.00"), zeroPriceConfirmed, batchNo, serialNo, revision
+          locationVendor { vendorId, code, name } | null  -> "At vendor: ..."
+  List rows also have totalLines / totalQuantity / totalValue (all 3 document types).
+
+Save & Post = POST (or PUT) then POST :id/post. Posting twice -> 409
+INVENTORY_DOCUMENT_ALREADY_POSTED.
+
+Attachments (count sheets etc., same types / 10 MB limit as item attachments)
+  POST   /inventory/opening-stock/:id/attachments          multipart "files" (or "file")
+         perm opening_stock:edit, draft or posted -> { attachments: [...] }
+  GET    /inventory/opening-stock/:id/attachments/:fileAssetId/url   -> { url }
+  DELETE /inventory/opening-stock/:id/attachments/:fileAssetId       draft only
+
+
+2. RULES (backend) + ERROR CODES
+--------------------------------
+  OPENING_STOCK_ZERO_PRICE (400)        on post: unit price 0 / blank without
+                                        zeroPriceConfirmed; field lines[i].unitPrice
+  INVENTORY_DUPLICATE_LINE (400)        same item + location + bin + batch + serial
+                                        twice in one opening stock (save)
+  OPENING_STOCK_ALREADY_EXISTS (409)    on post: opening stock already posted for
+                                        item + location + bin (message has doc no)
+  SERIAL_DUPLICATE (409)                on post: serial already in posted opening
+                                        stock for that item
+  TRANSACTION_BEFORE_OPENING_STOCK (400) Material Issue / Stock Adjustment dated
+                                        before that key's opening stock date; also
+                                        opening stock dated after an earlier movement
+                                        (field documentDate)
+  VENDOR_INACTIVE (400)                 line location belongs to an inactive vendor;
+                                        also on location save with an inactive vendor
+  INVENTORY_DEFAULT_LOCATION_INVALID    header store not found / inactive
+  Not changed: batch / serial MANAGED items (Item Master "manage by" batch or
+  serial) are still rejected (INVENTORY_ITEM_BATCH_SERIAL_NOT_SUPPORTED) - Phase 2.
+  Batch / serial on other items is reference text.
+
+
+3. LOCATIONS (Inventory Setup) + CURRENT STOCK
+----------------------------------------------
+  Warehouse create / update body: vendorId (optional; null clears) - active vendor.
+  Warehouse response: vendorId, vendor { vendorId, vendorCode, name, isActive }.
+  Current stock: query ?vendorId=  ; row: locationVendor { vendorId, code, name } | null.
+
+
+4. CATEGORIES (Item Groups)
+---------------------------
+  New field allowOpeningCreate (boolean) on create / update / response.
+  true  = Excel import may create NEW items of this category (after confirmation)
+  false = never (default for new categories; existing categories holding SF / FF
+          stage items were set to false by the migration).
+  Show it as a switch on the Category screen: "Allow new items from Opening Stock".
+
+
+5. EXCEL IMPORT  (/inventory/opening-stock-imports)
+---------------------------------------------------
+Template (GET template): new columns + "Instructions" sheet
+  Category Code | Part Number | Part Name | Location Code | Bin | Qty | Unit Price |
+  Inventory UOM | Batch / Heat / Lot No. | Serial No. | Revision | Remarks |
+  Store Category | Part Code | Material Grade | Size | Status | Machine Model |
+  Machine No | Category
+  Location Code = location only; Bin = separate column. Old files with
+  "Store" and "CODE/BIN" still work.
+
+Summary - new fields
+  newRowsConfirmed, newRowsUnconfirmed, excludedRows, zeroPriceRows
+  canApprove = also needs newRowsUnconfirmed = 0
+  stockLines / itemsToCreate / totalValue skip excluded rows
+
+Rows - new fields (GET :id/rows, also ?excluded=true|false)
+  excluded, newItemConfirmed, zeroPrice,
+  similarItems [{ itemId, itemCode, name, score }]   (NEW rows: possible duplicates)
+  errors[].suggestion                                 (how to fix, when known)
+  data.binCode / batchNo / serialNo / remarks         (editable via PATCH row)
+
+New endpoints
+  POST :id/rows/confirm-new  { rowIds?: [], confirmed?: true }
+       no rowIds = all NEW rows not excluded; perm opening_stock:approve
+  POST :id/rows/exclude      { rowIds: [], excluded: true|false }
+  Editing a row (PATCH :id/rows/:rowId) clears its confirmation.
+  "Use this item" for a similar item = PATCH row { pickedItemId } (existing).
+
+Approve (POST :id/approve) body: { confirmZeroPrice?: boolean }
+  OPENING_IMPORT_NOT_READY           category missing on NEW rows / nothing to post
+  OPENING_IMPORT_NEW_NOT_CONFIRMED   NEW rows not confirmed or excluded
+  OPENING_STOCK_ZERO_PRICE           zero-price rows without confirmZeroPrice
+  OPENING_STOCK_ALREADY_EXISTS       an item + location + bin already has opening stock
+
+New row errors
+  "Category Code X does not match item category Y"  (existing part, wrong code)
+  "New items are not allowed in category X ..."     (category switch off; SF / FF)
+  Bin errors now on field binCode with "Bins of <location>: ..." suggestion.
+  Unknown Part Number stays an error; suggestion "Did you mean ANA... ?"
+
+Error report (GET :id/error-report): one line per problem
+  Original Row No | Part Number | Column | Error Reason | Suggested Correction
+  (ERROR rows + NEW rows missing category or confirmation; excluded rows left out)
