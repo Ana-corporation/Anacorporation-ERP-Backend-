@@ -450,14 +450,34 @@ run('Inventory stock (database)', () => {
       expect(posted).toMatchObject({ status: 'POSTED', totalValue: '10.00' });
     });
 
-    it('duplicate lines in one opening stock are rejected; different batches are allowed', async () => {
-      const line = (batchNo?: string) => ({ itemId: b.itemId, inventoryLocationId: b.plainId, quantity: '1', unitPrice: '1', batchNo });
+    it('same part + bin with empty brand/serial is allowed; only duplicate serial is blocked', async () => {
+      const line = (extra: Record<string, string> = {}) => ({
+        itemId: b.itemId,
+        inventoryLocationId: b.binnedId,
+        storageBinId: b.binId,
+        quantity: '1',
+        unitPrice: '1',
+        ...extra,
+      });
+      // Same part + same bin, blank brand/serial — FE counting splits; BE merges on post.
+      const ok: Doc = await docs.create(
+        OPENING_STOCK,
+        b.companyId,
+        { documentDate: '2026-10-02', lines: [line(), line(), line({ brand: 'A' }), line({ batchNo: 'H1' })] } as never,
+        actor,
+      );
+      expect(ok.lines).toHaveLength(4);
+      await docs.remove(OPENING_STOCK, b.companyId, ok.documentId, actor);
+
       await expectCode(
-        docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-02', lines: [line('X'), line('x')] } as never, actor),
+        docs.create(
+          OPENING_STOCK,
+          b.companyId,
+          { documentDate: '2026-10-02', lines: [line({ serialNo: 'S-1' }), line({ serialNo: 'S-1', brand: 'Other' })] } as never,
+          actor,
+        ),
         'INVENTORY_DUPLICATE_LINE',
       );
-      const ok: Doc = await docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-02', lines: [line('X'), line('Y')] } as never, actor);
-      await docs.remove(OPENING_STOCK, b.companyId, ok.documentId, actor);
     });
 
     it('opening stock brand: saves, different brands allowed on same bin, duplicate serial blocked', async () => {
@@ -605,13 +625,16 @@ run('Inventory stock (database)', () => {
       );
     });
 
-    it('vendor rules: required, not allowed on other stores, active, no bins, no duplicates', async () => {
+    it('vendor rules: required, not allowed on other stores, active, no bins; same vendor lines allowed', async () => {
       const create = (lines: unknown[]) => docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-02', lines } as never, actor);
       await expectCode(create([subLine(undefined)]), 'VENDOR_REQUIRED');
       await expectCode(create([{ itemId: b.itemId, inventoryLocationId: b.plainId, vendorId: ids.v1, quantity: '1', unitPrice: '1' }]), 'VENDOR_NOT_ALLOWED');
       await expectCode(create([subLine(ids.v3)]), 'VENDOR_INACTIVE');
       await expectCode(create([subLine(ids.v4, { storageBinId: b.binId })]), 'INVENTORY_BIN_NOT_ALLOWED');
-      await expectCode(create([subLine(ids.v4), subLine(ids.v4)]), 'INVENTORY_DUPLICATE_LINE');
+      // Same part at same vendor twice is allowed on draft (merges on Part+Store+Bin at post).
+      const dupOk: Doc = await create([subLine(ids.v4), subLine(ids.v4, { quantity: '2' })]);
+      expect(dupOk.lines).toHaveLength(2);
+      await docs.remove(OPENING_STOCK, b.companyId, dupOk.documentId, actor);
       await expectCode(
         create([{ itemId: b.itemId, storeCategoryId: b.plainId, vendorId: ids.v4, quantity: '1', unitPrice: '1' }]),
         'SUBCONTRACTOR_STORE_INVALID',

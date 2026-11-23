@@ -1,0 +1,22 @@
+================================================================================
+BE REPLY → FE  |  Opening Stock: same part + bin + empty brand/serial
+Date: 2026-11-23
+================================================================================
+
+Q: same part + same bin + empty brand/serial on multiple lines → allowed or rejected?
+
+A: **ALLOWED** on draft create / update (PUT).
+
+  Posted stock still merges on **Part + Store + Bin** (quantities add).
+  Matches FE: many parts per bin, many lines of same part in one bin.
+
+Still rejected:
+  Same serialNo twice for the same part in one document
+    code:    INVENTORY_DUPLICATE_LINE
+    field:   lines[n].serialNo
+    message: Serial {sn} of {partCode} is entered twice in this document
+
+No new by-bin API — FE Group by Part | Bin is fine (client-side).
+Do not send lineTotal / totalValue / documentTotalValue on request.
+
+================================================================================

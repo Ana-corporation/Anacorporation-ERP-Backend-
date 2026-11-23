@@ -16,13 +16,30 @@ WHAT CHANGED (BE)
      - header.totalValue  AND  header.documentTotalValue
      - Sending totalValue / documentTotalValue / lineTotal in request is ignored
 
-  3) Validation
+  3) Validation (aligned with FE count UX — 2026-11-23)
      - brand max 60
-     - Same item+loc+bin+batch+serial+brand → duplicate blocked
-     - Same item+loc+bin with different brand → allowed
-       (posted balance still merges on Part+Store+Bin)
-     - Same serialNo twice for same item in one document → blocked
+     - Same part + same bin + empty (or different) brand/serial → **ALLOWED**
+       on create/update; posted stock **merges** on Part + Store + Bin
+     - Many different parts in one bin → allowed
+     - Same serialNo twice for same item in one document → **blocked**
+       code: INVENTORY_DUPLICATE_LINE  field: lines[n].serialNo
      - zeroPriceConfirmed still required when unitPrice blank/0 on post
+
+
+BE REPLY TO FE (confirm)
+--------------------------------------------------------------------------------
+  Q: same part + same bin + empty brand/serial on multiple lines → allowed?
+  A: **ALLOWED** on PUT/POST draft save. Quantities merge into one balance
+     (Part + Store + Bin) when the document is posted.
+
+  Still rejected:
+    Same serial twice for the same part in one document
+      → INVENTORY_DUPLICATE_LINE
+      → message like: "Serial {sn} of {part} is entered twice in this document"
+      → field: lines[n].serialNo
+
+  No new by-bin API required — FE Group by Part | Bin is client-side.
+  Do not send lineTotal / totalValue / documentTotalValue on request.
 
 
 FE WORK

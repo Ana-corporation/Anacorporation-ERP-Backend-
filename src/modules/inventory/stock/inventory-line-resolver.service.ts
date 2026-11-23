@@ -325,26 +325,9 @@ export class InventoryLineResolverService {
         seen.add(key);
       }
       if (documentType === InventoryDocumentType.OPENING_STOCK) {
-        // Brand is reference-only: same item+loc+bin with a different brand is allowed
-        // (posted balance still merges on Part+Store+Bin). Batch/serial differentiate lines.
-        const key = [
-          stockKey(resolved),
-          (resolved.batchNo ?? '').toLowerCase(),
-          (resolved.serialNo ?? '').toLowerCase(),
-          (resolved.brand ?? '').toLowerCase(),
-        ].join(':');
-        if (seen.has(key)) {
-          fail(
-            INVENTORY_LINE_ERROR_CODES.DUPLICATE_LINE,
-            'itemId',
-            warehouse.vendor
-              ? `${item.itemCode} is entered twice for vendor ${warehouse.vendor.name}`
-              : `${item.itemCode} is entered twice for the same location, bin, batch, serial and brand`,
-          );
-        }
-        seen.add(key);
-
-        // Same serial twice for the same item in one document is blocked (any bin).
+        // Many lines of the same part in one bin are allowed (blank or different brand /
+        // batch). Posted stock still merges on Part + Store + Bin.
+        // Only hard block: same serialNo twice for the same item in this document.
         if (resolved.serialNo) {
           const serialKey = `${resolved.itemId.toString()}:${resolved.serialNo.toLowerCase()}`;
           if (seen.has(`serial:${serialKey}`)) {

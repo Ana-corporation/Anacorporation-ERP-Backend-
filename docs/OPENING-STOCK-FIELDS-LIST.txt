@@ -64,9 +64,11 @@ ATTACHMENTS
 LIMITS / RULES
 --------------------------------------------------------------------------------
   Max lines per document:   3000
-  One line = one bin + one qty (+ optional one serial / batch)
+  One line = one bin + one qty (+ optional one serial / batch / brand)
   Do NOT put comma multi-bin or multi-serial on one line
-  Stock posts by: Part + Store + Bin (serial/batch are document reference only)
+  Stock posts by: Part + Store + Bin (serial/batch/brand are document reference only)
+  Many lines same part + same bin (empty brand/serial) → allowed; merge on post
+  Same serial twice for same part in one document → blocked (INVENTORY_DUPLICATE_LINE)
   Serial optional for first count / go-live
 
 
