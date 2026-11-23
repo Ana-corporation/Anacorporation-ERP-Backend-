@@ -17,6 +17,7 @@ export type ImportRowData = Partial<
     | 'unitPrice'
     | 'batchNo'
     | 'serialNo'
+    | 'brand'
     | 'revision'
     | 'remarks'
     | 'machineModel'
@@ -111,6 +112,7 @@ const MAX_LENGTH: Partial<Record<keyof ImportRowData, number>> = {
   vendorCode: 40,
   batchNo: 60,
   serialNo: 80,
+  brand: 60,
   revision: 40,
   remarks: 255,
   machineModel: 120,
@@ -345,7 +347,7 @@ function markDuplicates(rows: ImportRowInput[], results: EvaluatedRow[]) {
     const d = rows[i].data;
     if (!text(d.partNumber)) return;
     const place = r.warehouseId ?? (r.vendorId ? `v${r.subcontractStoreId}:${r.vendorId}` : lower(d.locationCode));
-    const key = `${lower(d.partNumber)}|${place}|${r.storageBinId ?? lower(d.binCode)}|${lower(d.vendorCode)}|${lower(d.batchNo)}|${lower(d.serialNo)}`;
+    const key = `${lower(d.partNumber)}|${place}|${r.storageBinId ?? lower(d.binCode)}|${lower(d.vendorCode)}|${lower(d.batchNo)}|${lower(d.serialNo)}|${lower(d.brand)}`;
     const first = firstSeen.get(key);
     if (first === undefined) {
       firstSeen.set(key, r.rowNo);

@@ -1,0 +1,117 @@
+================================================================================
+FE HANDOFF — Opening Stock Phase 1: Brand + totals
+Date:       2026-11-23
+BE status:  Shipped (additive). Stock key unchanged: Part + Store + Bin.
+================================================================================
+
+WHAT CHANGED (BE)
+--------------------------------------------------------------------------------
+  1) Line field `brand` (optional, max 60)
+     - Save/update/GET on Opening Stock lines
+     - Reference only (not stock key)
+     - partIndex[].brands[] + brandCount for index/expand
+
+  2) Read-only totals (already existed; aliases added)
+     - line.lineTotal  AND  line.totalValue   (= qty × unitPrice, 2 dp)
+     - header.totalValue  AND  header.documentTotalValue
+     - Sending totalValue / documentTotalValue / lineTotal in request is ignored
+
+  3) Validation
+     - brand max 60
+     - Same item+loc+bin+batch+serial+brand → duplicate blocked
+     - Same item+loc+bin with different brand → allowed
+       (posted balance still merges on Part+Store+Bin)
+     - Same serialNo twice for same item in one document → blocked
+     - zeroPriceConfirmed still required when unitPrice blank/0 on post
+
+
+FE WORK
+--------------------------------------------------------------------------------
+  [ ] Brand column/input on line grid (optional)
+  [ ] Expand view: show Brand + Serial No by bin
+  [ ] **REQUIRED: show editable Unit price on the line** (field: unitPrice)
+        BE already accepts/returns it — FE UI is missing it today.
+        Without Unit price, Total value stays "—" / 0.
+  [ ] Show line Total Value + document total (read-only = qty × unitPrice)
+  [ ] UoM read-only from Item Master (unchanged)
+  [ ] Index search/filter can match brand (client-side on partIndex.brands
+      or lines[].brand; no new BE filter required for Phase 1)
+  [ ] Keep counting-draft behaviour unchanged
+  [ ] Do not send totalValue / documentTotalValue on PUT
+  [ ] On post: if unitPrice blank/0, send zeroPriceConfirmed: true
+        (or block post until user confirms zero valuation)
+
+
+UNIT PRICE → TOTAL VALUE (FE must wire)
+--------------------------------------------------------------------------------
+  Editable:   quantity, unitPrice
+  Read-only:  lineTotal / totalValue, documentTotalValue
+
+  Request line:
+    { "quantity": "10", "unitPrice": "12.50", ... }
+
+  Response line:
+    unitPrice: "12.50"
+    lineTotal: "125.00"
+    totalValue: "125.00"
+
+  If Unit price column is hidden in Opening Stock UI → add it (expand row
+  and/or line grid). No new BE work required for this.
+
+
+TYPING LAG / PAGE JUMP (Serial No + Brand) — FIX ON FE
+--------------------------------------------------------------------------------
+  Symptom: type in Serial / Brand → long delay before char shows; page “moves”.
+  Cause: Electrical draft has ~374 lines. If each keystroke:
+    - updates global document state → re-renders whole grid / partIndex, OR
+    - autosaves PUT with full lines[] → BE re-resolves all lines → lag
+  then typing feels broken. BE is fine; PUT is whole-document replace.
+
+  Required FE pattern:
+  1) Local input state while focused (value updates instantly in the field)
+  2) Do NOT PUT on every keypress
+  3) Commit on blur OR debounce autosave ≥ 500–800 ms after last key
+  4) After save, merge response carefully — do not wipe the focused input
+     mid-type (ignore stale response if user is still typing that cell)
+  5) Fixed column widths for Serial / Brand so layout does not jump
+  6) Prefer editing only the expanded part’s lines in the UI tree
+     (still send full lines[] on save, but don’t remount the whole page)
+
+  Optional later BE: PATCH single-line endpoint (not in Phase 1).
+
+
+EXAMPLE LINE (request)
+--------------------------------------------------------------------------------
+  {
+    "itemId": "…",
+    "inventoryLocationId": "…",
+    "storageBinId": "…",
+    "quantity": "10",
+    "unitPrice": "12.5",
+    "brand": "Siemens",
+    "serialNo": "SN-001"   // optional
+  }
+
+EXAMPLE RESPONSE EXTRAS
+--------------------------------------------------------------------------------
+  lines[i].brand = "Siemens"
+  lines[i].lineTotal = "125.00"
+  lines[i].totalValue = "125.00"
+  documentTotalValue = "125.00"
+  totalValue = "125.00"
+  partIndex[0].brands = ["Siemens", "ABB"]
+  partIndex[0].brandCount = 2
+
+
+IMPORT
+--------------------------------------------------------------------------------
+  Optional Excel column "Brand" / "Make" maps to brand.
+
+
+NOT IN THIS PHASE
+--------------------------------------------------------------------------------
+  Brand/serial as stock balance key
+  QC hold / expiry / currency / WIP opening
+
+
+================================================================================

@@ -1,0 +1,42 @@
+================================================================================
+OPENING STOCK PHASE 1 — BACKEND PLAN (brand + totals)
+Date: 2026-11-23
+Rule: Additive only. Stock key stays Part + Store + Bin.
+================================================================================
+
+PROCESS (BE)
+--------------------------------------------------------------------------------
+  1. DB migration        nullable brand on inventory_document_lines
+                         (+ opening_stock_import_rows for Excel path)
+  2. Prisma models       brand String? @db.VarChar(60)
+  3. DTO                 Opening Stock line: brand optional max 60
+                         Ignore request totalValue / lineTotal / documentTotalValue
+  4. Resolver            trim brand; uniqueness key includes brand so
+                         same item+loc+bin + different brand is allowed
+                         Block same serialNo twice for same itemId in one doc
+  5. Persist / map       save brand on OS lines only
+                         lineTotal = qty * unitPrice, rounded 2 dp (blank/0 => 0)
+                         header totalValue = sum(lineTotal)
+                         Response aliases (additive):
+                           line.totalValue      = line.lineTotal
+                           documentTotalValue   = header.totalValue
+  6. partIndex           add brands[] (+ brandCount) per part
+  7. Import              Brand column optional; maps to brand
+  8. Tests               DTO + DB: brand save/get, length, different brand OK,
+                         duplicate serial blocked, totals, post key unchanged
+  9. FE handoff          short txt for Brand column + read-only totals
+
+
+OUT OF SCOPE (this phase)
+--------------------------------------------------------------------------------
+  Brand/serial in stock balance or ledger
+  MI / SA / ST field changes
+  Currency / QC status / expiry / WIP opening
+
+
+OPEN DECISION (Phase 2)
+--------------------------------------------------------------------------------
+  If users later issue/report by brand or serial → promote into stock key.
+
+
+================================================================================

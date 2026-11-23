@@ -66,6 +66,7 @@ const COLUMN_OF: Record<string, string> = {
   unitPrice: 'Unit Price',
   batchNo: 'Batch / Heat / Lot No.',
   serialNo: 'Serial No.',
+  brand: 'Brand',
   revision: 'Revision',
   remarks: 'Remarks',
   machineModel: 'Machine Model',
@@ -470,6 +471,7 @@ export class OpeningStockImportService {
             zeroPriceConfirmed: dto.confirmZeroPrice === true,
             batchNo: row.batchNo ?? undefined,
             serialNo: row.serialNo ?? undefined,
+            brand: row.brand ?? undefined,
             remarks: row.remarks ?? undefined,
           }));
           const refs = rows.map((row) => ({
@@ -589,6 +591,7 @@ export class OpeningStockImportService {
       subcontract_store_id: r.subcontractStoreId,
       batch_no: t(data.batchNo, 60),
       serial_no: t(data.serialNo, 80),
+      brand: t(data.brand, 60),
       remarks: t(data.remarks, 255),
       similar_items: similar,
       store_text: t(data.store, 100),
@@ -632,7 +635,7 @@ export class OpeningStockImportService {
         match_status = v.match_status::opening_stock_import_match,
         matched_item_id = v.matched_item_id, candidate_item_ids = NULL,
         error_messages = COALESCE(v.error_messages, '[]'::jsonb),
-        bin_text = v.bin_text, batch_no = v.batch_no, serial_no = v.serial_no, remarks = v.remarks,
+        bin_text = v.bin_text, batch_no = v.batch_no, serial_no = v.serial_no, brand = v.brand, remarks = v.remarks,
         similar_items = v.similar_items,
         vendor_text = v.vendor_text, vendor_id = v.vendor_id, subcontract_store_id = v.subcontract_store_id,
         new_item_confirmed = false,
@@ -644,7 +647,7 @@ export class OpeningStockImportService {
         store_category_id bigint, item_group_id bigint, uom_id bigint, warehouse_id bigint, storage_bin_id bigint,
         quantity numeric, unit_price numeric, match_status text, matched_item_id bigint,
         error_messages jsonb,
-        bin_text text, batch_no text, serial_no text, remarks text, similar_items jsonb,
+        bin_text text, batch_no text, serial_no text, brand text, remarks text, similar_items jsonb,
         vendor_text text, vendor_id bigint, subcontract_store_id bigint
       )
       WHERE r.row_id = v.row_id`;

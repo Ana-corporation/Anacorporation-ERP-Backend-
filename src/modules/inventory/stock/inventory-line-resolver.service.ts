@@ -39,6 +39,7 @@ export interface ResolvedInventoryLine extends StockLocationKey {
   remarks: string | null;
   batchNo: string | null;
   serialNo: string | null;
+  brand: string | null;
   zeroPriceConfirmed: boolean;
   /** Stock Transfer destination bin (same warehouse). */
   toStorageBinId: bigint | null;
@@ -308,6 +309,7 @@ export class InventoryLineResolverService {
         remarks: line.remarks ?? null,
         batchNo: line.batchNo?.trim() || null,
         serialNo: line.serialNo?.trim() || null,
+        brand: line.brand?.trim() || null,
         zeroPriceConfirmed: line.zeroPriceConfirmed === true,
       };
 
@@ -323,18 +325,37 @@ export class InventoryLineResolverService {
         seen.add(key);
       }
       if (documentType === InventoryDocumentType.OPENING_STOCK) {
-        // Different batches / serials of one item may share a bin; anything else is a repeat.
-        const key = `${stockKey(resolved)}:${(resolved.batchNo ?? '').toLowerCase()}:${(resolved.serialNo ?? '').toLowerCase()}`;
+        // Brand is reference-only: same item+loc+bin with a different brand is allowed
+        // (posted balance still merges on Part+Store+Bin). Batch/serial differentiate lines.
+        const key = [
+          stockKey(resolved),
+          (resolved.batchNo ?? '').toLowerCase(),
+          (resolved.serialNo ?? '').toLowerCase(),
+          (resolved.brand ?? '').toLowerCase(),
+        ].join(':');
         if (seen.has(key)) {
           fail(
             INVENTORY_LINE_ERROR_CODES.DUPLICATE_LINE,
             'itemId',
             warehouse.vendor
               ? `${item.itemCode} is entered twice for vendor ${warehouse.vendor.name}`
-              : `${item.itemCode} is entered twice for the same location, bin, batch and serial`,
+              : `${item.itemCode} is entered twice for the same location, bin, batch, serial and brand`,
           );
         }
         seen.add(key);
+
+        // Same serial twice for the same item in one document is blocked (any bin).
+        if (resolved.serialNo) {
+          const serialKey = `${resolved.itemId.toString()}:${resolved.serialNo.toLowerCase()}`;
+          if (seen.has(`serial:${serialKey}`)) {
+            fail(
+              INVENTORY_LINE_ERROR_CODES.DUPLICATE_LINE,
+              'serialNo',
+              `Serial ${resolved.serialNo} of ${item.itemCode} is entered twice in this document`,
+            );
+          }
+          seen.add(`serial:${serialKey}`);
+        }
       }
       if (documentType === InventoryDocumentType.STOCK_TRANSFER) {
         const key = `${stockKey(resolved)}>${resolved.toStorageBinId}`;

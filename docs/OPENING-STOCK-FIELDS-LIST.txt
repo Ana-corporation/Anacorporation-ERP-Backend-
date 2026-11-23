@@ -1,0 +1,80 @@
+================================================================================
+OPENING STOCK — FIELD LIST (current BE)
+Date:       2026-11-23
+Company:    Ana / all companies (same API shape)
+Endpoints:  POST/PUT/GET …/inventory/opening-stock[/:id]
+            POST …/inventory/opening-stock/:id/post
+================================================================================
+
+HEADER (create / update body)
+--------------------------------------------------------------------------------
+  documentDate              Required    YYYY-MM-DD
+  remarks                   Optional    max 4000
+  defaultWarehouseId        Optional    default store / location for new lines
+  defaultStoreCategoryId    Optional    Sub Contractor store (instead of warehouse)
+
+
+LINE (each entry in lines[])
+--------------------------------------------------------------------------------
+  itemId                    Required    Item master id
+  quantity                  Required    Must be > 0 (up to 6 decimals)
+
+  Location (one of these required):
+    inventoryLocationId     Preferred   Store / warehouse id
+    warehouseId             Alias       Same as inventoryLocationId
+    storeCategoryId         Alt         Sub Contractor store type
+
+  storageBinId              Conditional Required when store has bin management on
+  siteId / branchId         Optional    Site
+  vendorId                  Conditional Required with Sub Contractor store
+
+  uom                       Optional    Must match item inventory UoM if sent
+  unitPrice                 Optional    Decimal string
+  zeroPriceConfirmed        Optional    true if posting with blank/0 unit price
+  batchNo                   Optional    Reference only (max 60) — not stock key
+  serialNo                  Optional    Reference only (max 80) — not stock key
+  brand                     Optional    Reference only (max 60) — not stock key
+  remarks                   Optional    Line remarks (max 255)
+
+
+RESPONSE-ONLY (not sent on save)
+--------------------------------------------------------------------------------
+  documentNumber            System      e.g. OS-000001
+  status                    System      DRAFT | POSTED
+  totalValue                System      Header sum of line totals (2 dp)
+  documentTotalValue        System      Alias of totalValue (Opening Stock)
+  lines[].lineTotal         System      qty × unitPrice (2 dp)
+  lines[].totalValue        System      Alias of lineTotal
+  partIndex[]               System      Per-part summary for index/expand UI
+                                        (itemId, partNumber, partName, uom,
+                                         location, totalQuantity, lineCount,
+                                         lineIds, bins[], serialNumbers[],
+                                         brands[], brandCount, …)
+  attachments               System      Via attachment APIs
+  mapped line display fields (partNumber, locationName, binCode, …)
+
+
+ATTACHMENTS
+--------------------------------------------------------------------------------
+  POST   …/opening-stock/:id/attachments
+  GET    …/opening-stock/:id/attachments/:fileAssetId/url
+  DELETE …/opening-stock/:id/attachments/:fileAssetId   (draft only)
+
+
+LIMITS / RULES
+--------------------------------------------------------------------------------
+  Max lines per document:   3000
+  One line = one bin + one qty (+ optional one serial / batch)
+  Do NOT put comma multi-bin or multi-serial on one line
+  Stock posts by: Part + Store + Bin (serial/batch are document reference only)
+  Serial optional for first count / go-live
+
+
+NOT ON OPENING STOCK (other documents)
+--------------------------------------------------------------------------------
+  requestedBy, issuedBy, departmentId, purpose  → Material Issue
+  reason, physicalQuantity                      → Stock Adjustment
+  toStorageBinId                                → Stock Transfer
+
+
+================================================================================

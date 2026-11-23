@@ -87,6 +87,7 @@ export const OPENING_IMPORT_ALIASES: Record<string, string[]> = {
   unitPrice: ['unit price', 'price', 'rate'],
   batchNo: ['batch / heat / lot no.', 'batch / heat / lot no', 'batch no', 'batch', 'heat no', 'lot no', 'heat / lot no'],
   serialNo: ['serial no.', 'serial no', 'serial number', 'serial'],
+  brand: ['brand', 'make', 'brand / make', 'brand name'],
   revision: ['revision', 'revision status', 'rev'],
   remarks: ['remarks', 'line remarks'],
   machineModel: ['machine model'],

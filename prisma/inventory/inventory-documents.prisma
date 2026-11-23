@@ -84,6 +84,8 @@ model InventoryDocumentLine {
   /// Opening Stock: Batch / Heat / Lot No. and serial (reference; stock is not kept per batch yet)
   batchNo            String?  @map("batch_no") @db.VarChar(60)
   serialNo           String?  @map("serial_no") @db.VarChar(80)
+  /// Opening Stock: brand / make (reference only; not part of stock key in Phase 1)
+  brand              String?  @db.VarChar(60)
   /// quantity x unit price, computed by the backend
   lineTotal          Decimal? @map("line_total") @db.Decimal(20, 6)
   /// Opening Stock: unit price 0 accepted on purpose

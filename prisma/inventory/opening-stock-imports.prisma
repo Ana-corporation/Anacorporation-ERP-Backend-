@@ -68,6 +68,7 @@ model OpeningStockImportRow {
   subcontractStoreId BigInt?               @map("subcontract_store_id")
   batchNo          String?                 @map("batch_no") @db.VarChar(60)
   serialNo         String?                 @map("serial_no") @db.VarChar(80)
+  brand            String?                 @db.VarChar(60)
   remarks          String?                 @db.VarChar(255)
   /// NEW rows: user confirmed the item may be created (legacy; import no longer creates items)
   newItemConfirmed Boolean                 @default(false) @map("new_item_confirmed")

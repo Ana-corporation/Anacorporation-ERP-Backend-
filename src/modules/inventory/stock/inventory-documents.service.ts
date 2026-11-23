@@ -240,6 +240,7 @@ export class InventoryDocumentsService {
             physicalQuantity: line.physicalQuantity?.toString(),
             batchNo: line.batchNo ?? undefined,
             serialNo: line.serialNo ?? undefined,
+            brand: line.brand ?? undefined,
             zeroPriceConfirmed: line.zeroPriceConfirmed,
           })),
         );
@@ -438,7 +439,7 @@ export class InventoryDocumentsService {
   /** Line totals + header totals recomputed from the re-resolved lines at posting time. */
   private async refreshOpeningTotals(tx: Prisma.TransactionClient, documentId: bigint, lines: ResolvedInventoryLine[]) {
     const rows = await tx.inventoryDocumentLine.findMany({ where: { documentId }, orderBy: { lineNo: 'asc' }, select: { lineId: true } });
-    const totals = lines.map((l) => (l.quantity ?? ZERO).mul(l.unitPrice ?? ZERO).toDecimalPlaces(6));
+    const totals = lines.map((l) => (l.quantity ?? ZERO).mul(l.unitPrice ?? ZERO).toDecimalPlaces(2));
     for (let i = 0; i < rows.length; i += LINE_UPDATE_CHUNK) {
       const part = rows.slice(i, i + LINE_UPDATE_CHUNK);
       await tx.$executeRaw`
@@ -653,7 +654,11 @@ export class InventoryDocumentsService {
         remarks: line.remarks,
         batchNo: opening ? line.batchNo : null,
         serialNo: opening ? line.serialNo : null,
-        lineTotal: opening ? (line.quantity ?? ZERO).mul(line.unitPrice ?? ZERO).toDecimalPlaces(6) : null,
+        brand: opening ? line.brand : null,
+        // Spec: totalValue / lineTotal rounded to 2 dp; blank/0 unitPrice => 0
+        lineTotal: opening
+          ? (line.quantity ?? ZERO).mul(line.unitPrice ?? ZERO).toDecimalPlaces(2)
+          : null,
         zeroPriceConfirmed: opening ? line.zeroPriceConfirmed : false,
       };
     });
@@ -717,6 +722,10 @@ export class InventoryDocumentsService {
       totalLines: doc.totalLines,
       totalQuantity: doc.totalQuantity.toFixed(6),
       totalValue: doc.totalValue.toFixed(2),
+      // Additive alias for Opening Stock FE (same as totalValue; request body ignores this)
+      ...(doc.documentType === InventoryDocumentType.OPENING_STOCK
+        ? { documentTotalValue: doc.totalValue.toFixed(2) }
+        : {}),
       postedAt: doc.postedAt,
       postedBy: doc.postedBy,
       createdBy: doc.createdBy,
@@ -774,9 +783,12 @@ export class InventoryDocumentsService {
               quantity: line.quantity,
               unitPrice: line.unitPrice,
               lineTotal: line.lineTotal?.toFixed(2) ?? null,
+              /** Additive alias of lineTotal (read-only; ignored on request) */
+              totalValue: line.lineTotal?.toFixed(2) ?? null,
               zeroPriceConfirmed: line.zeroPriceConfirmed,
               batchNo: line.batchNo,
               serialNo: line.serialNo,
+              brand: line.brand,
               revision: line.revision,
               manageBy: line.item.manageBy,
             }
@@ -831,6 +843,7 @@ export class InventoryDocumentsService {
       binCode: string | null;
       quantity?: Decimal | null;
       serialNo?: string | null;
+      brand?: string | null;
       uom: string | null;
     }>,
   ) {
@@ -846,6 +859,7 @@ export class InventoryDocumentsService {
       lineIds: string[];
       bins: Array<{ storageBinId: string | null; binCode: string | null }>;
       serialNumbers: string[];
+      brands: string[];
     };
     const map = new Map<string, Acc>();
     for (const line of lines) {
@@ -866,6 +880,7 @@ export class InventoryDocumentsService {
           lineIds: [],
           bins: [],
           serialNumbers: [],
+          brands: [],
         };
         map.set(key, row);
       }
@@ -880,6 +895,8 @@ export class InventoryDocumentsService {
       }
       const sn = line.serialNo?.trim();
       if (sn && !row.serialNumbers.includes(sn)) row.serialNumbers.push(sn);
+      const brand = line.brand?.trim();
+      if (brand && !row.brands.includes(brand)) row.brands.push(brand);
     }
     return [...map.values()].map((row) => ({
       itemId: row.itemId,
@@ -895,6 +912,8 @@ export class InventoryDocumentsService {
       bins: row.bins,
       serialNumbers: row.serialNumbers,
       serialCount: row.serialNumbers.length,
+      brands: row.brands,
+      brandCount: row.brands.length,
     }));
   }
 

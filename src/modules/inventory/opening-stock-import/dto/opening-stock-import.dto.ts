@@ -31,6 +31,7 @@ export const OpeningImportRowUpdateSchema = z.object({
       unitPrice: cell,
       batchNo: cell,
       serialNo: cell,
+      brand: cell,
       revision: cell,
       remarks: cell,
       machineModel: cell,

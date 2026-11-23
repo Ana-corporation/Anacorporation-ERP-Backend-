@@ -17,6 +17,25 @@ describe('inventory document DTOs', () => {
     expect(errorPaths(parse('abc'))).toEqual(['lines.0.quantity']);
   });
 
+  it('opening stock: brand is optional, max 60; request totals are ignored', () => {
+    const ok = OpeningStockSchema.safeParse({
+      documentDate: '2026-10-01',
+      lines: [line({ quantity: '1', brand: ' Siemens ', totalValue: '999', documentTotalValue: '999' })],
+    });
+    expect(ok.success).toBe(true);
+    expect(ok.data?.lines[0].brand).toBe('Siemens');
+    expect((ok.data?.lines[0] as { totalValue?: string }).totalValue).toBeUndefined();
+
+    const long = 'x'.repeat(61);
+    expect(
+      errorPaths(OpeningStockSchema.safeParse({ documentDate: '2026-10-01', lines: [line({ quantity: '1', brand: long })] })),
+    ).toEqual(['lines.0.brand']);
+
+    expect(
+      OpeningStockSchema.safeParse({ documentDate: '2026-10-01', lines: [line({ quantity: '1' })] }).success,
+    ).toBe(true);
+  });
+
   it('requires a location (inventoryLocationId or warehouseId), a date and at least one line', () => {
     expect(
       errorPaths(OpeningStockSchema.safeParse({ documentDate: '2026-10-01', lines: [{ itemId: '1', quantity: '1' }] })),

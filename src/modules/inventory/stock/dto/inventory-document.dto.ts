@@ -40,6 +40,8 @@ const lineLocationShape = {
   /** Batch / Heat / Lot No. and serial: reference text (stock is not kept per batch / serial yet) */
   batchNo: optionalText(60),
   serialNo: optionalText(80),
+  /** Opening Stock brand / make: reference only (not part of stock key in Phase 1) */
+  brand: optionalText(60),
 };
 
 const withLocation = <T extends z.ZodRawShape>(shape: T) =>

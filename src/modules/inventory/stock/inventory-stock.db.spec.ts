@@ -460,6 +460,48 @@ run('Inventory stock (database)', () => {
       await docs.remove(OPENING_STOCK, b.companyId, ok.documentId, actor);
     });
 
+    it('opening stock brand: saves, different brands allowed on same bin, duplicate serial blocked', async () => {
+      const base = { itemId: b.itemId, inventoryLocationId: b.binnedId, storageBinId: b.binId, quantity: '2', unitPrice: '1.255' };
+      const draft: Doc = await docs.create(
+        OPENING_STOCK,
+        b.companyId,
+        {
+          documentDate: '2026-10-02',
+          lines: [
+            { ...base, brand: 'BrandA', serialNo: 'S-1' },
+            { ...base, brand: 'BrandB', serialNo: 'S-2' },
+          ],
+        } as never,
+        actor,
+      );
+      expect(draft.documentTotalValue).toBe('5.02');
+      expect(draft.totalValue).toBe('5.02');
+      expect(draft.lines).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ brand: 'BrandA', serialNo: 'S-1', lineTotal: '2.51', totalValue: '2.51' }),
+          expect.objectContaining({ brand: 'BrandB', serialNo: 'S-2' }),
+        ]),
+      );
+      expect(draft.partIndex?.[0]?.brands).toEqual(expect.arrayContaining(['BrandA', 'BrandB']));
+
+      await expectCode(
+        docs.create(
+          OPENING_STOCK,
+          b.companyId,
+          {
+            documentDate: '2026-10-02',
+            lines: [
+              { ...base, serialNo: 'DUP-1', brand: 'A' },
+              { ...base, serialNo: 'DUP-1', brand: 'B' },
+            ],
+          } as never,
+          actor,
+        ),
+        'INVENTORY_DUPLICATE_LINE',
+      );
+      await docs.remove(OPENING_STOCK, b.companyId, draft.documentId, actor);
+    });
+
     it('second opening stock for the same item + location + bin is blocked', async () => {
       const again: Doc = await docs.create(
         OPENING_STOCK,
