@@ -1,0 +1,68 @@
+// purchase | requirements created from a BOM shortage or a stock replenishment
+// machine_id -> machines.machine_id, bom_id -> boms.bom_id, uom_id -> uoms.uom_id
+// Those foreign keys are applied in SQL when the master tables exist.
+// Prisma relations wait until the manufacturing models are in this schema.
+
+model PurchaseRequirementRun {
+  purchaseRequirementRunId BigInt   @id @default(autoincrement()) @map("purchase_requirement_run_id")
+  companyId                BigInt   @map("company_id")
+  machineId                BigInt   @map("machine_id")
+  bomId                    BigInt   @map("bom_id")
+  bomVersion               Int      @map("bom_version")
+  bomNumber                String   @map("bom_number") @db.VarChar(40)
+  machineQty               Decimal  @map("machine_qty") @db.Decimal(18, 6)
+  warehouseId              BigInt   @map("warehouse_id")
+  requiredDate             DateTime @map("required_date") @db.Date
+  /// Lines used for this run. A later BOM revision must not change it.
+  linesSnapshot            Json     @map("lines_snapshot")
+  idempotencyKey           String?  @map("idempotency_key") @db.VarChar(80)
+  createdBy                BigInt?  @map("created_by")
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  warehouse    Warehouse             @relation(fields: [warehouseId], references: [warehouseId])
+  requirements PurchaseRequirement[]
+
+  @@unique([companyId, idempotencyKey])
+  @@index([companyId, machineId])
+  @@index([companyId, bomId])
+  @@map("purchase_requirement_runs")
+}
+
+model PurchaseRequirement {
+  purchaseRequirementId BigInt                        @id @default(autoincrement()) @map("purchase_requirement_id")
+  companyId             BigInt                        @map("company_id")
+  prNo                  String                        @map("pr_no") @db.VarChar(30)
+  sourceType            PurchaseRequirementSourceType @map("source_type")
+  runId                 BigInt?                       @map("run_id")
+  machineId             BigInt?                       @map("machine_id")
+  bomId                 BigInt?                       @map("bom_id")
+  bomVersion            Int?                          @map("bom_version")
+  bomNumber             String?                       @map("bom_number") @db.VarChar(40)
+  itemId                BigInt                        @map("item_id")
+  warehouseId           BigInt                        @map("warehouse_id")
+  uomId                 BigInt?                       @map("uom_id")
+  requiredQty           Decimal                       @map("required_qty") @db.Decimal(18, 6)
+  convertedQty          Decimal                       @default(0) @map("converted_qty") @db.Decimal(18, 6)
+  requiredDate          DateTime                      @map("required_date") @db.Date
+  suggestedVendorId     BigInt?                       @map("suggested_vendor_id")
+  reason                String?                       @db.Text
+  status                PurchaseRequirementStatus     @default(DRAFT)
+  createdBy             BigInt?                       @map("created_by")
+  createdAt             DateTime                      @default(now()) @map("created_at")
+  updatedBy             BigInt?                       @map("updated_by")
+  updatedAt             DateTime?                     @map("updated_at")
+  rowVersion            Int                           @default(1) @map("row_version")
+
+  run              PurchaseRequirementRun?  @relation(fields: [runId], references: [purchaseRequirementRunId])
+  item             Item                      @relation(fields: [itemId], references: [itemId])
+  warehouse        Warehouse                 @relation(fields: [warehouseId], references: [warehouseId])
+  suggestedVendor  Vendor?                   @relation("RequirementSuggestedVendor", fields: [suggestedVendorId], references: [vendorId])
+  sources          PurchaseOrderLineSource[]
+
+  @@unique([companyId, prNo])
+  @@index([companyId, status])
+  @@index([companyId, itemId])
+  @@index([companyId, warehouseId])
+  @@index([companyId, suggestedVendorId])
+  @@map("purchase_requirements")
+}

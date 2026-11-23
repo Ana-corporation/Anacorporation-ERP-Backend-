@@ -37,6 +37,10 @@ model Warehouse {
   inventoryDocumentLines     InventoryDocumentLine[]
   stockBalances              StockBalance[]
   stockLedgerEntries         StockLedgerEntry[]
+  purchaseRequirementRuns    PurchaseRequirementRun[]
+  purchaseRequirements       PurchaseRequirement[]
+  purchaseOrders             PurchaseOrder[]
+  purchaseOrderLines         PurchaseOrderLine[]
   employees                  Employee[]
 
   @@unique([companyId, warehouseCode])

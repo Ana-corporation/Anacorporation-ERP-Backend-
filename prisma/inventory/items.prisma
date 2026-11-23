@@ -93,6 +93,8 @@ model Item {
   inventoryDocumentLines InventoryDocumentLine[]
   stockBalances          StockBalance[]
   stockLedgerEntries     StockLedgerEntry[]
+  purchaseRequirements   PurchaseRequirement[]
+  purchaseOrderLines     PurchaseOrderLine[]
   bomsAsParent           Bom[]                   @relation("BomParentItem")
   bomLinesAsComponent    BomLine[]               @relation("BomComponentItem")
   machine                Machine?

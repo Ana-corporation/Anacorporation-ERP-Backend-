@@ -1,0 +1,41 @@
+// purchase | company settings and the approval amount matrix
+
+model PurchaseSettings {
+  companyId                  BigInt   @id @map("company_id")
+  selfApprovalAllowed        Boolean  @default(false) @map("self_approval_allowed")
+  overReceiptTolerancePct    Decimal  @default(0) @map("over_receipt_tolerance_pct") @db.Decimal(9, 4)
+  emailMaxAttempts           Int      @default(3) @map("email_max_attempts")
+  emailRetryIntervalSeconds  Int      @default(300) @map("email_retry_interval_seconds")
+  emailSubjectTemplate       String?  @map("email_subject_template") @db.VarChar(200)
+  emailBodyTemplate          String?  @map("email_body_template") @db.Text
+  createdBy                  BigInt?  @map("created_by")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedBy                  BigInt?  @map("updated_by")
+  updatedAt                  DateTime? @map("updated_at")
+  rowVersion                 Int      @default(1) @map("row_version")
+
+  @@map("purchase_settings")
+}
+
+model PurchaseApprovalRule {
+  purchaseApprovalRuleId BigInt            @id @default(autoincrement()) @map("purchase_approval_rule_id")
+  companyId              BigInt            @map("company_id")
+  poType                 PurchaseOrderType @map("po_type")
+  amountFrom             Decimal           @map("amount_from") @db.Decimal(18, 6)
+  amountTo               Decimal?          @map("amount_to") @db.Decimal(18, 6)
+  currencyId             BigInt            @map("currency_id")
+  approverRoleId         BigInt            @map("approver_role_id")
+  isActive               Boolean           @default(true) @map("is_active")
+  createdBy              BigInt?           @map("created_by")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedBy              BigInt?           @map("updated_by")
+  updatedAt              DateTime?         @map("updated_at")
+  rowVersion             Int               @default(1) @map("row_version")
+
+  currency     Currency @relation(fields: [currencyId], references: [currencyId])
+  approverRole Role     @relation(fields: [approverRoleId], references: [roleId])
+
+  @@index([companyId, poType, isActive])
+  @@index([companyId, currencyId])
+  @@map("purchase_approval_rules")
+}

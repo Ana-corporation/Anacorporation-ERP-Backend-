@@ -54,6 +54,8 @@ model User {
   delegatedTo            UserDelegation[]       @relation("Delegatee")
   consents               UserConsent[]
   audits                 UserAudit[]
+  purchaseOrdersBought       PurchaseOrder[] @relation("PurchaseOrderBuyer")
+  purchaseOrdersApproved     PurchaseOrder[] @relation("PurchaseOrderApprover")
 
   @@index([deletedAt])
   @@map("users")
