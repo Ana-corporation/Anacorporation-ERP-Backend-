@@ -248,19 +248,8 @@ export class InventoryLineResolverService {
           );
         }
       }
-      if (
-        documentType === InventoryDocumentType.OPENING_STOCK &&
-        line.quantity &&
-        quantityFractionDigits(line.quantity) > uomDecimalPlaces
-      ) {
-        fail(
-          INVENTORY_LINE_ERROR_CODES.UOM_DECIMAL_PRECISION,
-          'quantity',
-          uomDecimalPlaces === 0
-            ? `${item.itemCode}: ${uom ?? 'UoM'} does not allow decimal quantities`
-            : `${item.itemCode}: ${uom ?? 'UoM'} allows at most ${uomDecimalPlaces} decimal place(s)`,
-        );
-      }
+      // Opening Stock: do not hard-block qty decimals by UoM precision (go-live).
+      // Still return uomDecimalPlaces so FE can guide input; max 6 dp via Decimal column.
 
       const warehouse = warehouseById.get(warehouseIdOf(line)!);
       if (!warehouse) {

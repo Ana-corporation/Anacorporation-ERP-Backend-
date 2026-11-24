@@ -17,8 +17,7 @@ HEADER (create / update body)
 LINE (each entry in lines[])
 --------------------------------------------------------------------------------
   itemId                    Required    Item master id
-  quantity                  Required    Must be > 0; fraction digits ≤ lines[].uomDecimalPlaces
-                                        (NOS usually 0 → whole numbers only)
+  quantity                  Required    Must be > 0 (up to 6 decimals; UoM precision not hard-blocked)
 
   Location (one of these required):
     inventoryLocationId     Preferred   Store / warehouse id
@@ -73,9 +72,8 @@ LIMITS / RULES
   Stock posts by: Part + Store + Bin (serial/batch/brand are document reference only)
   Many lines same part + same bin (empty brand/serial) → allowed; merge on post
   Same serial twice for same part in one document → blocked (INVENTORY_DUPLICATE_LINE)
-  Qty decimals > UoM precision → INVENTORY_UOM_DECIMAL_PRECISION (FE must enforce; see
-    FE-HANDOFF-OS-UOM-DECIMAL-QTY.txt)
   Serial optional for first count / go-live
+  (uomDecimalPlaces is advisory; see FE-HANDOFF-OS-UOM-DECIMAL-QTY.txt)
 
 
 NOT ON OPENING STOCK (other documents)

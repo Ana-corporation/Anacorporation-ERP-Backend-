@@ -208,7 +208,10 @@ run('Inventory stock (database)', () => {
     await docs.remove(OPENING_STOCK, a.companyId, batchOs.documentId, actor);
     await expectCode(create(binLine({ quantity: '1', itemId: a.serviceItemId })), 'INVENTORY_ITEM_NOT_STOCKABLE');
     await expectCode(create(binLine({ quantity: '1', uom: 'KG' })), 'INVENTORY_UOM_MISMATCH');
-    await expectCode(create(binLine({ quantity: '1.5' })), 'INVENTORY_UOM_DECIMAL_PRECISION');
+    // Opening Stock allows decimal qty even when UoM precision is 0 (e.g. NOS); FE may still guide.
+    const decimalOs: Doc = await create(binLine({ quantity: '1.5' }));
+    expect(decimalOs.lines[0].quantity).toMatch(/^1\.5/);
+    await docs.remove(OPENING_STOCK, a.companyId, decimalOs.documentId, actor);
     await expectCode(create(binLine({ quantity: '1', itemId: b.itemId })), 'INVENTORY_ITEM_NOT_FOUND');
     await expectCode(
       create({ itemId: a.itemId, inventoryLocationId: b.plainId, quantity: '1' }),
