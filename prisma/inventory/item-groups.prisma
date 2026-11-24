@@ -46,6 +46,8 @@ model Uom {
   companyId BigInt    @map("company_id")
   code      String    @db.VarChar(20)
   name      String    @db.VarChar(80)
+  /// Max fraction digits allowed on inventory qty (0–6). NOS=0, KG/MTR/LTR=3 typical.
+  decimalPlaces Int   @default(6) @map("decimal_places") @db.SmallInt
   isActive  Boolean   @default(true) @map("is_active")
   createdBy BigInt?   @map("created_by")
   createdAt DateTime  @default(now()) @map("created_at")

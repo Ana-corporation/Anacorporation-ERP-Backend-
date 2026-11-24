@@ -29,7 +29,7 @@ LINE (each entry in lines[])
   vendorId                  Conditional Required with Sub Contractor store
 
   uom                       Optional    Must match item inventory UoM if sent
-  unitPrice                 Optional    Decimal string
+  unitPrice                 Optional    Decimal string (per inventory UoM)
   zeroPriceConfirmed        Optional    true if posting with blank/0 unit price
   batchNo                   Optional    Reference only (max 60) — not stock key
   serialNo                  Optional    Reference only (max 80) — not stock key
@@ -45,6 +45,9 @@ RESPONSE-ONLY (not sent on save)
   documentTotalValue        System      Alias of totalValue (Opening Stock)
   lines[].lineTotal         System      qty × unitPrice (2 dp)
   lines[].totalValue        System      Alias of lineTotal
+  lines[].uom               System      Item Master inventory UoM code
+  lines[].uomDecimalPlaces  System      0–6; FE qty input precision
+  lines[].manageBy          System      none | serial | batch
   partIndex[]               System      Per-part summary for index/expand UI
                                         (itemId, partNumber, partName, uom,
                                          location, totalQuantity, lineCount,

@@ -25,6 +25,7 @@ export const documentDetailInclude = {
           itemCode: true,
           description: true,
           manageBy: true,
+          inventoryUom: { select: { code: true, decimalPlaces: true } },
           itemGroupRef: { select: { itemGroupId: true, name: true, categoryCode: true } },
         },
       },

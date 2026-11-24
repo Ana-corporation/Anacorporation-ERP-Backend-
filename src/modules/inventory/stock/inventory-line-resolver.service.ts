@@ -9,7 +9,9 @@ export const INVENTORY_LINE_ERROR_CODES = {
   ITEM_NOT_FOUND: 'INVENTORY_ITEM_NOT_FOUND',
   ITEM_NOT_STOCKABLE: 'INVENTORY_ITEM_NOT_STOCKABLE',
   ITEM_BATCH_SERIAL_NOT_SUPPORTED: 'INVENTORY_ITEM_BATCH_SERIAL_NOT_SUPPORTED',
+  SERIAL_QTY_MUST_BE_ONE: 'INVENTORY_SERIAL_QTY_MUST_BE_ONE',
   UOM_MISMATCH: 'INVENTORY_UOM_MISMATCH',
+  UOM_DECIMAL_PRECISION: 'INVENTORY_UOM_DECIMAL_PRECISION',
   LOCATION_NOT_FOUND: 'INVENTORY_LOCATION_NOT_FOUND',
   LOCATION_INACTIVE: 'INVENTORY_LOCATION_INACTIVE',
   SITE_NOT_FOUND: 'INVENTORY_SITE_NOT_FOUND',
@@ -28,11 +30,35 @@ export const INVENTORY_LINE_ERROR_CODES = {
   TRANSFER_BIN_MGMT_REQUIRED: 'INVENTORY_TRANSFER_BIN_MGMT_REQUIRED',
 } as const;
 
+/** Fallback when UoM master has no row / decimalPlaces not loaded. */
+export function defaultUomDecimalPlaces(code: string | null | undefined): number {
+  const c = (code ?? '').trim().toUpperCase();
+  if (!c) return 6;
+  if (['NOS', 'PCS', 'PC', 'EA', 'SET', 'PAIR', 'UNIT', 'UNITS'].includes(c)) return 0;
+  if (
+    ['KG', 'G', 'MTR', 'M', 'METER', 'METRE', 'MM', 'CM', 'LTR', 'L', 'LITRE', 'LITER', 'ML', 'SQ.M', 'SQM', 'M2'].includes(
+      c,
+    )
+  ) {
+    return 3;
+  }
+  return 6;
+}
+
+export function quantityFractionDigits(quantity: string): number {
+  const normalized = quantity.trim();
+  const dot = normalized.indexOf('.');
+  if (dot < 0) return 0;
+  return normalized.length - dot - 1;
+}
+
 export interface ResolvedInventoryLine extends StockLocationKey {
   lineNo: number;
   itemCode: string;
   itemName: string;
   uom: string | null;
+  /** From UoM master (0–6); FE uses for qty input precision. */
+  uomDecimalPlaces: number;
   quantity: Prisma.Decimal | null;
   unitPrice: Prisma.Decimal | null;
   physicalQuantity: Prisma.Decimal | null;
@@ -90,6 +116,7 @@ export class InventoryLineResolverService {
           status: true,
           manageBy: true,
           inventoryJson: true,
+          inventoryUom: { select: { code: true, decimalPlaces: true } },
         },
       }),
       db.warehouse.findMany({
@@ -181,19 +208,57 @@ export class InventoryLineResolverService {
           `${item.itemCode} is inactive or not an inventory item`,
         );
       }
-      if (item.manageBy !== 'none') {
+      const uom = item.inventoryUom?.code?.trim() || itemInventoryUom(item.inventoryJson);
+      const uomDecimalPlaces = Math.min(
+        6,
+        Math.max(0, item.inventoryUom?.decimalPlaces ?? defaultUomDecimalPlaces(uom)),
+      );
+      if (line.uom && line.uom.toLowerCase() !== (uom ?? '').toLowerCase()) {
+        fail(
+          INVENTORY_LINE_ERROR_CODES.UOM_MISMATCH,
+          'uom',
+          `UoM must be the Item Master inventory UoM (${uom ?? 'not set'})`,
+        );
+      }
+
+      // Opening Stock: serial-tracked items allowed with qty = 1 per line (serialNo reference).
+      // Batch-managed: allowed as reference text only (stock key still Part+Store+Bin).
+      // Other documents: batch/serial stock not supported yet.
+      if (item.manageBy !== 'none' && documentType !== InventoryDocumentType.OPENING_STOCK) {
         fail(
           INVENTORY_LINE_ERROR_CODES.ITEM_BATCH_SERIAL_NOT_SUPPORTED,
           'itemId',
           `${item.itemCode} is managed by ${item.manageBy}; batch/serial stock is not supported yet`,
         );
       }
-      const uom = itemInventoryUom(item.inventoryJson);
-      if (line.uom && line.uom.toLowerCase() !== (uom ?? '').toLowerCase()) {
+      if (documentType === InventoryDocumentType.OPENING_STOCK && item.manageBy === 'serial' && line.quantity) {
+        try {
+          if (!new Prisma.Decimal(line.quantity.trim()).eq(1)) {
+            fail(
+              INVENTORY_LINE_ERROR_CODES.SERIAL_QTY_MUST_BE_ONE,
+              'quantity',
+              `${item.itemCode} is serial-tracked; quantity must be 1 per line`,
+            );
+          }
+        } catch {
+          fail(
+            INVENTORY_LINE_ERROR_CODES.SERIAL_QTY_MUST_BE_ONE,
+            'quantity',
+            `${item.itemCode} is serial-tracked; quantity must be 1 per line`,
+          );
+        }
+      }
+      if (
+        documentType === InventoryDocumentType.OPENING_STOCK &&
+        line.quantity &&
+        quantityFractionDigits(line.quantity) > uomDecimalPlaces
+      ) {
         fail(
-          INVENTORY_LINE_ERROR_CODES.UOM_MISMATCH,
-          'uom',
-          `UoM must be the Item Master inventory UoM (${uom ?? 'not set'})`,
+          INVENTORY_LINE_ERROR_CODES.UOM_DECIMAL_PRECISION,
+          'quantity',
+          uomDecimalPlaces === 0
+            ? `${item.itemCode}: ${uom ?? 'UoM'} does not allow decimal quantities`
+            : `${item.itemCode}: ${uom ?? 'UoM'} allows at most ${uomDecimalPlaces} decimal place(s)`,
         );
       }
 
@@ -299,6 +364,7 @@ export class InventoryLineResolverService {
         itemCode: item.itemCode,
         itemName: item.description,
         uom,
+        uomDecimalPlaces,
         branchId: warehouse.branchId,
         warehouseId: warehouse.warehouseId,
         storageBinId,

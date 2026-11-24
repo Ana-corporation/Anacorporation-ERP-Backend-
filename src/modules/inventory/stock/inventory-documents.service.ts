@@ -13,7 +13,11 @@ import { parseBigIntId, serialize } from '@/common/utils/bigint.util';
 import { toPaginatedResult } from '@/common/utils/pagination.util';
 import { InventoryDocumentInput, InventoryDocumentListQueryDto } from './dto/inventory-document.dto';
 import { InventoryDocumentDetail, InventoryDocumentsRepository } from './inventory-documents.repository';
-import { InventoryLineResolverService, ResolvedInventoryLine } from './inventory-line-resolver.service';
+import {
+  defaultUomDecimalPlaces,
+  InventoryLineResolverService,
+  ResolvedInventoryLine,
+} from './inventory-line-resolver.service';
 import { StockMovementInput, StockPostingService, stockKey } from './stock-posting.service';
 import { SubcontractorLocationService } from './subcontractor-location.service';
 
@@ -791,6 +795,9 @@ export class InventoryDocumentsService {
               brand: line.brand,
               revision: line.revision,
               manageBy: line.item.manageBy,
+              /** FE qty input precision (from UoM master / code defaults) */
+              uomDecimalPlaces:
+                line.item.inventoryUom?.decimalPlaces ?? defaultUomDecimalPlaces(line.uom ?? line.item.inventoryUom?.code),
             }
           : {}),
         ...(doc.documentType === InventoryDocumentType.MATERIAL_ISSUE

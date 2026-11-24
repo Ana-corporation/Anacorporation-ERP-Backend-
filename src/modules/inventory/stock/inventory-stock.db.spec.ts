@@ -203,9 +203,12 @@ run('Inventory stock (database)', () => {
       'INVENTORY_BIN_NOT_ALLOWED',
     );
     await expectCode(create(binLine({ quantity: '1', siteId: a.otherSiteId })), 'INVENTORY_SITE_LOCATION_MISMATCH');
-    await expectCode(create(binLine({ quantity: '1', itemId: a.batchItemId })), 'INVENTORY_ITEM_BATCH_SERIAL_NOT_SUPPORTED');
+    // Batch-managed items are allowed on Opening Stock (batchNo is reference only).
+    const batchOs: Doc = await create(binLine({ quantity: '1', itemId: a.batchItemId, batchNo: 'B-1' }));
+    await docs.remove(OPENING_STOCK, a.companyId, batchOs.documentId, actor);
     await expectCode(create(binLine({ quantity: '1', itemId: a.serviceItemId })), 'INVENTORY_ITEM_NOT_STOCKABLE');
     await expectCode(create(binLine({ quantity: '1', uom: 'KG' })), 'INVENTORY_UOM_MISMATCH');
+    await expectCode(create(binLine({ quantity: '1.5' })), 'INVENTORY_UOM_DECIMAL_PRECISION');
     await expectCode(create(binLine({ quantity: '1', itemId: b.itemId })), 'INVENTORY_ITEM_NOT_FOUND');
     await expectCode(
       create({ itemId: a.itemId, inventoryLocationId: b.plainId, quantity: '1' }),
@@ -478,6 +481,37 @@ run('Inventory stock (database)', () => {
         ),
         'INVENTORY_DUPLICATE_LINE',
       );
+    });
+
+    it('serial-tracked opening stock requires quantity 1; batch-managed is allowed', async () => {
+      const serialItem = await prisma.item.create({
+        data: {
+          companyId: BigInt(b.companyId),
+          itemCode: 'SER-1',
+          description: 'Motor',
+          manageBy: 'serial',
+          inventoryJson: { uomName: 'NOS' },
+        },
+      });
+      const line = {
+        itemId: serialItem.itemId.toString(),
+        inventoryLocationId: b.binnedId,
+        storageBinId: b.binId,
+        serialNo: 'SN-9',
+        unitPrice: '10',
+      };
+      await expectCode(
+        docs.create(OPENING_STOCK, b.companyId, { documentDate: '2026-10-02', lines: [{ ...line, quantity: '2' }] } as never, actor),
+        'INVENTORY_SERIAL_QTY_MUST_BE_ONE',
+      );
+      const ok: Doc = await docs.create(
+        OPENING_STOCK,
+        b.companyId,
+        { documentDate: '2026-10-02', lines: [{ ...line, quantity: '1' }] } as never,
+        actor,
+      );
+      expect(ok.lines[0]).toMatchObject({ quantity: '1.000000', uom: 'NOS', uomDecimalPlaces: 0, manageBy: 'serial' });
+      await docs.remove(OPENING_STOCK, b.companyId, ok.documentId, actor);
     });
 
     it('opening stock brand: saves, different brands allowed on same bin, duplicate serial blocked', async () => {

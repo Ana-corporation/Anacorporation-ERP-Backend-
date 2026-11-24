@@ -18,6 +18,7 @@ const uomSelect = {
   companyId: true,
   code: true,
   name: true,
+  decimalPlaces: true,
   isActive: true,
   createdBy: true,
   createdAt: true,
@@ -73,7 +74,14 @@ export class UomsService {
     let created;
     try {
       created = await this.prisma.uom.create({
-        data: { companyId: company, code, name: dto.name.trim(), isActive: dto.isActive ?? true, createdBy: BigInt(actorId) },
+        data: {
+          companyId: company,
+          code,
+          name: dto.name.trim(),
+          decimalPlaces: dto.decimalPlaces ?? 6,
+          isActive: dto.isActive ?? true,
+          createdBy: BigInt(actorId),
+        },
       });
     } catch (error) {
       if (isUniqueViolation(error)) throw codeExists();
@@ -95,6 +103,7 @@ export class UomsService {
         data: {
           ...(code !== undefined ? { code } : {}),
           ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.decimalPlaces !== undefined ? { decimalPlaces: dto.decimalPlaces } : {}),
           ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
           updatedBy: BigInt(actorId),
           updatedAt: new Date(),

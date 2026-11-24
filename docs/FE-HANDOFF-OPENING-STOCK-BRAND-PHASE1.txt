@@ -42,6 +42,20 @@ BE REPLY TO FE (confirm)
   Do not send lineTotal / totalValue / documentTotalValue on request.
 
 
+UOM (BE — 2026-11-24)
+--------------------------------------------------------------------------------
+  - Line `uom` is set from Item Master inventory UoM (read-only for FE).
+  - Response also includes `uomDecimalPlaces` (0–6) for qty input precision.
+  - If request sends `uom`, it must match Item Master or → INVENTORY_UOM_MISMATCH.
+  - Qty decimals > UoM precision → INVENTORY_UOM_DECIMAL_PRECISION
+    (NOS/PCS/SET/PAIR default 0; KG/MTR/LTR default 3; else 6 / master value).
+  - Serial-tracked item (manageBy=serial): quantity must be 1
+    → INVENTORY_SERIAL_QTY_MUST_BE_ONE
+  - Batch-managed items allowed on Opening Stock (batchNo reference only).
+  - No UoM dropdown; no alternate-UoM conversion in Phase 1.
+  - UoM master now has `decimalPlaces` (create/update/list).
+
+
 FE WORK
 --------------------------------------------------------------------------------
   [ ] Brand column/input on line grid (optional)
