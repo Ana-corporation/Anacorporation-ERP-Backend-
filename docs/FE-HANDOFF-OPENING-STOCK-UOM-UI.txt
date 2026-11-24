@@ -1,0 +1,63 @@
+================================================================================
+FE HANDOFF — Opening Stock: UoM column, labels, qty decimals
+Date:       2026-11-24
+BE status:  Fields already returned. Layout / labels are FE only.
+================================================================================
+
+1) UoM IN ITS OWN COLUMN
+--------------------------------------------------------------------------------
+  Wrong Part cell:
+    ANACAX00001  CAX
+    CABLE END LEGS- E0508 · NOS
+
+  Correct:
+    Part column  → partNumber + partName only
+                   e.g. CABLE END LEGS- E0508
+    UoM column   → read-only from API, e.g. NOS
+
+  API (already there):
+    lines[i].uom , lines[i].partName
+    partIndex[i].uom , partIndex[i].partName
+
+  Do NOT:
+    - Concatenate partName + " · " + uom
+    - Add a UoM dropdown (Item Master UoM only)
+
+
+2) PROFESSIONAL LABELS (Title Case)
+--------------------------------------------------------------------------------
+  Wrong:   Total qty    |  Total value
+  Right:   Total Qty    |  Total Value
+
+  Grid / summary labels:
+    Part | Store | Bins | Brands | Serials | UoM | Total Qty | Total Value
+    Status | Unit Price | Qty | Brand | Serial No.
+
+  Optional: "Total Qty" → "Total Quantity" if space allows.
+
+  JSON stays camelCase (do not rename API fields):
+    totalQuantity / totalValue / documentTotalValue / lineTotal
+    unitPrice / uom
+
+
+3) QTY DECIMALS
+--------------------------------------------------------------------------------
+  BE no longer rejects Opening Stock qty by UoM decimal precision
+  (e.g. 1.5 on NOS saves OK).
+
+  Still enforced:
+    - Serial-managed items → qty must be 1
+    - lines[].uomDecimalPlaces still returned (optional FE input hint)
+
+  Optional UX: limit decimals by uomDecimalPlaces (NOS → whole numbers).
+  Not required for save.
+
+
+QUICK TEST
+--------------------------------------------------------------------------------
+  Part cell has no " · NOS"; UoM column shows NOS
+  Headers read Total Qty / Total Value (not Total qty / Total value)
+  NOS qty 1.5 saves; serial item qty 2 still blocked
+
+
+================================================================================

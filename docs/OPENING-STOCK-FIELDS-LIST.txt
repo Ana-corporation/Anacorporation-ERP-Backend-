@@ -73,7 +73,7 @@ LIMITS / RULES
   Many lines same part + same bin (empty brand/serial) → allowed; merge on post
   Same serial twice for same part in one document → blocked (INVENTORY_DUPLICATE_LINE)
   Serial optional for first count / go-live
-  (uomDecimalPlaces is advisory; see FE-HANDOFF-OS-UOM-DECIMAL-QTY.txt)
+  (uomDecimalPlaces is advisory; see FE-HANDOFF-OPENING-STOCK-UOM-UI.txt)
 
 
 NOT ON OPENING STOCK (other documents)

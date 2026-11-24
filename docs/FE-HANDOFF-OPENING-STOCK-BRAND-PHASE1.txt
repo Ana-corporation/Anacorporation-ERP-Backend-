@@ -62,15 +62,17 @@ FE WORK
   [ ] Expand view: show Brand + Serial No by bin
   [ ] **REQUIRED: show editable Unit price on the line** (field: unitPrice)
         BE already accepts/returns it — FE UI is missing it today.
-        Without Unit price, Total value stays "—" / 0.
+        Without Unit Price, Total Value stays "—" / 0.
   [ ] Show line Total Value + document total (read-only = qty × unitPrice)
-  [ ] UoM read-only from Item Master (unchanged)
+  [ ] UoM column + Title Case labels + qty notes → FE-HANDOFF-OPENING-STOCK-UOM-UI.txt
+  [ ] manageBy=serial → force qty 1 (or show BE error INVENTORY_SERIAL_QTY_MUST_BE_ONE)
   [ ] Index search/filter can match brand (client-side on partIndex.brands
       or lines[].brand; no new BE filter required for Phase 1)
   [ ] Keep counting-draft behaviour unchanged
-  [ ] Do not send totalValue / documentTotalValue on PUT
+  [ ] Do not send totalValue / documentTotalValue / lineTotal on PUT
   [ ] On post: if unitPrice blank/0, send zeroPriceConfirmed: true
         (or block post until user confirms zero valuation)
+  [ ] Status column: DRAFT | POSTED only (not "Done")
 
 
 UNIT PRICE → TOTAL VALUE (FE must wire)
@@ -126,12 +128,16 @@ EXAMPLE LINE (request)
 EXAMPLE RESPONSE EXTRAS
 --------------------------------------------------------------------------------
   lines[i].brand = "Siemens"
+  lines[i].uom = "NOS"
+  lines[i].uomDecimalPlaces = 0
+  lines[i].manageBy = "none" | "serial" | "batch"
   lines[i].lineTotal = "125.00"
   lines[i].totalValue = "125.00"
   documentTotalValue = "125.00"
   totalValue = "125.00"
   partIndex[0].brands = ["Siemens", "ABB"]
   partIndex[0].brandCount = 2
+  partIndex[0].uom = "NOS"
 
 
 IMPORT

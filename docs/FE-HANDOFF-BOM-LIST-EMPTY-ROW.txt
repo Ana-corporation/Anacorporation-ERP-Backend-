@@ -1,0 +1,72 @@
+================================================================================
+FE BUG — BOM list shows "All 1 BOMs loaded" but no row
+Date:       2026-11-24
+BE status:  OK. GET /boms returns 1 item for Ana (company 28).
+================================================================================
+
+SYMPTOM
+--------------------------------------------------------------------------------
+  Footer / toast: "All 1 BOMs loaded"
+  Table: empty (no BOM00001 row)
+
+
+BE IS FINE — sample list item shape
+--------------------------------------------------------------------------------
+  {
+    bomId: "1",
+    bomNumber: "BOM00001",
+    status: "DRAFT",
+    version: 1,
+    isCurrentVersion: false,
+    lineCount: 396,
+    parentItem: {
+      itemId: "1172",
+      itemCode: "ANAASSY00012",
+      oldCode: "BS5000000000A1",
+      name: "BS500 MACHINE"          ← use .name (NOT .description)
+    },
+    uom: { uomId: "1", code: "NOS" },
+    machine: {
+      machineId: "1",
+      machineCode: "BS500",          ← show this in Machine column
+      machineType: "BASE",
+      salesOrderNo: null,
+      baseMachineCode: null
+    },
+    currentReleasedVersion: null,
+    openDraftVersion: 1,
+    allowedActions: [ ... ]
+  }
+
+  Paginated: { items: [ ... ], total: 1, page, limit }
+
+
+WHAT IS HOLDING FE (check in order)
+--------------------------------------------------------------------------------
+  1) Wrong field names when rendering the row
+       Use:  bomNumber, status, version, lineCount
+             machine?.machineCode
+             parentItem?.name / parentItem?.itemCode
+       NOT:  parentItem.description  (BE does not send description on list)
+       NOT:  lines / line_count      (BE sends lineCount)
+
+  2) Client filter hides DRAFT
+       This BOM is status "DRAFT" and isCurrentVersion = false
+       If FE only paints RELEASED or isCurrentVersion===true → count=1, rows=0
+
+  3) Machine column assumes machine always exists and crashes / skips row
+       Guard: machine?.machineCode ?? parentItem?.name ?? "—"
+
+  4) Render items from wrong path
+       Use response.items (or your API wrapper’s data.items), length must match total
+
+
+QUICK FE FIX CHECK
+--------------------------------------------------------------------------------
+  console.log(listResponse.items?.[0])
+  Expect bomNumber "BOM00001" and machine.machineCode "BS500"
+  Map that object into the table row with the fields above
+  Include DRAFT in the status filter / default "All"
+
+
+================================================================================
