@@ -1,0 +1,48 @@
+================================================================================
+FE ACTION — Opening Stock qty decimals (LIVE error fix)
+Date:       2026-11-24
+BE status:  Already live. Do NOT change backend for this.
+Issue:      PUT opening-stock fails with INVENTORY_UOM_DECIMAL_PRECISION
+            e.g. "ANACAX00003: NOS does not allow decimal quantities"
+================================================================================
+
+WHY
+--------------------------------------------------------------------------------
+  BE rejects qty when fraction digits > lines[].uomDecimalPlaces.
+  NOS / SET / PAIR → usually 0 → integers only (1, 2, 10 — not 1.5).
+  KG / MTR / LTR → usually 3.
+
+
+FE MUST DO (Opening Stock draft create / edit / import review)
+--------------------------------------------------------------------------------
+  1) Read per line:  lines[i].uomDecimalPlaces  (0–6)
+     Fallback if missing: NOS/PCS/SET/PAIR → 0; KG/MTR/LTR → 3; else 6.
+
+  2) Qty input:
+     - step = 1 when uomDecimalPlaces === 0, else 10^(-decimals)
+     - maxFractionDigits = uomDecimalPlaces
+     - block typing / paste of extra decimals (or round/truncate on blur)
+     - show inline error before PUT, same meaning as BE
+
+  3) On PUT/POST error code INVENTORY_UOM_DECIMAL_PRECISION:
+     - highlight errors[].field (e.g. lines[2].quantity)
+     - message already includes part code + UoM
+
+  4) Serial-managed items: qty must be 1 (separate rule; already on BE).
+
+
+DO NOT
+--------------------------------------------------------------------------------
+  - Hard-code 6 decimals for every qty field
+  - Send "1.000000" when user typed 1 — OK if trailing zeros, but "1.5" fails for NOS
+  - Ask BE to allow decimals on NOS
+
+
+QUICK TEST
+--------------------------------------------------------------------------------
+  Item with UoM NOS, qty 1     → save OK
+  Same item, qty 1.5           → FE blocks; if sent, BE returns
+                                 INVENTORY_UOM_DECIMAL_PRECISION
+  Item with UoM KG, qty 1.250  → OK (≤ 3 decimals)
+
+================================================================================
