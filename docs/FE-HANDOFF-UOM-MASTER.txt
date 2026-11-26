@@ -1,0 +1,121 @@
+================================================================================
+FE HANDOFF — UoM Master (admin)
+Date:       2026-11-24
+BE status:  Ready (migration + API). Item Master base UoM already from this list.
+================================================================================
+
+PURPOSE
+--------------------------------------------------------------------------------
+  Central Units of Measure catalogue per company.
+  System (seeded) units are read-only except activate/deactivate.
+  Custom units: add, edit name/code/category/decimals, activate/deactivate.
+  Item Master inventoryUomId must pick from this master only (active rows).
+
+
+API
+--------------------------------------------------------------------------------
+  Base:  /companies/:companyId/uoms
+
+  GET    /                    List (active + inactive). Auto-seeds standard units.
+  GET    /:id                 One UoM (+ audit)
+  POST   /                    Create custom UoM
+  PATCH  /:id                 Update
+  DELETE /:id                 Soft-delete (custom only; blocked if in use)
+
+Permissions (existing):
+  view   → items:view
+  create → items:create
+  edit   → items:edit
+  delete → items:delete
+
+
+ROW SHAPE
+--------------------------------------------------------------------------------
+  uomId, companyId, code, name,
+  category,                 // COUNT | LENGTH | WEIGHT | VOLUME | PACKAGING
+  decimalPlaces,            // 0–6
+  decimalPrecision,         // alias of decimalPlaces (same value)
+  isActive, isSystem,
+  itemCount,
+  canDelete, canEditCode, canEditName, canEditCategory, canEditDecimalPlaces,
+  canDeactivate,
+  createdAt / updatedAt / audit fields
+
+  List order: system units first, then code A–Z.
+
+
+STANDARD (SYSTEM) UNITS — seeded per company
+--------------------------------------------------------------------------------
+  COUNT:      NOS(0), SET(0), PAIR(0)
+  PACKAGING:  BOX(0), PACK(0), ROLL(0), DRUM(0), BAG(0)
+  LENGTH:     MTR(3), CM(3), MM(3), FT(3)
+  WEIGHT:     KG(3), GM(3), TON(3)
+  VOLUME:     LTR(3), ML(3)
+
+  isSystem=true → cannot delete; cannot change code/name/category/decimalPlaces.
+  Allowed on system: PATCH { isActive: true|false } only.
+
+
+CREATE (custom)
+--------------------------------------------------------------------------------
+  Body:
+    code              required  (uppercased; max 20; letters/digits . _ / -)
+    name              required  (max 80)
+    category          required  COUNT | LENGTH | WEIGHT | VOLUME | PACKAGING
+    decimalPlaces     optional  0–6 (default 6)
+    decimalPrecision  optional  alias of decimalPlaces (do not send both differing)
+    isActive          optional  default true
+
+  Code unique per company (case-insensitive). Conflict → UOM_CODE_EXISTS.
+
+
+UPDATE
+--------------------------------------------------------------------------------
+  Custom: name, code, category, decimalPlaces/decimalPrecision, isActive
+  System: isActive only
+
+  After UoM used in **posted** inventory stock:
+    category + decimalPlaces locked → UOM_FIELDS_LOCKED
+  (GET :id sets canEditCategory / canEditDecimalPlaces = false when locked)
+
+
+DELETE
+--------------------------------------------------------------------------------
+  System → UOM_SYSTEM_READONLY (deactivate instead)
+  Used by items, inventory docs, BOM, PO, PR, machine settings, OS import
+    → UOM_IN_USE (deactivate instead)
+  Prefer soft deactivate (isActive=false) over delete for anything with history.
+
+
+ITEM MASTER
+--------------------------------------------------------------------------------
+  Base UoM = inventoryUomId from GET /uoms where isActive=true.
+  inventoryUom on item now includes: code, name, category, decimalPlaces, isSystem.
+  Qty decimals on stock docs already enforce decimalPlaces (INVENTORY_UOM_DECIMAL_PRECISION).
+  Alternate UoM (if/when FE adds): same master list only.
+
+
+ADMIN SCREEN SUGGESTION
+--------------------------------------------------------------------------------
+  Table: Code | Name | Category | Decimals | System | Active | Actions
+  Filters: category, active, system/custom
+  Add: modal with code, name, category, decimals
+  Edit name freely (custom); lock category/decimals when canEdit* false
+  Toggle Active for all rows
+  Hide Delete for isSystem; on delete error show message + suggest deactivate
+
+
+ERROR CODES
+--------------------------------------------------------------------------------
+  UOM_NOT_FOUND
+  UOM_CODE_EXISTS
+  UOM_IN_USE
+  UOM_SYSTEM_READONLY
+  UOM_FIELDS_LOCKED
+
+
+NOTES
+--------------------------------------------------------------------------------
+  Tenant = companyId (no global null-tenant row; standards copied per company).
+  List GET ensures missing standards are inserted (idempotent).
+================================================================================

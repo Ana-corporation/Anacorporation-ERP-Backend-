@@ -15,7 +15,7 @@ export class UomsController {
 
   @Get()
   @RequirePermissions('items:view')
-  @ApiOperation({ summary: 'List UOMs (active + inactive, not paginated)' })
+  @ApiOperation({ summary: 'List UOMs (seeds standards; system first; active + inactive)' })
   findAll(@Param('companyId') companyId: string, @CurrentUser() user: AuthenticatedUser) {
     assertCompanyAccess(companyId, user);
     return this.uomsService.findAll(companyId);

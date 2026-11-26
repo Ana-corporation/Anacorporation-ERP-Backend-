@@ -40,15 +40,20 @@ model ItemGroup {
 }
 
 /// Company unit of measure (NOS, KG, MTR ...). Code is stored uppercase; unique per company
-/// among non-deleted rows (partial index).
+/// among non-deleted rows (partial index). System units are seeded per company (isSystem=true).
 model Uom {
   uomId     BigInt    @id @default(autoincrement()) @map("uom_id")
+  /// Tenant (= company). System catalogue is copied per company, not a global null tenant.
   companyId BigInt    @map("company_id")
   code      String    @db.VarChar(20)
   name      String    @db.VarChar(80)
-  /// Max fraction digits allowed on inventory qty (0–6). NOS=0, KG/MTR/LTR=3 typical.
+  /// COUNT | LENGTH | WEIGHT | VOLUME | PACKAGING
+  category  String    @default("COUNT") @db.VarChar(20)
+  /// Max fraction digits allowed on inventory qty (0–6). Alias: decimalPrecision in API.
   decimalPlaces Int   @default(6) @map("decimal_places") @db.SmallInt
   isActive  Boolean   @default(true) @map("is_active")
+  /// Seeded standard units — code/category/decimalPlaces locked; not deletable
+  isSystem  Boolean   @default(false) @map("is_system")
   createdBy BigInt?   @map("created_by")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedBy BigInt?   @map("updated_by")

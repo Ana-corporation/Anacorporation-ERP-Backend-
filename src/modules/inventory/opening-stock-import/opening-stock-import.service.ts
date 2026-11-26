@@ -723,7 +723,10 @@ export class OpeningStockImportService {
         where: { companyId, deletedAt: null, isActive: true },
         select: { storeCategoryId: true, name: true, codePrefix: true, numberSeriesCode: true, storeType: true, isActive: true },
       }),
-      db.uom.findMany({ where: { companyId, deletedAt: null, isActive: true }, select: { uomId: true, code: true, name: true } }),
+      db.uom.findMany({
+        where: { companyId, deletedAt: null, isActive: true },
+        select: { uomId: true, code: true, name: true, category: true, decimalPlaces: true, isSystem: true },
+      }),
       db.warehouse.findMany({
         where: { companyId, deletedAt: null },
         select: { warehouseId: true, warehouseCode: true, isActive: true, binManagement: true, storeCategoryId: true, vendorId: true },
@@ -795,7 +798,14 @@ export class OpeningStockImportService {
 
     return {
       stores: stores.map((s) => ({ id: s.storeCategoryId.toString(), name: s.name, codePrefix: s.codePrefix, numberSeriesCode: s.numberSeriesCode })),
-      uoms: uoms.map((u) => ({ id: u.uomId.toString(), code: u.code, name: u.name })),
+      uoms: uoms.map((u) => ({
+        id: u.uomId.toString(),
+        code: u.code,
+        name: u.name,
+        category: u.category,
+        decimalPlaces: u.decimalPlaces,
+        isSystem: u.isSystem,
+      })),
       warehouses: warehouses.map((w) => ({
         id: w.warehouseId.toString(),
         code: w.warehouseCode,

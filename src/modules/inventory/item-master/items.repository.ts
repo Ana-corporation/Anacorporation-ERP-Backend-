@@ -45,7 +45,9 @@ const ITEMS_LIST_FILTER: ListFilterOptions = {
 const STORE_CATEGORY_INCLUDE = {
   storeCategory: { select: { storeCategoryId: true, name: true, numberSeriesCode: true } },
   itemGroupRef: { select: { itemGroupId: true, name: true, parentId: true } },
-  inventoryUom: { select: { uomId: true, code: true, name: true } },
+  inventoryUom: {
+    select: { uomId: true, code: true, name: true, category: true, decimalPlaces: true, isSystem: true },
+  },
   previousStageItem: {
     where: { deletedAt: null },
     select: {

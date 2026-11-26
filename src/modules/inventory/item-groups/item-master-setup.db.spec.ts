@@ -129,13 +129,22 @@ run('Item master setup (database)', () => {
     expect(flat.items.map((g: Row) => g.name)).toEqual(['Pumps']);
   });
 
-  it('UOM master: uppercase code, unique per company', async () => {
-    const nos: Row = await uoms.create(companyId, { code: 'nos', name: 'Numbers' } as never, actor);
-    ids.nos = nos.uomId;
-    expect(nos.code).toBe('NOS');
-    expect(await errorCode(uoms.create(companyId, { code: 'NOS', name: 'Again' } as never, actor))).toBe(
+  it('UOM master: uppercase code, unique per company; system units seeded', async () => {
+    const list = await uoms.findAll(companyId);
+    const nos = (list.items as Row[]).find((u) => u.code === 'NOS');
+    expect(nos).toMatchObject({ isSystem: true, category: 'COUNT', decimalPlaces: 0 });
+    ids.nos = nos!.uomId;
+    expect(await errorCode(uoms.create(companyId, { code: 'NOS', name: 'Again', category: 'COUNT' } as never, actor))).toBe(
       UOM_ERROR_CODES.CODE_EXISTS,
     );
+    const pcs: Row = await uoms.create(
+      companyId,
+      { code: 'pcs', name: 'Pieces', category: 'COUNT', decimalPlaces: 0 } as never,
+      actor,
+    );
+    expect(pcs).toMatchObject({ code: 'PCS', isSystem: false, category: 'COUNT' });
+    ids.pcs = pcs.uomId;
+    expect(await errorCode(uoms.remove(ids.nos, companyId, actor))).toBe(UOM_ERROR_CODES.SYSTEM_READONLY);
   });
 
   it('items: group must be in the item store, UOM copied to inventory.uomName, master refs returned', async () => {

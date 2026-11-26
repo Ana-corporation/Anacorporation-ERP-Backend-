@@ -1,0 +1,77 @@
+================================================================================
+SHARE WITH FE FRIEND — Opening Stock live (Ana Electrical)
+Date: 2026-11-20
+BE status: Ready — no BE blocker for go-live
+================================================================================
+
+WHAT YOU NEED TO DO (FE)
+--------------------------------------------------------------------------------
+  Opening Stock screen for Electrical Store (ELS-001):
+
+  1) INDEX + EXPAND UI
+     - Index = one row per part (use BE field `partIndex`)
+       → show part no, name, total qty, bins summary, serial count
+     - Expand = show that part’s lines
+       → Bin + Qty + Serial (optional)
+     - Save/Update still sends flat `lines[]` (full array)
+     - Post uses existing Opening Stock POST …/post
+
+  2) BIN PICKER
+     Call bins with:
+       GET …/storage-bins?inventoryLocationId={ELS-001}&limit=500&sortBy=binCode&sortOrder=asc
+     You should see A1-01 … A1-200 in natural order.
+
+  3) RULES (important)
+     - One line = one bin + one qty (+ optional one serial)
+     - Do NOT put comma lists of bins/serials on one line
+     - Qty must be > 0
+     - Bin required (ELS has bin management on)
+
+
+SERIALS — OPTIONAL FOR FIRST COUNT
+--------------------------------------------------------------------------------
+  For go-live count, serial number field can be left blank.
+  Stock posts by Part + Store + Bin.
+  Serials are document reference only (not stock balance).
+  They can fill serials later if needed — do not block posting for missing serial.
+
+
+STORE USER (who will post Opening Stock)
+--------------------------------------------------------------------------------
+  Name:     J.Pandiya Selvi
+  Role:     Store In-Charge (full inventory access)
+
+  Login:
+    Company code:   ANA_MACHINERY_P_LTD
+    Employee code:  ANASTORE
+    Password:       Store@123
+
+  She logs into FE → Opening Stock → Electrical Store → enter counts → Post.
+
+
+BE ALREADY DONE (you can use now)
+--------------------------------------------------------------------------------
+  [x] partIndex on Opening Stock GET / create / update / post
+  [x] storage-bins max limit 500 + natural binCode sort
+  [x] ELS-001 stock cleared for live count (0 balances)
+  [x] ~374 electrical items linked to store
+  [x] Bins A1-01 … A1-200 available
+
+
+DESIGN REF
+--------------------------------------------------------------------------------
+  Backend mock / flow note:
+    docs/opening-stock-multi-bin-ui-mock.html
+    docs/FE-HANDOFF-OPENING-STOCK-INDEX-EXPAND.txt
+    docs/FE-HANDOFF-STORAGE-BINS-LIST-LIMIT.txt
+
+
+DONE WHEN (FE)
+--------------------------------------------------------------------------------
+  [ ] Index from partIndex + expand to lines
+  [ ] Bin picker uses limit=500 + sortBy=binCode
+  [ ] PUT sends flat lines[]; Post works
+  [ ] Serial optional (not required to post)
+  [ ] Store user can login and post Opening Stock from FE
+
+================================================================================
