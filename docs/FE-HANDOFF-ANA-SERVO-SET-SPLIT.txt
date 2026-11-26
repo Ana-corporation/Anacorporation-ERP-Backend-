@@ -1,0 +1,125 @@
+================================================================================
+FE HANDOFF — SERVO SET gone on local BE; FE still shows old rows (stale client state)
+Date:       2026-11-25
+Audience:   ERP-Frontend
+Company:    Ana Machinery (P) Ltd  (companyId 28)
+Local BE:   npm run start:dev  →  http://localhost:3002  →  Erp_test_db
+API:        GET /api/v1/companies/28/items   (unchanged — already omits deletedAt)
+================================================================================
+
+SYMPTOM
+--------------------------------------------------------------------------------
+  Item Master (and pickers) still show old SERVO SET rows:
+    ANAELC00006  SERVO SET-1KW/1PH
+    ANAELC00007  SERVO SET-2KW
+    ANAELC00008  SERVO SET-3KW/1PH
+    ANAELC00009  SERVO SET-3KW/3PH
+
+  Local backend DB already soft-deleted those 4 and created 15 split parts.
+  BE list never returns soft-deleted items. If UI still shows SET, FE is
+  serving STALE client data or calling the WRONG backend.
+
+
+ROOT CAUSE (FE — not a BE API bug)
+--------------------------------------------------------------------------------
+  1) Wrong API target (was the main issue)
+       .env.local had BACKEND_URL pointed at live Cloud Run
+       (anacorporation-erp-backend-….run.app) while Nest local was on 3002.
+       Live still has SET active → UI kept showing SET.
+
+  2) Stale list rows in the browser
+       Item Master uses useInfiniteList (in-memory rows), not a Redux items
+       slice. Redux persists auth/IAM only (localStorage).
+       After BE data changes OUTSIDE the FE delete flow (scripts), the open
+       list / SPA session keeps the PREVIOUS pages until reset/refetch.
+       Same effect if FE was loaded against live, then .env switched to local
+       without a full FE restart — old rows stay on screen.
+
+  3) Auto-refresh is OFF
+       Lists do not poll. Soft-delete done by BE script does not fire
+       requestDataRefresh() on FE. User must Refresh / remount.
+
+
+CORRECT LOCAL WIRING
+--------------------------------------------------------------------------------
+  ERP-Frontend/.env.local
+
+    NEXT_PUBLIC_API_URL=/api/v1
+    BACKEND_URL=http://localhost:3002
+
+  Do NOT use the Cloud Run URL while testing this change.
+  After editing .env.local: stop and restart  npm run dev  (port 3001).
+
+  ERP-Backend:  npm run start:dev  only (development → Erp_test_db).
+
+
+FE FIX — CLEAR STALE DATA (do in order)
+--------------------------------------------------------------------------------
+  A) Confirm Network tab
+       Open Item Master → DevTools → Network → GET …/companies/28/items
+       Request URL host must be localhost:3001 (Next proxy) → backend 3002
+       Response body must NOT contain ANAELC00006..00009
+       If response still has SET → still hitting LIVE; fix BACKEND_URL + restart FE
+
+  B) Force list remount / refetch (clears in-memory infinite list)
+       Click the Item Master Refresh button, OR
+       Navigate away and back to Item Master, OR
+       Ctrl+F5 hard reload
+
+  C) If SET still painted after a clean API response without SET
+       Client merged/held old rows — full remount required:
+         - Logout + login (clears session-tied UI state)
+         - Or close the tab and open a new one to http://localhost:3001
+         - Or Application → Clear site data for localhost:3001
+           (wipes localStorage IAM persist + any leftover client cache)
+
+  D) Optional FE hardening (recommended)
+       When BACKEND_URL / env changes, or on login:
+         - reset Item Master useInfiniteList (resetList / requestDataRefresh())
+         - do not keep infinite-list rows across company or env switch
+       On successful DELETE from UI you already remove the row locally;
+       BE-script deletes need the same Refresh path.
+
+
+WHAT BE ALREADY DID ON Erp_test_db (local only)
+--------------------------------------------------------------------------------
+  Soft-deleted (deletedAt set, isActive=false, status=inactive):
+    ANAELC00006 .. ANAELC00009  SERVO SET-*
+
+  Removed those codes from Opening Stock draft OS-000004 lines.
+
+  Created 15 active split materials (Electrical Store, UoM NOS):
+    ANAELC00136  SERVO DRIVE-2KW-220V
+    ANAELC00137  POWER CABLE -2KW-220V
+    ANAELC00138  ENCODER CABLE -2KW-220V
+    ANAELC00139  CONNECTING PIN-2KW-220V
+    ANAELC00140  SERVO DRIVE-3KW/1PH
+    ANAELC00141  POWER CABLE-3KW/1PH
+    ANAELC00142  ENCODER CABLE-3KW/1PH
+    ANAELC00143  CONNECTING PIN-3KW/1PH
+    ANAELC00144  SERVO DRIVE-3KW/3PH
+    ANAELC00145  POWER CABLE -3KW/3PH
+    ANAELC00146  ENCODER CABLE-3KW/3PH
+    ANAELC00147  CONNECTING PIN-3KW/3PH
+    ANAMOT00009  SERVO MOTOR-2KW-220V
+    ANAMOT00010  SERVO MOTOR-3KW/1PH
+    ANAMOT00011  SERVO MOTOR-3KW/3PH
+
+  LIVE Ana_corporation_db: NOT changed yet (SET still there).
+
+
+ACCEPTANCE
+--------------------------------------------------------------------------------
+  [ ] .env.local BACKEND_URL=http://localhost:3002 ; FE restarted
+  [ ] GET /companies/28/items network response has 0× SERVO SET / ANAELC00006-9
+  [ ] Item Master Refresh → SET rows disappear from table
+  [ ] Search "SERVO DRIVE" / ANAMOT00009 → new split parts appear
+  [ ] Opening Stock / Add Items picker does not offer deleted SET codes
+
+
+================================================================================
+NO BE deploy / no API contract change.
+FE work = point at local Nest + discard stale list/session state (Refresh /
+logout / clear site data). Redux does not store Item Master rows; infinite-list
++ wrong BACKEND_URL were holding the old SET data on screen.
+================================================================================

@@ -827,6 +827,17 @@ export class InventoryDocumentsService {
       doc.documentType === InventoryDocumentType.OPENING_STOCK ? await this.importBatchOf(doc.documentId) : null;
     const partIndex =
       doc.documentType === InventoryDocumentType.OPENING_STOCK ? this.buildOpeningPartIndex(lines) : undefined;
+    // Stamp lines with partIndex so FE Part index sorts newest-added parts first.
+    if (partIndex?.length) {
+      const indexByLineId = new Map<string, number>();
+      for (const entry of partIndex) {
+        for (const lineId of entry.lineIds) indexByLineId.set(String(lineId), entry.partIndex);
+      }
+      for (const line of lines) {
+        const idx = indexByLineId.get(String(line.lineId));
+        if (idx != null) (line as { partIndex?: number }).partIndex = idx;
+      }
+    }
     const [named] = await this.withActorNames(
       serialize([{ ...this.mapHeader(doc), importBatch, ...(partIndex ? { partIndex } : {}), lines }]),
     );
@@ -835,11 +846,13 @@ export class InventoryDocumentsService {
 
   /**
    * Opening Stock index rows for FE: one entry per part with total qty, bin chips, serials.
-   * Expand still uses flat `lines` (filter by itemId / lineIds).
+   * Newest-added parts first (highest lineNo), so FE Part list shows new data at the front.
+   * Each entry gets partIndex 1..n; the same number is stamped on flat lines[].
    */
   private buildOpeningPartIndex(
     lines: Array<{
       lineId: bigint | string;
+      lineNo?: number | null;
       itemId: bigint | string;
       partNumber: string;
       partName: string;
@@ -867,6 +880,7 @@ export class InventoryDocumentsService {
       bins: Array<{ storageBinId: string | null; binCode: string | null }>;
       serialNumbers: string[];
       brands: string[];
+      maxLineNo: number;
     };
     const map = new Map<string, Acc>();
     for (const line of lines) {
@@ -888,11 +902,14 @@ export class InventoryDocumentsService {
           bins: [],
           serialNumbers: [],
           brands: [],
+          maxLineNo: 0,
         };
         map.set(key, row);
       }
       row.lineIds.push(line.lineId.toString());
       row.totalQuantity = row.totalQuantity.add(line.quantity ?? ZERO);
+      const lineNo = Number(line.lineNo ?? 0);
+      if (Number.isFinite(lineNo) && lineNo > row.maxLineNo) row.maxLineNo = lineNo;
       const binCode = line.binCode;
       if (binCode && !row.bins.some((b) => b.binCode === binCode)) {
         row.bins.push({
@@ -905,23 +922,26 @@ export class InventoryDocumentsService {
       const brand = line.brand?.trim();
       if (brand && !row.brands.includes(brand)) row.brands.push(brand);
     }
-    return [...map.values()].map((row) => ({
-      itemId: row.itemId,
-      partNumber: row.partNumber,
-      partName: row.partName,
-      uom: row.uom,
-      inventoryLocationId: row.inventoryLocationId,
-      locationCode: row.locationCode,
-      locationName: row.locationName,
-      totalQuantity: row.totalQuantity.toFixed(6),
-      lineCount: row.lineIds.length,
-      lineIds: row.lineIds,
-      bins: row.bins,
-      serialNumbers: row.serialNumbers,
-      serialCount: row.serialNumbers.length,
-      brands: row.brands,
-      brandCount: row.brands.length,
-    }));
+    return [...map.values()]
+      .sort((a, b) => b.maxLineNo - a.maxLineNo || a.partNumber.localeCompare(b.partNumber))
+      .map((row, i) => ({
+        partIndex: i + 1,
+        itemId: row.itemId,
+        partNumber: row.partNumber,
+        partName: row.partName,
+        uom: row.uom,
+        inventoryLocationId: row.inventoryLocationId,
+        locationCode: row.locationCode,
+        locationName: row.locationName,
+        totalQuantity: row.totalQuantity.toFixed(6),
+        lineCount: row.lineIds.length,
+        lineIds: row.lineIds,
+        bins: row.bins,
+        serialNumbers: row.serialNumbers,
+        serialCount: row.serialNumbers.length,
+        brands: row.brands,
+        brandCount: row.brands.length,
+      }));
   }
 
   /** The Excel import that created this posted Opening Stock (file name, approver, new items). */

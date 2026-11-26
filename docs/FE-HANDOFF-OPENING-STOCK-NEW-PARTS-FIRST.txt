@@ -1,0 +1,33 @@
+================================================================================
+FE HANDOFF — Opening Stock: newly added parts show at the FRONT
+Date:       2026-11-26
+Audience:   ERP-Frontend
+API:        GET /api/v1/companies/{id}/inventory/opening-stock/{documentId}
+================================================================================
+
+WHAT CHANGED (BE)
+--------------------------------------------------------------------------------
+  Opening Stock detail now orders partIndex newest-first (highest lineNo).
+  Each flat lines[] row is stamped with partIndex: 1, 2, 3… matching that order.
+
+  FE already sorts Part groups by lines[].partIndex when present
+  (opening-stock-count-helpers groupOpeningLines) — so new parts appear at top.
+
+
+FE ACTION
+--------------------------------------------------------------------------------
+  [ ] No code change required if you already sort by line.partIndex (numeric)
+  [ ] Re-open OS-000004 / hard refresh after local Nest reload
+  [ ] Clear search — first rows should be the newly added servo parts
+      (SERVO DRIVE / MOTOR / cables / pins)
+  [ ] Search still works; "Not counted" = qty 0.000001 placeholder
+
+
+VERIFY
+--------------------------------------------------------------------------------
+  Network → GET …/opening-stock/221 (local)
+  partIndex[0].partNumber should be one of the newest (e.g. ANAMOT00011 / ANAELC…)
+  lines[] for those codes have partIndex: 1, 2, …
+
+
+================================================================================
