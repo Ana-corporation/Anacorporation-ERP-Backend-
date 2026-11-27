@@ -15,6 +15,7 @@ import { InventoryDocumentInput, InventoryDocumentListQueryDto } from './dto/inv
 import { InventoryDocumentDetail, InventoryDocumentsRepository } from './inventory-documents.repository';
 import {
   defaultUomDecimalPlaces,
+  displayItemMasterUom,
   InventoryLineResolverService,
   ResolvedInventoryLine,
 } from './inventory-line-resolver.service';
@@ -753,13 +754,16 @@ export class InventoryDocumentsService {
         doc.documentType === InventoryDocumentType.STOCK_ADJUSTMENT && systemQuantity && line.physicalQuantity
           ? line.physicalQuantity.sub(systemQuantity)
           : null;
+      // Rule 7–8: identity fields always from live Item Master (draft + posted display).
+      // Line.uom is a save/post stamp only — never prefer it over current master UoM.
+      const displayUom = displayItemMasterUom(line.item, line.uom);
       return {
         lineId: line.lineId,
         lineNo: line.lineNo,
         itemId: line.itemId,
         partNumber: line.item.itemCode,
         partName: line.item.description,
-        uom: line.uom,
+        uom: displayUom,
         siteId: line.branchId,
         siteCode: line.branch?.branchCode ?? null,
         siteName: line.branch?.name ?? null,
@@ -797,7 +801,7 @@ export class InventoryDocumentsService {
               manageBy: line.item.manageBy,
               /** FE qty input precision (from UoM master / code defaults) */
               uomDecimalPlaces:
-                line.item.inventoryUom?.decimalPlaces ?? defaultUomDecimalPlaces(line.uom ?? line.item.inventoryUom?.code),
+                line.item.inventoryUom?.decimalPlaces ?? defaultUomDecimalPlaces(displayUom),
             }
           : {}),
         ...(doc.documentType === InventoryDocumentType.MATERIAL_ISSUE

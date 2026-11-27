@@ -1,0 +1,57 @@
+================================================================================
+INVENTORY MODULE — CORE RULES (constitution)
+Date: 2026-11-27
+================================================================================
+
+1. Stock ledger is append-only (never updated or deleted). Current Stock is
+   derived from it.
+
+2. One stock engine for all documents (Opening, Receipt, Issue, Transfer,
+   Adjustment). Do not build a second engine.
+
+3. Document status: Draft -> Posted -> Reversed. Posted documents are never
+   edited. Mistakes are fixed by reversal or adjustment.
+
+4. Stock grain: Part + Store + Bin.
+
+5. Bin Mgmt is a per-store switch. If Yes, bin is required on every line.
+   If No, bin must be null.
+
+6. Bin code is unique within a store (unique on store_id + code).
+   Bins cannot move between stores.
+
+7. Item Master is the source for item code, name, UoM and manageBy.
+   UoM is read-only on documents.
+
+8. DISPLAY of Item Master identity fields (code, name, UoM, manageBy):
+   Always join LIVE Item Master on document GET (draft AND posted).
+   Qty / store / bin / brand / price / ledger amounts stay on the document
+   or ledger and are NEVER rewritten by an Item Master edit.
+   (Stock numbers stay frozen after post; labels follow master corrections.)
+
+9. Negative stock is a setting, default OFF.
+
+10. Opening Stock is for cut-over only, then locked. From the next month,
+    opening = previous closing (automatic).
+
+11. All posting must be idempotent (double-click or retry never posts twice)
+    and use row locking or a transaction.
+
+12. Every master and document change records user, timestamp, old value and
+    new value (audit). Derived Current Stock is not audited as a document.
+
+13. Enforce rules at both API and database level where possible.
+
+
+THIS DELIVERY (Item Master → listings)
+--------------------------------------------------------------------------------
+  Solved issue: Item Master UoM/name change must show on Opening Stock and
+  other inventory document GETs without rewriting counted lines.
+
+  BE:  toResponse uses live Item Master for partNumber, partName, uom, manageBy.
+  FE:  UoM read-only; overlay + masters refresh after Item save.
+  DB:  No migration; no mass update of OS lines.
+  Test: inventory-stock.db — Item UoM/name change reflects on OS GET.
+
+
+================================================================================

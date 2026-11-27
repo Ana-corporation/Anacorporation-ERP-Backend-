@@ -78,6 +78,22 @@ export function itemInventoryUom(inventoryJson: Prisma.JsonValue | null): string
   return typeof uom === 'string' && uom.trim() ? uom.trim().slice(0, 40) : null;
 }
 
+/**
+ * Document GET display UoM: always prefer live Item Master (relation or inventoryJson),
+ * then fall back to the line stamp. Used for draft and posted document responses.
+ */
+export function displayItemMasterUom(
+  item: {
+    inventoryUom?: { code?: string | null } | null;
+    inventoryJson?: Prisma.JsonValue | null;
+  },
+  lineUom: string | null | undefined,
+): string | null {
+  const fromMaster =
+    item.inventoryUom?.code?.trim() || itemInventoryUom(item.inventoryJson ?? null);
+  return fromMaster || (lineUom?.trim() ? lineUom.trim() : null) || null;
+}
+
 const decimalOrNull = (value: string | undefined) =>
   value === undefined || value === '' ? null : new Prisma.Decimal(value);
 

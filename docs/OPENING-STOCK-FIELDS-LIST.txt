@@ -45,9 +45,10 @@ RESPONSE-ONLY (not sent on save)
   documentTotalValue        System      Alias of totalValue (Opening Stock)
   lines[].lineTotal         System      qty × unitPrice (2 dp)
   lines[].totalValue        System      Alias of lineTotal
-  lines[].uom               System      Item Master inventory UoM code
+  lines[].uom               System      LIVE Item Master inventory UoM (GET)
+                                        (read-only; not a separate OS field)
   lines[].uomDecimalPlaces  System      0–6; FE qty input precision
-  lines[].manageBy          System      none | serial | batch
+  lines[].manageBy          System      none | serial | batch (live Item Master)
   partIndex[]               System      Per-part summary for index/expand UI
                                         (itemId, partNumber, partName, uom,
                                          location, totalQuantity, lineCount,

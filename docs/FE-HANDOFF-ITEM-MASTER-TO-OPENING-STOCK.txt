@@ -1,0 +1,61 @@
+================================================================================
+FE HANDOFF — Item Master values on Opening Stock (and inventory docs)
+Date:       2026-11-27
+Audience:   ERP-Frontend
+API:        GET  /api/v1/companies/{id}/inventory/opening-stock/{documentId}
+            PUT  /api/v1/companies/{id}/items/{itemId}
+Rules:      docs/INVENTORY-MODULE-RULES.txt (esp. #7–#8)
+Live DB:    NO rewrite of OS lines. Display joins live Item Master.
+================================================================================
+
+PROBLEM (your screenshots)
+--------------------------------------------------------------------------------
+  Item Master ANAELC00145  → UoM MTR
+  Opening Stock same item  → still showed NOS
+  Cause: OS GET returned stamped line.uom, not live Item Master UoM.
+
+
+CORRECT RULE
+--------------------------------------------------------------------------------
+  Always show from Item Master (draft AND posted DISPLAY):
+
+    partNumber  ← item.itemCode
+    partName    ← item.description
+    uom         ← item inventory UoM (read-only on OS)
+    manageBy    ← item.manageBy
+
+  Never treat UoM as a separate editable Opening Stock field.
+  Qty / brand / unit price / store / bin stay on the document.
+
+
+BE STATUS
+--------------------------------------------------------------------------------
+  DONE — GET uses live Item Master for code / name / UoM / manageBy.
+  partIndex[].uom follows the same mapped lines.
+  Save still resolves/stamps current Item Master UoM (FE should omit uom).
+
+
+FE ACTION
+--------------------------------------------------------------------------------
+  [ ] Deploy FE with useInventoryMasters auto-refresh after Item save
+  [ ] Show lines[].uom / partIndex[].uom from GET as read-only text
+  [ ] Do not send a different uom on PUT (omit uom; BE stamps master)
+  [ ] Overlay from masters.items is OK as backup (already in helpers)
+  [ ] Hard refresh OS after BE deploy → ANAELC00145 must show MTR
+
+
+VERIFY
+--------------------------------------------------------------------------------
+  [ ] Edit Item Master UoM NOS → MTR
+  [ ] Opening Stock GET → lines[].uom = "MTR", partIndex[].uom = "MTR"
+  [ ] Quantity / brand unchanged
+  [ ] Posted OS GET also shows updated master name/UoM (labels only)
+
+
+RELATED
+--------------------------------------------------------------------------------
+  docs/INVENTORY-MODULE-RULES.txt
+  docs/FE-HANDOFF-OPENING-STOCK-UOM-UI.txt
+  docs/FE-HANDOFF-OPENING-STOCK-BRAND-PHASE1.txt
+
+================================================================================

@@ -193,6 +193,57 @@ run('Inventory stock (database)', () => {
     expect(await prisma.stockLedgerEntry.count({ where: { documentId: BigInt(draft.documentId) } })).toBe(1);
   });
 
+  it('Item Master UoM/name change reflects on Opening Stock GET without rewriting qty', async () => {
+    const draft: Doc = await docs.create(
+      OPENING_STOCK,
+      a.companyId,
+      { documentDate: '2026-10-02', lines: [binLine({ quantity: '7', unitPrice: '1' })] },
+      actor,
+    );
+    expect(draft.lines[0]).toMatchObject({ quantity: '7.000000', uom: 'NOS', partName: 'Bearing' });
+
+    const mtr = await prisma.uom.create({
+      data: {
+        companyId: BigInt(a.companyId),
+        code: 'MTR',
+        name: 'Metre',
+        category: 'LENGTH',
+        decimalPlaces: 3,
+      },
+    });
+    await prisma.item.update({
+      where: { itemId: BigInt(a.itemId) },
+      data: {
+        description: 'Bearing 6205-ZZ',
+        inventoryUomId: mtr.uomId,
+        inventoryJson: { uomName: 'MTR' },
+      },
+    });
+
+    const refreshed: Doc = await docs.findOne(OPENING_STOCK, a.companyId, draft.documentId);
+    expect(refreshed.lines[0]).toMatchObject({
+      quantity: '7.000000',
+      uom: 'MTR',
+      partName: 'Bearing 6205-ZZ',
+      partNumber: 'P-100',
+    });
+    expect(refreshed.partIndex[0]).toMatchObject({ uom: 'MTR', partName: 'Bearing 6205-ZZ' });
+
+    const posted: Doc = await docs.post(OPENING_STOCK, a.companyId, draft.documentId, actor);
+    expect(posted.status).toBe('POSTED');
+
+    await prisma.item.update({
+      where: { itemId: BigInt(a.itemId) },
+      data: { description: 'Bearing after post', inventoryJson: { uomName: 'MTR' } },
+    });
+    const afterPost: Doc = await docs.findOne(OPENING_STOCK, a.companyId, draft.documentId);
+    expect(afterPost.lines[0]).toMatchObject({
+      quantity: '7.000000',
+      uom: 'MTR',
+      partName: 'Bearing after post',
+    });
+  });
+
   it('validates hierarchy, bins, batch items, UoM and other-company masters', async () => {
     const create = (line: Record<string, unknown>) =>
       docs.create(OPENING_STOCK, a.companyId, { documentDate: '2026-10-01', lines: [line as never] }, actor);
